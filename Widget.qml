@@ -4,10 +4,10 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui as Ui
 
-Ui.Panel {
+Ui.BarWidget {
   id: root
   moduleName: "pym.display-reserve"
-  manageIpc: false
+  property bool opened: false
 
   property string output: "DP-4"
   property int topPixels: 480
@@ -20,6 +20,11 @@ Ui.Panel {
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
+
+  function open() { opened = true }
+  function close() { opened = false }
+  function toggle() { opened = !opened }
+  function closeForPopoutSwitch() { close() }
 
   function readState() {
     try {
