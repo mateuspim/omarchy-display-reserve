@@ -30,6 +30,16 @@ Item {
     onLoadFailed: root.reservations = ({})
   }
 
+  // FileView's change notification is not reliable for writes performed by a
+  // sibling plugin process. Polling the tiny local state file keeps the black
+  // caps synchronized with the reservation slider without restarting the shell.
+  Timer {
+    interval: 250
+    running: true
+    repeat: true
+    onTriggered: stateFile.reload()
+  }
+
   Variants {
     model: Quickshell.screens
 
