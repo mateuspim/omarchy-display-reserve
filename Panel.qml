@@ -2,9 +2,9 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell.Io
 import qs.Commons
-import qs.Ui
+import qs.Ui as Ui
 
-Panel {
+Ui.Panel {
   id: root
   moduleName: "pym.display-reserve"
   manageIpc: false
@@ -58,7 +58,7 @@ Panel {
     }
   }
 
-  BarIconButton {
+  Ui.BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
@@ -68,7 +68,7 @@ Panel {
     onPressed: root.toggle()
   }
 
-  KeyboardPanel {
+  Ui.KeyboardPanel {
     id: popup
     anchorItem: button
     owner: root
@@ -82,12 +82,12 @@ Panel {
       anchors.fill: parent
       spacing: Style.spacing.lg
 
-      Label {
+      Ui.Label {
         text: "Display Reserve · " + root.output
         font.bold: true
         font.pixelSize: Style.font.title
       }
-      Label {
+      Ui.Label {
         Layout.fillWidth: true
         text: "Black out and reserve unreachable edges (pixels)."
         wrapMode: Text.WordWrap
@@ -98,12 +98,12 @@ Panel {
         columns: 2
         columnSpacing: Style.spacing.lg
         rowSpacing: Style.spacing.md
-        NumberField { label: "Top"; value: root.topPixels; to: 3000; stepSize: 10; onModified: root.topPixels = value }
-        NumberField { label: "Bottom"; value: root.bottomPixels; to: 3000; stepSize: 10; onModified: root.bottomPixels = value }
-        NumberField { label: "Left"; value: root.leftPixels; to: 3000; stepSize: 10; onModified: root.leftPixels = value }
-        NumberField { label: "Right"; value: root.rightPixels; to: 3000; stepSize: 10; onModified: root.rightPixels = value }
+        Ui.NumberField { label: "Top"; value: root.topPixels; to: 3000; stepSize: 10; onModified: root.topPixels = value }
+        Ui.NumberField { label: "Bottom"; value: root.bottomPixels; to: 3000; stepSize: 10; onModified: root.bottomPixels = value }
+        Ui.NumberField { label: "Left"; value: root.leftPixels; to: 3000; stepSize: 10; onModified: root.leftPixels = value }
+        Ui.NumberField { label: "Right"; value: root.rightPixels; to: 3000; stepSize: 10; onModified: root.rightPixels = value }
       }
-      Label {
+      Ui.Label {
         Layout.fillWidth: true
         visible: root.status !== ""
         text: root.status
@@ -112,12 +112,12 @@ Panel {
       RowLayout {
         Layout.fillWidth: true
         Item { Layout.fillWidth: true }
-        Button {
+        Ui.Button {
           text: "Reset"
           bordered: true
           onClicked: { root.topPixels = 0; root.bottomPixels = 0; root.leftPixels = 0; root.rightPixels = 0 }
         }
-        Button {
+        Ui.Button {
           text: applyProcess.running ? "Applying…" : "Apply"
           enabled: !applyProcess.running
           active: true
