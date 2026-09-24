@@ -6,9 +6,17 @@
   "author": "Mateus Pym",
   "license": "MIT",
   "description": "Black out configurable display edges and keep tiled windows in the reachable area.",
-  "kinds": ["service"],
+  "kinds": ["service", "bar-widget"],
   "keepLoaded": true,
   "entryPoints": {
-    "service": "Service.qml"
+    "service": "Service.qml",
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Display Reserve",
+    "description": "Set black reserved display edges in pixels.",
+    "category": "Display",
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }

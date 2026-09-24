@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+import argparse, json, re, subprocess
+from pathlib import Path
+
+home = Path.home()
+monitors = home / ".config/hypr/monitors.lua"
+state_path = home / ".config/omarchy/display-reserve.json"
+
+def pixels(value):
+    value = int(value)
+    if value < 0: raise argparse.ArgumentTypeError("must be non-negative")
+    return value
+
+parser = argparse.ArgumentParser()
+parser.add_argument("output")
+for edge in ("top", "bottom", "left", "right"):
+    parser.add_argument("--" + edge, type=pixels, required=True)
+args = parser.parse_args()
+visual = {edge: getattr(args, edge) for edge in ("top", "bottom", "left", "right")}
+
+try: state = json.loads(state_path.read_text())
+except (FileNotFoundError, json.JSONDecodeError): state = {"outputs": {}}
+state.setdefault("outputs", {})[args.output] = visual
+
+text = monitors.read_text()
+pattern = re.compile(r'hl\.monitor\(\{ output = "' + re.escape(args.output) + r'"[^\n]*\}\)')
+match = pattern.search(text)
+if not match: raise SystemExit("No monitor rule found for " + args.output)
+custom = dict(visual)
+custom["top"] = max(0, custom["top"] - 26) # Omarchy top bar
+line = re.sub(r', reserved_area = \{ top = \d+, bottom = \d+, left = \d+, right = \d+ \}', '', match.group(0))
+line = line[:-2] + f', reserved_area = {{ top = {custom["top"]}, bottom = {custom["bottom"]}, left = {custom["left"]}, right = {custom["right"]} }} }})'
+monitors.write_text(text[:match.start()] + line + text[match.end():])
+state_path.parent.mkdir(parents=True, exist_ok=True)
+state_path.write_text(json.dumps(state, indent=2) + "\n")
+raise SystemExit(subprocess.run(["hyprctl", "reload"]).returncode)
