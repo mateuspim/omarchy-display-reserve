@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "pym.display-reserve",
+  "name": "Display Reserve",
+  "version": "0.1.0",
+  "author": "Mateus Pym",
+  "license": "MIT",
+  "description": "Black out configurable display edges and keep tiled windows in the reachable area.",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
