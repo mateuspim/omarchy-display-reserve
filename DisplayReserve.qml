@@ -65,7 +65,9 @@ Item {
       width: 440; height: content.implicitHeight + 40
       color: "#202124"; radius: 12; border.color: "#ffffff33"
       ColumnLayout {
-        id: content; anchors { fill: parent; margins: 20 }; spacing: 14
+        id: content
+        anchors { fill: parent; margins: 20 }
+        spacing: 14
         Text { text: "Display Reserve · " + root.output; color: "white"; font.pixelSize: 20; font.bold: true }
         Text { text: "Reserve black, unreachable edges in pixels"; color: "#c9c9c9" }
         GridLayout {
