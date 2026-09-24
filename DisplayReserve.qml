@@ -1,14 +1,14 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
+import Quickshell
 import Quickshell.Io
-import qs.Commons
-import qs.Ui
+import Quickshell.Wayland
 
-BarWidget {
+Item {
   id: root
-  moduleName: "pym.display-reserve"
+  property var bar: null
   property bool opened: false
-
   property string output: "DP-4"
   property int topPixels: 480
   property int bottomPixels: 0
@@ -17,116 +17,79 @@ BarWidget {
   property string status: ""
   readonly property string statePath: Quickshell.env("HOME") + "/.config/omarchy/display-reserve.json"
   readonly property string helperPath: Quickshell.env("HOME") + "/.config/omarchy/plugins/pym.display-reserve/set-reserve"
+  implicitWidth: 28
+  implicitHeight: 26
 
-  implicitWidth: button.implicitWidth
-  implicitHeight: button.implicitHeight
-
-  function open() { opened = true }
+  function open() { opened = true; stateFile.reload() }
   function close() { opened = false }
-  function toggle() { opened = !opened }
+  function toggle() { opened ? close() : open() }
   function closeForPopoutSwitch() { close() }
-
   function readState() {
     try {
       var parsed = JSON.parse(stateFile.text())
       var edge = parsed.outputs && parsed.outputs[output] ? parsed.outputs[output] : ({})
-      topPixels = Number(edge.top || 0)
-      bottomPixels = Number(edge.bottom || 0)
-      leftPixels = Number(edge.left || 0)
-      rightPixels = Number(edge.right || 0)
+      topPixels = Number(edge.top || 0); bottomPixels = Number(edge.bottom || 0)
+      leftPixels = Number(edge.left || 0); rightPixels = Number(edge.right || 0)
       status = ""
-    } catch (error) {
-      status = "Could not read saved display settings"
-    }
+    } catch (error) { status = "Could not read saved settings" }
   }
-
   function apply() {
     applyProcess.command = [helperPath, output, "--top", String(topPixels), "--bottom", String(bottomPixels), "--left", String(leftPixels), "--right", String(rightPixels)]
-    applyProcess.running = true
-    status = "Applying…"
+    status = "Applying…"; applyProcess.running = true
   }
 
-  onOpenedChanged: if (opened) stateFile.reload()
+  Rectangle { anchors.fill: parent; color: mouse.containsMouse ? "#ffffff22" : "transparent"; radius: 4 }
+  Text { anchors.centerIn: parent; text: "▣"; color: "white"; font.pixelSize: 17 }
+  MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.toggle() }
 
-  FileView {
-    id: stateFile
-    path: root.statePath
-    printErrors: false
-    onLoaded: root.readState()
-  }
-
+  FileView { id: stateFile; path: root.statePath; printErrors: false; onLoaded: root.readState() }
   Process {
     id: applyProcess
-    onExited: function(exitCode) {
-      status = exitCode === 0 ? "Applied" : "Could not apply changes"
-      if (exitCode === 0) stateFile.reload()
-    }
+    onExited: function(code) { root.status = code === 0 ? "Applied" : "Could not apply changes"; if (code === 0) stateFile.reload() }
   }
 
-  BarIconButton {
-    id: button
-    anchors.fill: parent
-    bar: root.bar
-    text: "󰍹"
-    tooltipText: "Display Reserve"
-    active: root.opened
-    onPressed: root.toggle()
-  }
+  PanelWindow {
+    id: window
+    screen: Quickshell.screens.length ? Quickshell.screens[0] : null
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    exclusionMode: ExclusionMode.Ignore
+    WlrLayershell.namespace: "pym-display-reserve-controls"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
-  KeyboardPanel {
-    id: popup
-    anchorItem: button
-    owner: root
-    bar: root.bar
-    open: root.opened
-    contentWidth: fittedContentWidth(420)
-    contentHeight: fittedContentHeight(content.implicitHeight)
-
-    ColumnLayout {
-      id: content
-      anchors.fill: parent
-      spacing: Style.spacing.lg
-
-      Label {
-        text: "Display Reserve · " + root.output
-        font.bold: true
-        font.pixelSize: Style.font.title
-      }
-      Label {
-        Layout.fillWidth: true
-        text: "Black out and reserve unreachable edges (pixels)."
-        wrapMode: Text.WordWrap
-        color: Qt.darker(Color.foreground, 1.4)
-      }
-      GridLayout {
-        Layout.fillWidth: true
-        columns: 2
-        columnSpacing: Style.spacing.lg
-        rowSpacing: Style.spacing.md
-        NumberField { label: "Top"; value: root.topPixels; to: 3000; stepSize: 10; onModified: root.topPixels = value }
-        NumberField { label: "Bottom"; value: root.bottomPixels; to: 3000; stepSize: 10; onModified: root.bottomPixels = value }
-        NumberField { label: "Left"; value: root.leftPixels; to: 3000; stepSize: 10; onModified: root.leftPixels = value }
-        NumberField { label: "Right"; value: root.rightPixels; to: 3000; stepSize: 10; onModified: root.rightPixels = value }
-      }
-      Label {
-        Layout.fillWidth: true
-        visible: root.status !== ""
-        text: root.status
-        color: root.status === "Applied" ? Color.accent : Color.foreground
-      }
-      RowLayout {
-        Layout.fillWidth: true
-        Item { Layout.fillWidth: true }
-        Button {
-          text: "Reset"
-          bordered: true
-          onClicked: { root.topPixels = 0; root.bottomPixels = 0; root.leftPixels = 0; root.rightPixels = 0 }
+    Rectangle { anchors.fill: parent; color: "#00000099"; MouseArea { anchors.fill: parent; onClicked: root.close() } }
+    Rectangle {
+      anchors.centerIn: parent
+      width: 440; height: content.implicitHeight + 40
+      color: "#202124"; radius: 12; border.color: "#ffffff33"
+      ColumnLayout {
+        id: content; anchors { fill: parent; margins: 20 }; spacing: 14
+        Text { text: "Display Reserve · " + root.output; color: "white"; font.pixelSize: 20; font.bold: true }
+        Text { text: "Reserve black, unreachable edges in pixels"; color: "#c9c9c9" }
+        GridLayout {
+          Layout.fillWidth: true; columns: 2; columnSpacing: 18; rowSpacing: 10
+          Repeater {
+            model: [{label:"Top", key:"topPixels"}, {label:"Bottom", key:"bottomPixels"}, {label:"Left", key:"leftPixels"}, {label:"Right", key:"rightPixels"}]
+            delegate: ColumnLayout {
+              required property var modelData
+              Text { text: modelData.label; color: "#dddddd" }
+              SpinBox {
+                from: 0; to: 3000; stepSize: 10; editable: true
+                value: root[modelData.key]
+                onValueModified: root[modelData.key] = value
+                Layout.preferredWidth: 180
+              }
+            }
+          }
         }
-        Button {
-          text: applyProcess.running ? "Applying…" : "Apply"
-          enabled: !applyProcess.running
-          active: true
-          onClicked: root.apply()
+        Text { text: root.status; visible: text !== ""; color: root.status === "Applied" ? "#8bd450" : "#ffcf66" }
+        RowLayout {
+          Layout.fillWidth: true
+          Item { Layout.fillWidth: true }
+          Button { text: "Close"; onClicked: root.close() }
+          Button { text: applyProcess.running ? "Applying…" : "Apply"; enabled: !applyProcess.running; onClicked: root.apply() }
         }
       }
     }
