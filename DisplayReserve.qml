@@ -9,6 +9,7 @@ Item {
   id: root
   property var bar: null
   property bool opened: false
+  property var outputs: []
   property string output: "DP-4"
   property int topPixels: 480
   property int bottomPixels: 0
@@ -37,6 +38,17 @@ Item {
     applyProcess.command = [helperPath, output, "--top", String(topPixels), "--bottom", String(bottomPixels), "--left", String(leftPixels), "--right", String(rightPixels)]
     status = "Applying…"; applyProcess.running = true
   }
+  function refreshOutputs() {
+    var names = []
+    for (var i = 0; i < Quickshell.screens.length; i++) {
+      var name = String(Quickshell.screens[i].name || "")
+      if (name) names.push(name)
+    }
+    outputs = names
+    if (names.indexOf(output) === -1 && names.length) output = names[0]
+  }
+
+  Component.onCompleted: refreshOutputs()
 
   Rectangle { anchors.fill: parent; color: mouse.containsMouse ? "#ffffff22" : "transparent"; radius: 4 }
   Text { anchors.centerIn: parent; text: "▣"; color: "white"; font.pixelSize: 17 }
@@ -68,7 +80,20 @@ Item {
         id: content
         anchors { fill: parent; margins: 20 }
         spacing: 14
-        Text { text: "Display Reserve · " + root.output; color: "white"; font.pixelSize: 20; font.bold: true }
+        RowLayout {
+          Layout.fillWidth: true
+          Text { text: "Display Reserve"; color: "white"; font.pixelSize: 20; font.bold: true }
+          Item { Layout.fillWidth: true }
+          ComboBox {
+            id: outputPicker
+            model: root.outputs
+            currentIndex: Math.max(0, root.outputs.indexOf(root.output))
+            onActivated: function(index) {
+              root.output = root.outputs[index]
+              stateFile.reload()
+            }
+          }
+        }
         Text { text: "Reserve black, unreachable edges in pixels"; color: "#c9c9c9" }
         GridLayout {
           Layout.fillWidth: true; columns: 2; columnSpacing: 18; rowSpacing: 10
