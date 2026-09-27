@@ -4,6 +4,11 @@ Blacks out display edges you can't reach (for example, the top of a tall
 rotated monitor) and keeps the Omarchy bar and tiled windows in the area you
 can reach.
 
+<p align="center">
+  <img src="docs/screenshot.png" width="360"
+       alt="A portrait monitor with its top 400 pixels blacked out; the Omarchy bar and a browser window sit just below the black edge">
+</p>
+
 ## Install
 
 ```bash
