@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import qs.Ui
 import qs.Commons
 import "." as Reserve
@@ -45,6 +46,20 @@ Panel {
   readonly property var edge: reserve.edges(output)
   readonly property var activeEdge: reserve.activeEdges(output)
   readonly property bool reserved: reserve.isReserved(output)
+  // Reservations are in logical pixels; on a scaled monitor that is not
+  // what a ruler on the panel measures, so the edges header says so.
+  readonly property real outputScale: {
+    var monitor = outputScreen ? Hyprland.monitorFor(outputScreen) : null
+    return monitor && monitor.scale > 0 ? monitor.scale : 1
+  }
+  readonly property var barEntry: reserve.edges(barOutput)
+  readonly property bool barReserved: Model.total(barEntry) > 0
+
+  // One step back for the edits that throw values away: Clear and zeroing an
+  // edge. Any other edit, or closing the panel, drops it.
+  property var undo: null
+  readonly property bool canUndo: undo !== null && undo.output === output
+  property bool showKeys: false
 
   // Keyboard cursor over the four edge rows.
   property int cursor: 0
@@ -119,6 +134,8 @@ Panel {
   onOpenedChanged: {
     if (!opened) { reserve.hold(false); reserve.flush(); return }
     pickedOutput = ""
+    undo = null
+    showKeys = false
     Qt.callLater(function() { keySurface.forceActiveFocus() })
   }
 
@@ -126,13 +143,32 @@ Panel {
     return Model.limit(side, outputScreen ? outputScreen.width : 0, outputScreen ? outputScreen.height : 0, edge[Model.opposite(side)])
   }
   function setEdge(side, pixels) {
-    reserve.setEdge(output, side, Model.clamp(Model.pixels(pixels), 0, limit(side)))
+    var value = Model.clamp(Model.pixels(pixels), 0, limit(side))
+    if (value !== edge[side]) undo = null
+    reserve.setEdge(output, side, value)
   }
-  function nudge(side, delta) {
-    reserve.setEdge(output, side, Model.nudge(edge[side], delta, limit(side)))
-  }
+  function nudge(side, delta) { setEdge(side, Model.nudge(edge[side], delta, limit(side))) }
   function toggleEnabled(name) {
-    if (reserve.isReserved(name)) reserve.setEnabled(name, !reserve.edges(name).enabled)
+    if (!reserve.isReserved(name)) return
+    undo = null
+    reserve.setEnabled(name, !reserve.edges(name).enabled)
+  }
+  function zero(side) {
+    if (!edge[side]) return
+    var saved = { output: output, entry: edge }
+    setEdge(side, 0)
+    undo = saved
+  }
+  function clearOutput() {
+    if (!reserved) return
+    var saved = { output: output, entry: edge }
+    reserve.clear(output)
+    undo = saved
+  }
+  function undoLast() {
+    if (!canUndo) return
+    reserve.update(undo.output, undo.entry)
+    undo = null
   }
   function cycleOutput(direction) {
     if (screenNames.length < 2) return
@@ -149,6 +185,8 @@ Panel {
       if (ends.indexOf(event.key) !== -1) { keySurface.forceActiveFocus(); event.accepted = true }
       return
     }
+    if (event.text === "?") { showKeys = !showKeys; event.accepted = true; return }
+    if (event.key === Qt.Key_Escape && showKeys) { showKeys = false; event.accepted = true; return }
     if (event.key === Qt.Key_Escape || event.text === "q") { root.close(); event.accepted = true; return }
     var shift = event.modifiers & Qt.ShiftModifier
     var step = shift ? 100 : (event.modifiers & Qt.ControlModifier ? 1 : 10)
@@ -157,7 +195,8 @@ Panel {
     else if (key === Qt.Key_Down || key === Qt.Key_J) cursor = Math.min(reserve.edgeNames.length - 1, cursor + 1)
     else if (key === Qt.Key_Left || key === Qt.Key_H) nudge(cursorEdge, -step)
     else if (key === Qt.Key_Right || key === Qt.Key_L) nudge(cursorEdge, step)
-    else if (key === Qt.Key_0 || key === Qt.Key_Backspace || key === Qt.Key_Delete) setEdge(cursorEdge, 0)
+    else if (key === Qt.Key_0 || key === Qt.Key_Backspace || key === Qt.Key_Delete) zero(cursorEdge)
+    else if (key === Qt.Key_U || (key === Qt.Key_Z && event.modifiers & Qt.ControlModifier)) undoLast()
     else if (key === Qt.Key_Tab) cycleOutput(shift ? -1 : 1)
     else if (key === Qt.Key_Backtab) cycleOutput(-1)
     else if (key === Qt.Key_Space || key === Qt.Key_P) toggleEnabled(output)
@@ -168,10 +207,11 @@ Panel {
   BarIconButton {
     id: button
     bar: root.bar
-    text: "󰍹"
+    // The same glyphs as the monitor buttons: a crossed-out monitor is paused.
+    text: root.barReserved && !root.barEntry.enabled ? "󰶐" : "󰍹"
     active: root.opened || root.reserve.isActive(root.barOutput)
-    tooltipText: root.barOutput + "  ·  " + Model.summary(root.reserve.edges(root.barOutput))
-      + (root.reserve.isReserved(root.barOutput) ? "\nRight click to " + (root.reserve.edges(root.barOutput).enabled ? "pause" : "resume") : "")
+    tooltipText: root.barOutput + "  ·  " + Model.summary(root.barEntry)
+      + (root.barReserved ? "\nRight click to " + (root.barEntry.enabled ? "pause" : "resume") : "")
     Accessible.role: Accessible.Button
     Accessible.name: "Display Reserve"
     onPressed: function(mouseButton) {
@@ -211,7 +251,7 @@ Panel {
           fontFamily: root.fontFamily
           iconComponent: Component {
             Text {
-              text: "󰍹"
+              text: root.reserved && !root.edge.enabled ? "󰶐" : "󰍹"
               color: root.reserve.isActive(root.output) ? Color.accent : root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
@@ -261,13 +301,44 @@ Panel {
           width: parent.width
           spacing: Style.spacing.sm
           PanelSectionHeader {
-            text: "EDGES  ·  J / K  ·  H / L"
+            text: root.outputScale === 1 ? "EDGES  ·  PIXELS"
+              : "EDGES  ·  LOGICAL PIXELS  ·  " + Number(root.outputScale.toFixed(2)) + "× SCALE"
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
           Repeater {
             model: root.reserve.edgeNames
             EdgeRow { width: parent.width }
+          }
+        }
+
+        // Shortcut sheet, toggled with ?.
+        Grid {
+          visible: root.showKeys
+          width: parent.width
+          columns: 2
+          columnSpacing: Style.spacing.lg
+          rowSpacing: Style.spacing.xs
+          Repeater {
+            model: [
+              "J / K", "Select edge",
+              "H / L", "Shrink / grow 10 px  ·  ⇧ 100  ·  Ctrl 1",
+              "0 / ⌫", "Zero edge",
+              "U / Ctrl Z", "Undo clear or zero",
+              "Space / P", "Pause monitor",
+              "Tab / ⇧ Tab", "Next / previous monitor",
+              "Drag / scroll", "Move an edge in the preview  ·  ⇧ fine",
+              "Esc / Q", "Close"
+            ]
+            Text {
+              required property string modelData
+              required property int index
+              text: modelData
+              color: index % 2 === 0 ? root.foreground : root.subtle
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: index % 2 === 0
+            }
           }
         }
 
@@ -279,7 +350,7 @@ Panel {
             anchors.right: clearButton.left
             anchors.rightMargin: Style.spacing.md
             anchors.verticalCenter: parent.verticalCenter
-            text: "⇧ ×10  ·  0 zero  ·  Space pause"
+            text: root.showKeys ? "? hide shortcuts" : "? shortcuts"
             color: root.subtle
             elide: Text.ElideRight
             font.family: root.fontFamily
@@ -288,15 +359,20 @@ Panel {
           Button {
             id: clearButton
             anchors.right: parent.right
-            text: "Clear"
-            iconText: "󰅖"
-            enabled: root.reserved
+            // Turns into Undo right after it (or a zeroed edge) discards values.
+            text: root.canUndo ? "Undo" : "Clear"
+            iconText: root.canUndo ? "󰕌" : "󰅖"
+            enabled: root.canUndo || root.reserved
             opacity: enabled ? 1 : 0.4
             bordered: true
             foreground: root.foreground
             fontFamily: root.fontFamily
-            tooltipText: "Remove every reserved edge on " + root.output
-            onClicked: { root.reserve.clear(root.output); keySurface.forceActiveFocus() }
+            tooltipText: root.canUndo ? "Restore " + Model.summary(root.undo.entry) : "Remove every reserved edge on " + root.output
+            onClicked: {
+              if (root.canUndo) root.undoLast()
+              else root.clearOutput()
+              keySurface.forceActiveFocus()
+            }
           }
         }
       }
@@ -368,16 +444,17 @@ Panel {
     id: preview
     readonly property real screenWidth: root.outputScreen ? root.outputScreen.width : 16
     readonly property real screenHeight: root.outputScreen ? root.outputScreen.height : 9
-    readonly property real scale: Math.min(width / screenWidth, (height - caption.height - Style.spacing.sm) / screenHeight)
+    readonly property real ratio: Math.min(width / screenWidth, (height - caption.height - Style.spacing.sm) / screenHeight)
     readonly property bool paused: !root.edge.enabled
     readonly property real reachWidth: screenWidth - root.edge.left - root.edge.right
     readonly property real reachHeight: screenHeight - root.edge.top - root.edge.bottom
+    readonly property Item monitorItem: monitor
 
     Rectangle {
       id: monitor
       anchors.horizontalCenter: parent.horizontalCenter
-      width: Math.round(preview.screenWidth * preview.scale)
-      height: Math.round(preview.screenHeight * preview.scale)
+      width: Math.round(preview.screenWidth * preview.ratio)
+      height: Math.round(preview.screenHeight * preview.ratio)
       color: Style.hoverFillFor(root.foreground, Color.accent)
       border.color: root.subtle
       border.width: 1
@@ -386,12 +463,12 @@ Panel {
       // Bar strip where Hyprland puts it: inside the reachable area, or at
       // the screen edge while the monitor is paused.
       Rectangle {
-        readonly property real thickness: Math.max(3, Math.round(root.barThickness * preview.scale))
+        readonly property real thickness: Math.max(3, Math.round(root.barThickness * preview.ratio))
         readonly property bool horizontal: root.barPosition === "top" || root.barPosition === "bottom"
-        x: root.barPosition === "right" ? monitor.width - root.activeEdge.right * preview.scale - thickness : root.activeEdge.left * preview.scale
-        y: root.barPosition === "bottom" ? monitor.height - root.activeEdge.bottom * preview.scale - thickness : root.activeEdge.top * preview.scale
-        width: horizontal ? monitor.width - (root.activeEdge.left + root.activeEdge.right) * preview.scale : thickness
-        height: horizontal ? thickness : monitor.height - (root.activeEdge.top + root.activeEdge.bottom) * preview.scale
+        x: root.barPosition === "right" ? monitor.width - root.activeEdge.right * preview.ratio - thickness : root.activeEdge.left * preview.ratio
+        y: root.barPosition === "bottom" ? monitor.height - root.activeEdge.bottom * preview.ratio - thickness : root.activeEdge.top * preview.ratio
+        width: horizontal ? monitor.width - (root.activeEdge.left + root.activeEdge.right) * preview.ratio : thickness
+        height: horizontal ? thickness : monitor.height - (root.activeEdge.top + root.activeEdge.bottom) * preview.ratio
         color: root.foreground
         opacity: 0.55
       }
@@ -401,7 +478,7 @@ Panel {
         Rectangle {
           required property string modelData
           readonly property bool horizontal: Model.isHorizontal(modelData)
-          readonly property real size: root.edge[modelData] * preview.scale
+          readonly property real size: root.edge[modelData] * preview.ratio
           visible: size > 0
           x: modelData === "right" ? monitor.width - size : 0
           y: modelData === "bottom" ? monitor.height - size : 0
@@ -421,61 +498,39 @@ Panel {
       }
     }
 
-    // Handles sit outside the clipped monitor so an edge at 0 stays grabbable.
+    // An edge drags from anywhere in its black strip, or from the thin
+    // handle on its boundary, which sits outside the clipped monitor so an
+    // edge at 0 stays grabbable. Handles come second, so a boundary wins
+    // where it crosses another edge's strip.
     Repeater {
       model: root.reserve.edgeNames
-      MouseArea {
+      EdgeDrag {
+        view: preview
+        readonly property real size: root.edge[modelData] * preview.ratio
+        visible: size > 0
+        x: monitor.x + (modelData === "right" ? monitor.width - size : 0)
+        y: monitor.y + (modelData === "bottom" ? monitor.height - size : 0)
+        width: horizontal ? monitor.width : size
+        height: horizontal ? size : monitor.height
+      }
+    }
+    Repeater {
+      model: root.reserve.edgeNames
+      EdgeDrag {
         id: handle
-        required property string modelData
-        required property int index
-        readonly property bool horizontal: Model.isHorizontal(modelData)
+        view: preview
         readonly property real boundary: {
-          var size = root.edge[modelData] * preview.scale
+          var size = root.edge[modelData] * preview.ratio
           if (modelData === "top") return monitor.y + size
           if (modelData === "bottom") return monitor.y + monitor.height - size
           if (modelData === "left") return monitor.x + size
           return monitor.x + monitor.width - size
         }
         readonly property int grab: Style.space(10)
-        readonly property bool lit: pressed || containsMouse || root.cursor === index
         x: horizontal ? monitor.x : boundary - grab / 2
         y: horizontal ? boundary - grab / 2 : monitor.y
         width: horizontal ? monitor.width : grab
         height: horizontal ? grab : monitor.height
-        hoverEnabled: true
-        preventStealing: true
-        cursorShape: horizontal ? Qt.SizeVerCursor : Qt.SizeHorCursor
-
-        // Drags are relative to the press, so grabbing a handle anywhere in
-        // its hit area neither moves nor snaps the edge until the pointer does.
-        property int startValue: 0
-        property point startPoint: Qt.point(0, 0)
-        property real wheelRest: 0
-
-        onPressed: function(mouse) {
-          root.reserve.hold(true)
-          root.cursor = index
-          startValue = root.edge[modelData]
-          startPoint = mapToItem(monitor, mouse.x, mouse.y)
-        }
-        onPositionChanged: function(mouse) {
-          if (!pressed) return
-          var point = mapToItem(monitor, mouse.x, mouse.y)
-          var grid = mouse.modifiers & Qt.ShiftModifier ? 1 : 10
-          root.setEdge(modelData, Model.fromDrag(modelData, startValue, point.x - startPoint.x, point.y - startPoint.y, preview.scale, grid, root.limit(modelData)))
-        }
-        onReleased: { root.reserve.hold(false); keySurface.forceActiveFocus() }
-        onCanceled: root.reserve.hold(false)
-        onWheel: function(wheel) {
-          root.cursor = index
-          wheelRest += wheel.angleDelta.y
-          var steps = Model.notches(wheelRest)
-          if (!steps) return
-          wheelRest -= steps * 120
-          // Scrolling down moves the boundary down or right.
-          var inward = modelData === "top" || modelData === "left" ? 1 : -1
-          root.nudge(modelData, -steps * 10 * inward * (wheel.modifiers & Qt.ShiftModifier ? 10 : 1))
-        }
 
         Rectangle {
           anchors.centerIn: parent
@@ -498,6 +553,51 @@ Panel {
       color: root.subtle
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
+    }
+  }
+
+  // Drags and scrolls one edge of a MonitorPreview. Drags are relative to the
+  // press, so grabbing anywhere neither moves nor snaps the edge until the
+  // pointer does, and the screen holds still until release.
+  component EdgeDrag: MouseArea {
+    id: drag
+    required property string modelData
+    required property int index
+    required property Item view
+    readonly property Item monitor: view.monitorItem
+    readonly property bool horizontal: Model.isHorizontal(modelData)
+    readonly property bool lit: pressed || containsMouse || root.cursor === index
+    hoverEnabled: true
+    preventStealing: true
+    cursorShape: horizontal ? Qt.SizeVerCursor : Qt.SizeHorCursor
+
+    property int startValue: 0
+    property point startPoint: Qt.point(0, 0)
+    property real wheelRest: 0
+
+    onPressed: function(mouse) {
+      root.reserve.hold(true)
+      root.cursor = index
+      startValue = root.edge[modelData]
+      startPoint = mapToItem(monitor, mouse.x, mouse.y)
+    }
+    onPositionChanged: function(mouse) {
+      if (!pressed) return
+      var point = mapToItem(monitor, mouse.x, mouse.y)
+      var grid = mouse.modifiers & Qt.ShiftModifier ? 1 : 10
+      root.setEdge(modelData, Model.fromDrag(modelData, startValue, point.x - startPoint.x, point.y - startPoint.y, view.ratio, grid, root.limit(modelData)))
+    }
+    onReleased: { root.reserve.hold(false); keySurface.forceActiveFocus() }
+    onCanceled: root.reserve.hold(false)
+    onWheel: function(wheel) {
+      root.cursor = index
+      wheelRest += wheel.angleDelta.y
+      var steps = Model.notches(wheelRest)
+      if (!steps) return
+      wheelRest -= steps * 120
+      // Scrolling down moves the boundary down or right.
+      var inward = modelData === "top" || modelData === "left" ? 1 : -1
+      root.nudge(modelData, -steps * 10 * inward * (wheel.modifiers & Qt.ShiftModifier ? 10 : 1))
     }
   }
 }
