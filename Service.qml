@@ -33,38 +33,41 @@ Scope {
     }
   }
 
-  component ReservedEdge: Scope {
+  // An edge at 0 has no surfaces at all, rather than two hidden ones, so an
+  // unreserved monitor costs nothing.
+  component ReservedEdge: LazyLoader {
     id: reserved
     required property var screen
     required property string side
     required property int pixels
     readonly property bool horizontal: side === "top" || side === "bottom"
+    active: pixels > 0
 
-    PanelWindow {
-      screen: reserved.screen
-      visible: reserved.pixels > 0
-      anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
-      implicitHeight: reserved.horizontal ? reserved.pixels : 0
-      implicitWidth: reserved.horizontal ? 0 : reserved.pixels
-      color: "black"
-      exclusionMode: ExclusionMode.Auto
-      WlrLayershell.namespace: "pym-display-reserve-spacer"
-      WlrLayershell.layer: WlrLayer.Bottom
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-    }
+    Scope {
+      PanelWindow {
+        screen: reserved.screen
+        anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
+        implicitHeight: reserved.horizontal ? reserved.pixels : 0
+        implicitWidth: reserved.horizontal ? 0 : reserved.pixels
+        color: "black"
+        exclusionMode: ExclusionMode.Auto
+        WlrLayershell.namespace: "pym-display-reserve-spacer"
+        WlrLayershell.layer: WlrLayer.Bottom
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      }
 
-    PanelWindow {
-      screen: reserved.screen
-      visible: reserved.pixels > 0
-      anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
-      implicitHeight: reserved.horizontal ? reserved.pixels : 0
-      implicitWidth: reserved.horizontal ? 0 : reserved.pixels
-      color: "black"
-      exclusionMode: ExclusionMode.Ignore
-      WlrLayershell.namespace: "pym-display-reserve"
-      WlrLayershell.layer: WlrLayer.Overlay
-      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-      MouseArea { anchors.fill: parent }
+      PanelWindow {
+        screen: reserved.screen
+        anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
+        implicitHeight: reserved.horizontal ? reserved.pixels : 0
+        implicitWidth: reserved.horizontal ? 0 : reserved.pixels
+        color: "black"
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.namespace: "pym-display-reserve"
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+        MouseArea { anchors.fill: parent }
+      }
     }
   }
 }
