@@ -28,13 +28,40 @@ const tests = {
     assert.equal(Model.limit("left", 1080, 1920), 972)
     assert.equal(Model.limit("top", 0, 0), 4000)
   },
-  "fromPointer measures from the dragged edge and snaps"() {
-    // 1080x1920 monitor drawn at 0.1 scale -> 108x192 preview.
-    assert.equal(Model.fromPointer("top", 50, 35, 108, 192, 0.1, 10, 1728), 350)
-    assert.equal(Model.fromPointer("bottom", 50, 172, 108, 192, 0.1, 10, 1728), 200)
-    assert.equal(Model.fromPointer("right", 104, 50, 108, 192, 0.1, 1, 972), 40)
-    assert.equal(Model.fromPointer("top", 50, -20, 108, 192, 0.1, 10, 1728), 0)
-    assert.equal(Model.fromPointer("top", 50, 190, 108, 192, 0.1, 10, 1728), 1728)
+  "opposite edges share the limit"() {
+    assert.equal(Model.limit("bottom", 1080, 1920, 1700), 28)
+    assert.equal(Model.limit("right", 1080, 1920, 2000), 0)
+  },
+  "fit trims hand-edited entries to the shared limit"() {
+    const fitted = Model.fit(Model.normalize({ top: 5000, bottom: 400, left: 100, right: 100 }), 1080, 1920)
+    assert.deepEqual({ ...fitted }, { enabled: true, top: 1728, bottom: 0, left: 100, right: 100 })
+    const kept = Model.fit(Model.normalize({ top: 400, bottom: 200 }), 1080, 1920)
+    assert.equal(kept.top, 400)
+    assert.equal(kept.bottom, 200)
+  },
+  "fromDrag moves from the press value towards the middle and snaps"() {
+    // 1080x1920 monitor drawn at 0.1 scale: one preview pixel is 10 px.
+    assert.equal(Model.fromDrag("top", 350, 0, 5, 0.1, 10, 1728), 400)
+    assert.equal(Model.fromDrag("bottom", 200, 0, 5, 0.1, 10, 1728), 150)
+    assert.equal(Model.fromDrag("left", 40, 3, 0, 0.1, 1, 972), 70)
+    assert.equal(Model.fromDrag("right", 40, 3, 0, 0.1, 1, 972), 10)
+    assert.equal(Model.fromDrag("top", 100, 0, -50, 0.1, 10, 1728), 0)
+    assert.equal(Model.fromDrag("top", 100, 0, 500, 0.1, 10, 1728), 1728)
+    assert.equal(Model.fromDrag("top", 405, 0, 0, 0, 10, 1728), 405)
+  },
+  "notches counts whole wheel steps in either direction"() {
+    assert.equal(Model.notches(119), 0)
+    assert.equal(Model.notches(240), 2)
+    assert.equal(Model.notches(-130), -1)
+  },
+  "outputKeys prefers a unique description over the connector"() {
+    const keys = Model.outputKeys([
+      { name: "DP-4", description: "Dell Inc. DELL U2720Q 1A2B3C4" },
+      { name: "DP-5", description: "" },
+      { name: "HDMI-A-1", description: "Same Panel 0" },
+      { name: "HDMI-A-2", description: "Same Panel 0" },
+    ])
+    assert.deepEqual({ ...keys }, { "DP-4": "Dell Inc. DELL U2720Q 1A2B3C4", "DP-5": "DP-5", "HDMI-A-1": "HDMI-A-1", "HDMI-A-2": "HDMI-A-2" })
   },
   "nudge clamps to the valid range"() {
     assert.equal(Model.nudge(5, -10, 100), 0)

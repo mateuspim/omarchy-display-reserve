@@ -43,6 +43,7 @@ Panel {
     return null
   }
   readonly property var edge: reserve.edges(output)
+  readonly property var activeEdge: reserve.activeEdges(output)
   readonly property bool reserved: reserve.isReserved(output)
 
   // Keyboard cursor over the four edge rows.
@@ -52,14 +53,75 @@ Panel {
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
+  // --- popout placement ------------------------------------------------------
+  //
+  // KeyboardPanel assumes the bar touches the screen edge. A reservation on
+  // the bar's side pushes the bar inwards, so `gap` grows by that amount and
+  // the card opens beside the bar, not inside the black cap. Reservations
+  // on the two edges beside the bar shift the bar along its length and can
+  // hide the card's ends, which `popupAnchor` corrects.
+  readonly property bool barHorizontal: barPosition === "top" || barPosition === "bottom"
+  // Placement follows the bar's own monitor, not the one picked in the panel.
+  readonly property var barEdge: reserve.activeEdges(barOutput)
+  readonly property int barSideReserve: barEdge[barPosition] || 0
+
+  TransformWatcher {
+    id: barWatcher
+    a: root.barWindow ? root.barWindow.contentItem : null
+    b: root
+  }
+  readonly property point barPos: {
+    barWatcher.transform  // reactive dependency, as in KeyboardPanel
+    return barWindow ? root.mapToItem(barWindow.contentItem, 0, 0) : Qt.point(0, 0)
+  }
+
+  // KeyboardPanel centers the card on its anchor in bar coordinates and only
+  // keeps it `margin` from the screen edges. This invisible stand-in for the
+  // button is offset so that the card lands centered on the button's real
+  // screen position and clear of both side caps.
+  Item {
+    id: popupAnchor
+    width: button.width
+    height: button.height
+    readonly property real offset: {
+      var before = root.barHorizontal ? root.barEdge.left : root.barEdge.top
+      var after = root.barHorizontal ? root.barEdge.right : root.barEdge.bottom
+      var along = root.barHorizontal ? root.barPos.x : root.barPos.y
+      var size = root.barHorizontal ? button.width : button.height
+      var card = root.barHorizontal ? popup.contentWidth : popup.contentHeight
+      var screen = root.barWindow && root.barWindow.screen
+        ? (root.barHorizontal ? root.barWindow.screen.width : root.barWindow.screen.height) : 0
+      if (!(screen > 0)) return 0
+      var start = along + before + size / 2 - card / 2
+      var wanted = Math.max(before + popup.margin, Math.min(start, screen - after - card - popup.margin))
+      return wanted - (along + size / 2 - card / 2)
+    }
+    x: root.barHorizontal ? offset : 0
+    y: root.barHorizontal ? 0 : offset
+  }
+
+  // The bar as KeyboardPanel sees it. When the bar is pushed inwards,
+  // KeyboardPanel would match clicks in the black cap against bar buttons at
+  // their unshifted positions, pressing a button from inside the cap. Hide
+  // the buttons from it then: a click there just closes the card.
+  property QtObject popupBar: QtObject {
+    readonly property string position: root.barPosition
+    readonly property int barSize: root.bar ? root.bar.barSize : 0
+    readonly property var activePopout: root.bar ? root.bar.activePopout : null
+    readonly property var clickTargets: root.barSideReserve > 0 || !root.bar ? [] : root.bar.clickTargets
+    function requestPopout(owner) { if (root.bar) root.bar.requestPopout(owner) }
+    function releasePopout(owner) { if (root.bar) root.bar.releasePopout(owner) }
+    function targetBelongsToWindow(target, window) { return root.bar ? root.bar.targetBelongsToWindow(target, window) : false }
+  }
+
   onOpenedChanged: {
-    if (!opened) return
+    if (!opened) { reserve.flush(); return }
     pickedOutput = ""
     Qt.callLater(function() { keySurface.forceActiveFocus() })
   }
 
   function limit(side) {
-    return Model.limit(side, outputScreen ? outputScreen.width : 0, outputScreen ? outputScreen.height : 0)
+    return Model.limit(side, outputScreen ? outputScreen.width : 0, outputScreen ? outputScreen.height : 0, edge[Model.opposite(side)])
   }
   function setEdge(side, pixels) {
     reserve.setEdge(output, side, Model.clamp(Model.pixels(pixels), 0, limit(side)))
@@ -77,6 +139,14 @@ Panel {
   }
 
   function handleKey(event) {
+    // A number field has focus and did not take this key. Typing stays in the
+    // field; only the keys that end an edit act, and moving focus back to the
+    // panel commits the typed value.
+    if (!keySurface.activeFocus) {
+      var ends = [Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab, Qt.Key_Backtab]
+      if (ends.indexOf(event.key) !== -1) { keySurface.forceActiveFocus(); event.accepted = true }
+      return
+    }
     if (event.key === Qt.Key_Escape || event.text === "q") { root.close(); event.accepted = true; return }
     var shift = event.modifiers & Qt.ShiftModifier
     var step = shift ? 100 : (event.modifiers & Qt.ControlModifier ? 1 : 10)
@@ -110,20 +180,14 @@ Panel {
 
   KeyboardPanel {
     id: popup
-    anchorItem: button
+    anchorItem: popupAnchor
     owner: root
-    bar: root.bar
+    bar: root.popupBar
     open: root.opened
     focusTarget: keySurface
     contentWidth: fittedContentWidth(Style.space(380))
     contentHeight: fittedContentHeight(content.implicitHeight)
-
-    // KeyboardPanel measures the card's distance from the screen edge,
-    // assuming the bar sits there. A reserved edge pushes the bar inwards,
-    // so widen the gap by the same amount: the card opens beside the bar
-    // instead of inside the black cap, and the click-through bar strip
-    // grows to cover the moved bar.
-    gap: Style.gapsOut + root.reserve.activeEdges(root.barOutput)[root.barPosition]
+    gap: Style.gapsOut + root.barSideReserve
 
     Item {
       id: keySurface
@@ -287,6 +351,12 @@ Panel {
       fontFamily: root.fontFamily
       onModified: function(value) { root.cursor = row.index; root.setEdge(row.modelData, value) }
     }
+    // The field being typed in is the selected edge, so the keys that end
+    // the edit and the highlight refer to the same row.
+    Connections {
+      target: field.field
+      function onActiveFocusChanged() { if (field.field.activeFocus) root.cursor = row.index }
+    }
   }
 
   // The selected monitor to scale: black reserved edges, the reachable area,
@@ -310,14 +380,15 @@ Panel {
       border.width: 1
       clip: true
 
-      // Bar strip inside the reachable area, where Hyprland will put it.
+      // Bar strip where Hyprland puts it: inside the reachable area, or at
+      // the screen edge while the monitor is paused.
       Rectangle {
         readonly property real thickness: Math.max(3, Math.round(root.barThickness * preview.scale))
         readonly property bool horizontal: root.barPosition === "top" || root.barPosition === "bottom"
-        x: root.barPosition === "right" ? monitor.width - root.edge.right * preview.scale - thickness : root.edge.left * preview.scale
-        y: root.barPosition === "bottom" ? monitor.height - root.edge.bottom * preview.scale - thickness : root.edge.top * preview.scale
-        width: horizontal ? monitor.width - (root.edge.left + root.edge.right) * preview.scale : thickness
-        height: horizontal ? thickness : monitor.height - (root.edge.top + root.edge.bottom) * preview.scale
+        x: root.barPosition === "right" ? monitor.width - root.activeEdge.right * preview.scale - thickness : root.activeEdge.left * preview.scale
+        y: root.barPosition === "bottom" ? monitor.height - root.activeEdge.bottom * preview.scale - thickness : root.activeEdge.top * preview.scale
+        width: horizontal ? monitor.width - (root.activeEdge.left + root.activeEdge.right) * preview.scale : thickness
+        height: horizontal ? thickness : monitor.height - (root.activeEdge.top + root.activeEdge.bottom) * preview.scale
         color: root.foreground
         opacity: 0.55
       }
@@ -372,18 +443,33 @@ Panel {
         preventStealing: true
         cursorShape: horizontal ? Qt.SizeVerCursor : Qt.SizeHorCursor
 
-        function drag(mouse) {
+        // Drags are relative to the press, so grabbing a handle anywhere in
+        // its hit area neither moves nor snaps the edge until the pointer does.
+        property int startValue: 0
+        property point startPoint: Qt.point(0, 0)
+        property real wheelRest: 0
+
+        onPressed: function(mouse) {
+          root.cursor = index
+          startValue = root.edge[modelData]
+          startPoint = mapToItem(monitor, mouse.x, mouse.y)
+        }
+        onPositionChanged: function(mouse) {
+          if (!pressed) return
           var point = mapToItem(monitor, mouse.x, mouse.y)
           var grid = mouse.modifiers & Qt.ShiftModifier ? 1 : 10
-          root.setEdge(modelData, Model.fromPointer(modelData, point.x, point.y, monitor.width, monitor.height, preview.scale, grid, root.limit(modelData)))
+          root.setEdge(modelData, Model.fromDrag(modelData, startValue, point.x - startPoint.x, point.y - startPoint.y, preview.scale, grid, root.limit(modelData)))
         }
-        onPressed: function(mouse) { root.cursor = index; drag(mouse) }
-        onPositionChanged: function(mouse) { if (pressed) drag(mouse) }
         onReleased: keySurface.forceActiveFocus()
         onWheel: function(wheel) {
           root.cursor = index
+          wheelRest += wheel.angleDelta.y
+          var steps = Model.notches(wheelRest)
+          if (!steps) return
+          wheelRest -= steps * 120
+          // Scrolling down moves the boundary down or right.
           var inward = modelData === "top" || modelData === "left" ? 1 : -1
-          root.nudge(modelData, (wheel.angleDelta.y < 0 ? 10 : -10) * inward * (wheel.modifiers & Qt.ShiftModifier ? 10 : 1))
+          root.nudge(modelData, -steps * 10 * inward * (wheel.modifiers & Qt.ShiftModifier ? 10 : 1))
         }
 
         Rectangle {

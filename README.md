@@ -9,8 +9,10 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
   reachable area and where the bar will sit. Drag any edge to resize it
-  (hold Shift for 1 px precision), or scroll over it.
+  (hold Shift for 1 px precision), or scroll over it (Shift: ×10).
 - **Edge rows**: a slider for quick moves and a field for exact pixels.
+  While you type in a field, keys go to the field; Enter, Esc or Tab
+  applies the value and returns to the shortcuts below.
 - **Switch**: pauses a monitor's reservation without forgetting the values.
   Right-clicking the bar icon does the same for the bar's monitor.
 - **Clear**: removes every reserved edge on the monitor.
@@ -24,6 +26,11 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 | Tab / Shift+Tab | Next or previous monitor |
 | Esc, `q` | Close |
 
+Opposite edges share a budget: together, top and bottom (or left and right)
+can reserve at most 90% of that axis, so the bar and the panel always have
+room. Values that exceed it, for example from a hand edit or after a
+monitor switches to a smaller mode, are trimmed when drawn.
+
 ## How it works
 
 Each reserved edge gets two layer-shell surfaces from the `Service.qml` service:
@@ -33,23 +40,37 @@ Each reserved edge gets two layer-shell surfaces from the `Service.qml` service:
 | `pym-display-reserve-spacer` | Bottom | Its exclusive zone reserves the edge. Hyprland lays out exclusive zones from the lowest layer up, so this claims the edge before the Top-layer bar. The bar lands just inside the reachable area, and tiled windows come after it. |
 | `pym-display-reserve` | Overlay | A black strip that blocks pointer input and covers fullscreen or floating windows that stray into the reserved area. |
 
+Fullscreen windows ignore exclusive zones, so the cap hides the part of a
+fullscreen window under a reserved edge instead of shifting it. The spacer
+still keeps tiled and maximized windows in the reachable area.
+
 Because the plugin reserves space itself, it never edits
 `~/.config/hypr/monitors.lua` or runs `hyprctl reload`.
 
-Reservations are stored in `~/.config/omarchy/display-reserve.json`, keyed by
-output name and measured in logical pixels:
+Reservations are stored in `~/.config/omarchy/display-reserve.json` in
+logical pixels, keyed by the monitor's Hyprland description (make, model
+and serial, as in `hyprctl monitors`), so they follow the monitor when a
+dock renumbers its connectors:
 
 ```json
-{ "outputs": { "DP-4": { "top": 350, "bottom": 0, "left": 0, "right": 0 } } }
+{ "outputs": { "Dell Inc. DELL U2720Q 1A2B3C4": { "top": 350, "bottom": 0, "left": 0, "right": 0 } } }
 ```
 
-A paused monitor also stores `"enabled": false`. The file is watched, so you
-can edit it by hand.
+A monitor with no description, or one that shares its description with
+another connected monitor, is keyed by its connector name (`DP-4`) instead.
+Entries keyed by connector name, as older versions wrote them, are still
+read and move to the description on the next edit.
 
-The popout gap is widened by the reserved edge on the bar's side so it opens
-beside the bar, not inside the black cap. Omarchy's own popouts (clock, audio
-and others) assume the bar sits at the screen edge, so on a reserved monitor
-they still open inside the cap.
+A paused monitor also stores `"enabled": false`. The file is watched, so you
+can edit it by hand; an edit made in the 200 ms after a change in the panel
+is overwritten by that change.
+
+The popout takes the reserved edges into account: it opens beside the bar,
+not inside the black cap, and stays clear of the caps on either side. While
+the bar is pushed inwards, clicking another bar icon with the popout open
+closes it instead of switching straight to that icon's popout. Omarchy's own
+popouts (clock, audio and others) assume the bar sits at the screen edge, so
+on a reserved monitor they still open inside the cap.
 
 ## Development
 
@@ -65,6 +86,10 @@ omarchy plugin add file:///home/pym/Projects/omarchy-display-reserve --enable --
 ```
 
 After installing, add the **Display Reserve** widget to the bar.
+
+The service is `keepLoaded`, so the black edges stay put while other plugins
+reload. The flip side is that a plugin update only reaches the service and
+its shared state after `omarchy restart shell`.
 
 ## Upgrading from 0.1
 

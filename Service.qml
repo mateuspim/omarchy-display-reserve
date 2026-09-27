@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import "." as Reserve
+import "Model.js" as Model
 
 // Every reserved edge gets two layer surfaces:
 //
@@ -21,7 +22,9 @@ Scope {
     delegate: Scope {
       id: output
       required property var modelData
-      readonly property var edge: Reserve.ReserveState.activeEdges(modelData.name)
+      // Fitted here as well as in the panel: hand edits and mode changes
+      // never go through the panel's limits.
+      readonly property var edge: Model.fit(Reserve.ReserveState.activeEdges(modelData.name), modelData.width, modelData.height)
 
       ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top }
       ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom }
