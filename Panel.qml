@@ -162,16 +162,28 @@ Panel {
           }
         }
 
-        ButtonGroup {
+        // Equal-width monitor buttons. Every button carries an icon so they
+        // share one height; the glyph says whether that monitor is reserved.
+        Row {
+          id: monitorRow
           visible: root.screenNames.length > 1
-          value: root.output
-          options: root.screenNames.map(function(name) {
-            return { value: name, label: name, icon: root.reserve.isActive(name) ? "󰍹" : "" }
-          })
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          focusable: false
-          onChanged: function(value) { root.pickedOutput = value; keySurface.forceActiveFocus() }
+          width: parent.width
+          spacing: Style.spacing.md
+          Repeater {
+            model: root.screenNames
+            Button {
+              required property string modelData
+              width: (monitorRow.width - monitorRow.spacing * (root.screenNames.length - 1)) / root.screenNames.length
+              text: modelData
+              iconText: root.reserve.isActive(modelData) ? "󰍹" : "󰶐"
+              tooltipText: modelData + "  ·  " + Model.summary(root.reserve.edges(modelData))
+              selected: modelData === root.output
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: { root.pickedOutput = modelData; keySurface.forceActiveFocus() }
+            }
+          }
         }
 
         MonitorPreview {
