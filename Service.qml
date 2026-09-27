@@ -21,7 +21,7 @@ Scope {
     delegate: Scope {
       id: output
       required property var modelData
-      readonly property var edge: Reserve.ReserveState.edges(modelData.name)
+      readonly property var edge: Reserve.ReserveState.activeEdges(modelData.name)
 
       ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top }
       ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom }

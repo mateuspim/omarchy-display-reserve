@@ -3,6 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "Model.js" as Model
 
 // Shared reservation state for the service (black caps) and every bar widget
 // instance. Edits land here first so all surfaces update in the same frame;
@@ -11,31 +12,32 @@ QtObject {
   id: root
 
   readonly property string path: Quickshell.env("HOME") + "/.config/omarchy/display-reserve.json"
-  readonly property var edgeNames: ["top", "bottom", "left", "right"]
+  readonly property var edgeNames: Model.EDGES
   property var outputs: ({})
 
-  function edges(output) {
-    var edge = outputs[output] || {}
-    var result = {}
-    for (var i = 0; i < edgeNames.length; i++)
-      result[edgeNames[i]] = Math.max(0, Math.round(Number(edge[edgeNames[i]] || 0)))
-    return result
-  }
+  // Stored values, including those of a paused output.
+  function edges(output) { return Model.normalize(outputs[output]) }
+  // What the service draws and Hyprland reserves right now.
+  function activeEdges(output) { return Model.active(outputs[output]) }
+  function isReserved(output) { return Model.total(edges(output)) > 0 }
+  function isActive(output) { return Model.total(activeEdges(output)) > 0 }
 
-  function isReserved(output) {
-    var edge = edges(output)
-    return edge.top + edge.bottom + edge.left + edge.right > 0
-  }
-
-  function setEdge(output, name, pixels) {
-    if (!output || edgeNames.indexOf(name) === -1) return
+  function update(output, change) {
+    if (!output) return
     var next = Object.assign({}, outputs)
-    var edge = edges(output)
-    edge[name] = Math.max(0, Math.round(Number(pixels) || 0))
-    next[output] = edge
+    next[output] = Object.assign(edges(output), change)
     outputs = next
     saveTimer.restart()
   }
+
+  function setEdge(output, name, pixels) {
+    if (edgeNames.indexOf(name) === -1) return
+    var change = {}
+    change[name] = Model.pixels(pixels)
+    update(output, change)
+  }
+
+  function setEnabled(output, enabled) { update(output, { enabled: enabled === true }) }
 
   function clear(output) {
     if (!outputs[output]) return

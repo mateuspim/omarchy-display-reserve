@@ -4,10 +4,25 @@ Blacks out display edges you can't reach (for example, the top of a tall
 rotated monitor) and keeps the Omarchy bar and tiled windows in the area you
 can reach.
 
-Click the monitor icon in the bar to open the panel. Pick a monitor (it
-defaults to the one the bar is on) and set how many pixels to reserve on
-each edge. Changes apply as you edit, and **Clear** removes every reservation
-for that monitor. Press Esc or `q` to close the panel.
+Click the monitor icon in the bar to open the panel. It edits the monitor the
+bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
+
+- **Preview**: the monitor drawn to scale, with the black edges, the
+  reachable area and where the bar will sit. Drag any edge to resize it
+  (hold Shift for 1 px precision), or scroll over it.
+- **Edge rows**: a slider for quick moves and a field for exact pixels.
+- **Switch**: pauses a monitor's reservation without forgetting the values.
+  Right-clicking the bar icon does the same for the bar's monitor.
+- **Clear**: removes every reserved edge on the monitor.
+
+| Key | Action |
+| --- | --- |
+| `j` / `k`, ↓ / ↑ | Select an edge |
+| `h` / `l`, ← / → | Shrink or grow it by 10 px (Shift: 100, Ctrl: 1) |
+| `0`, Backspace | Zero the selected edge |
+| Space, `p` | Pause or resume the monitor |
+| Tab / Shift+Tab | Next or previous monitor |
+| Esc, `q` | Close |
 
 ## How it works
 
@@ -28,7 +43,20 @@ output name and measured in logical pixels:
 { "outputs": { "DP-4": { "top": 350, "bottom": 0, "left": 0, "right": 0 } } }
 ```
 
-The file is watched, so you can also edit it by hand.
+A paused monitor also stores `"enabled": false`. The file is watched, so you
+can edit it by hand.
+
+The popout is shifted by the reserved edges on the bar's monitor so it opens
+beside the bar, not inside the black cap. Omarchy's own popouts (clock, audio
+and others) assume the bar sits at the screen edge, so on a reserved monitor
+they still open inside the cap.
+
+## Development
+
+```bash
+npm test                        # pure model tests
+omarchy plugin validate .
+```
 
 ## Install
 
