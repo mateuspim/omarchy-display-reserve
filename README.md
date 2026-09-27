@@ -4,6 +4,32 @@ Blacks out display edges you can't reach (for example, the top of a tall
 rotated monitor) and keeps the Omarchy bar and tiled windows in the area you
 can reach.
 
+## Install
+
+```bash
+omarchy plugin add https://github.com/mateuspim/omarchy-display-reserve.git --enable --yes
+```
+
+Then add the **Display Reserve** widget to the bar.
+
+To update, pull the new version and restart the shell. The service stays
+loaded while plugins reload, so the black edges never flicker, but that also
+means the new version only takes over after a restart:
+
+```bash
+omarchy plugin update pym.display-reserve --yes && sleep 3 && omarchy restart shell
+```
+
+The `sleep` gives the shell's plugin reload time to finish. Restarting in the
+middle of it can crash the old shell on its way out; the shell comes back on
+its own, but there's no reason to trigger it.
+
+To uninstall, run `omarchy plugin remove pym.display-reserve`. Your saved
+reservations stay in `~/.config/omarchy/display-reserve.json` until you
+delete it.
+
+## Usage
+
 Click the monitor icon in the bar to open the panel. It edits the monitor the
 bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
@@ -71,25 +97,6 @@ the bar is pushed inwards, clicking another bar icon with the popout open
 closes it instead of switching straight to that icon's popout. Omarchy's own
 popouts (clock, audio and others) assume the bar sits at the screen edge, so
 on a reserved monitor they still open inside the cap.
-
-## Development
-
-```bash
-npm test                        # pure model tests
-omarchy plugin validate .
-```
-
-## Install
-
-```bash
-omarchy plugin add file:///home/pym/Projects/omarchy-display-reserve --enable --yes
-```
-
-After installing, add the **Display Reserve** widget to the bar.
-
-The service is `keepLoaded`, so the black edges stay put while other plugins
-reload. The flip side is that a plugin update only reaches the service and
-its shared state after `omarchy restart shell`.
 
 ## Upgrading from 0.1
 
