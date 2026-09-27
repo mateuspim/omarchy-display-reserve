@@ -23,6 +23,11 @@ const tests = {
     assert.equal(Model.summary(Model.normalize({ top: 350, left: 40 })), "Top 350 px  ·  Left 40 px")
     assert.equal(Model.summary(Model.normalize({ top: 350, enabled: false })), "Paused  ·  Top 350 px")
   },
+  "same compares edges and the enabled flag"() {
+    assert.ok(Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, enabled: true })))
+    assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 20 })))
+    assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, enabled: false })))
+  },
   "limit keeps a tenth of the axis usable"() {
     assert.equal(Model.limit("top", 1080, 1920), 1728)
     assert.equal(Model.limit("left", 1080, 1920), 972)

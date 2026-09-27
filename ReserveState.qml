@@ -20,6 +20,14 @@ QtObject {
   readonly property string path: Quickshell.env("HOME") + "/.config/omarchy/display-reserve.json"
   readonly property var edgeNames: Model.EDGES
   property var outputs: ({})
+
+  // What the service draws and Hyprland reserves. It trails `outputs`: every
+  // change re-tiles each window on the monitor and moves the bar, so it is
+  // applied at most every 100 ms, and not at all while a drag holds it. The
+  // panel's preview follows `outputs` and stays live throughout.
+  property var applied: ({})
+  property bool holding: false
+  onOutputsChanged: if (!holding && !applyTimer.running) apply()
   readonly property var keys: {
     var monitors = Hyprland.monitors.values
     var pairs = []
@@ -34,23 +42,32 @@ QtObject {
   property var written: []
 
   function keyFor(output) { return keys[output] || output }
-  function entry(output) {
+  function entryIn(map, output) {
     var key = keyFor(output)
-    return outputs[key] !== undefined ? outputs[key] : outputs[output]
+    return map[key] !== undefined ? map[key] : map[output]
   }
+  function entry(output) { return entryIn(outputs, output) }
 
   // Stored values, including those of a paused output.
   function edges(output) { return Model.normalize(entry(output)) }
   // What the service draws and Hyprland reserves right now.
   function activeEdges(output) { return Model.active(entry(output)) }
+  // What is on screen now; lags activeEdges while held or throttled.
+  function appliedEdges(output) { return Model.active(entryIn(applied, output)) }
   function isReserved(output) { return Model.total(edges(output)) > 0 }
   function isActive(output) { return Model.total(activeEdges(output)) > 0 }
 
   function update(output, change) {
     if (!output) return
-    var next = Object.assign({}, outputs)
     var key = keyFor(output)
-    next[key] = Object.assign(edges(output), change)
+    var current = edges(output)
+    var changed = Object.assign(edges(output), change)
+    // Drags snap to a grid and nudges clamp at the limits, so most calls
+    // change nothing. Skip them unless an entry still has to move keys.
+    var migrating = key !== output && outputs[output] !== undefined
+    if (!migrating && Model.same(current, changed)) return
+    var next = Object.assign({}, outputs)
+    next[key] = changed
     if (key !== output) delete next[output]
     outputs = next
     saveTimer.restart()
@@ -73,6 +90,19 @@ QtObject {
     delete next[output]
     outputs = next
     saveTimer.restart()
+  }
+
+  function apply() {
+    applied = outputs
+    applyTimer.restart()
+  }
+
+  // Holds the screen at its current reservation while a drag runs; letting
+  // go applies the final value at once.
+  function hold(on) {
+    if (holding === on) return
+    holding = on
+    if (!on) apply()
   }
 
   function save() {
@@ -109,6 +139,11 @@ QtObject {
     // Atomic writes rename over the file, so it never goes missing during
     // our own saves; this only fires when the file is absent or deleted.
     onLoadFailed: if (!saveTimer.running) root.outputs = ({})
+  }
+
+  property Timer applyTimer: Timer {
+    interval: 100
+    onTriggered: if (!root.holding && root.applied !== root.outputs) root.apply()
   }
 
   property Timer saveTimer: Timer {

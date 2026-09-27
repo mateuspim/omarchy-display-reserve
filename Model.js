@@ -37,6 +37,13 @@ function active(raw) {
   return entry
 }
 
+// Whether two normalized entries reserve and enable the same.
+function same(a, b) {
+  if (a.enabled !== b.enabled) return false
+  for (var i = 0; i < EDGES.length; i++) if (a[EDGES[i]] !== b[EDGES[i]]) return false
+  return true
+}
+
 function total(entry) {
   var sum = 0
   for (var i = 0; i < EDGES.length; i++) sum += entry[EDGES[i]] || 0

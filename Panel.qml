@@ -61,8 +61,10 @@ Panel {
   // on the two edges beside the bar shift the bar along its length and can
   // hide the card's ends, which `popupAnchor` corrects.
   readonly property bool barHorizontal: barPosition === "top" || barPosition === "bottom"
-  // Placement follows the bar's own monitor, not the one picked in the panel.
-  readonly property var barEdge: reserve.activeEdges(barOutput)
+  // Placement follows the bar's own monitor, not the one picked in the panel,
+  // and the applied reservation, which is where the bar really is. It holds
+  // still during a drag, so the card cannot slide under the pointer.
+  readonly property var barEdge: reserve.appliedEdges(barOutput)
   readonly property int barSideReserve: barEdge[barPosition] || 0
 
   TransformWatcher {
@@ -115,7 +117,7 @@ Panel {
   }
 
   onOpenedChanged: {
-    if (!opened) { reserve.flush(); return }
+    if (!opened) { reserve.hold(false); reserve.flush(); return }
     pickedOutput = ""
     Qt.callLater(function() { keySurface.forceActiveFocus() })
   }
@@ -335,6 +337,7 @@ Panel {
       fillColor: row.selected ? Color.accent : root.foreground
       knobColor: fillColor
       onMoved: function(value) { root.cursor = row.index; root.setEdge(row.modelData, value) }
+      onDraggingChanged: root.reserve.hold(dragging)
       onReleased: keySurface.forceActiveFocus()
     }
     NumberField {
@@ -450,6 +453,7 @@ Panel {
         property real wheelRest: 0
 
         onPressed: function(mouse) {
+          root.reserve.hold(true)
           root.cursor = index
           startValue = root.edge[modelData]
           startPoint = mapToItem(monitor, mouse.x, mouse.y)
@@ -460,7 +464,8 @@ Panel {
           var grid = mouse.modifiers & Qt.ShiftModifier ? 1 : 10
           root.setEdge(modelData, Model.fromDrag(modelData, startValue, point.x - startPoint.x, point.y - startPoint.y, preview.scale, grid, root.limit(modelData)))
         }
-        onReleased: keySurface.forceActiveFocus()
+        onReleased: { root.reserve.hold(false); keySurface.forceActiveFocus() }
+        onCanceled: root.reserve.hold(false)
         onWheel: function(wheel) {
           root.cursor = index
           wheelRest += wheel.angleDelta.y

@@ -24,7 +24,7 @@ Scope {
       required property var modelData
       // Fitted here as well as in the panel: hand edits and mode changes
       // never go through the panel's limits.
-      readonly property var edge: Model.fit(Reserve.ReserveState.activeEdges(modelData.name), modelData.width, modelData.height)
+      readonly property var edge: Model.fit(Reserve.ReserveState.appliedEdges(modelData.name), modelData.width, modelData.height)
 
       ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top }
       ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom }
