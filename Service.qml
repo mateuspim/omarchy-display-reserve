@@ -1,90 +1,67 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
+import "." as Reserve
 
-// Reads ~/.config/omarchy/display-reserve.json and renders black, inert caps
-// over every requested edge. Hyprland reserves matching work areas separately.
-Item {
+// Every reserved edge gets two layer surfaces:
+//
+//  - a Bottom-layer spacer whose exclusive zone does the actual reserving.
+//    Hyprland arranges exclusive zones from the Background layer upwards, so
+//    the spacer claims the edge before the Top-layer Omarchy bar does and the
+//    bar lands just inside the reachable area instead of underneath the cap.
+//    Tiled windows follow, with no monitors.lua rewrite or hyprctl reload.
+//  - an Overlay-layer black cap over exactly the same strip that swallows the
+//    pointer and hides fullscreen or floating windows that stray into it.
+Scope {
   id: root
-
-  readonly property string statePath: Quickshell.env("HOME") + "/.config/omarchy/display-reserve.json"
-  property var reservations: ({})
-
-  function reloadState() {
-    try {
-      var parsed = JSON.parse(stateFile.text())
-      reservations = parsed && parsed.outputs ? parsed.outputs : ({})
-    } catch (error) {
-      console.warn("display-reserve: invalid state file: " + error)
-      reservations = ({})
-    }
-  }
-
-  FileView {
-    id: stateFile
-    path: root.statePath
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.reloadState()
-    onLoadFailed: root.reservations = ({})
-  }
-
-  // FileView's change notification is not reliable for writes performed by a
-  // sibling plugin process. Polling the tiny local state file keeps the black
-  // caps synchronized with the reservation slider without restarting the shell.
-  Timer {
-    interval: 250
-    running: true
-    repeat: true
-    onTriggered: stateFile.reload()
-  }
 
   Variants {
     model: Quickshell.screens
 
-    delegate: Item {
-      id: delegateRoot
+    delegate: Scope {
+      id: output
       required property var modelData
-      readonly property var edge: root.reservations[modelData.name] || ({})
-      readonly property int edgeTop: Math.max(0, Number(edge.top || 0))
-      readonly property int edgeBottom: Math.max(0, Number(edge.bottom || 0))
-      readonly property int edgeLeft: Math.max(0, Number(edge.left || 0))
-      readonly property int edgeRight: Math.max(0, Number(edge.right || 0))
+      readonly property var edge: Reserve.ReserveState.edges(modelData.name)
 
-      component BlackCap: PanelWindow {
-        color: "black"
-        exclusionMode: ExclusionMode.Ignore
-        WlrLayershell.namespace: "pym-display-reserve"
-        WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
-        MouseArea { anchors.fill: parent }
-      }
+      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top }
+      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom }
+      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left }
+      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right }
+    }
+  }
 
-      BlackCap {
-        screen: modelData
-        visible: delegateRoot.edgeTop > 0
-        anchors { top: true; left: true; right: true }
-        implicitHeight: delegateRoot.edgeTop
-      }
-      BlackCap {
-        screen: modelData
-        visible: delegateRoot.edgeBottom > 0
-        anchors { bottom: true; left: true; right: true }
-        implicitHeight: delegateRoot.edgeBottom
-      }
-      BlackCap {
-        screen: modelData
-        visible: delegateRoot.edgeLeft > 0
-        anchors { top: true; bottom: true; left: true }
-        implicitWidth: delegateRoot.edgeLeft
-      }
-      BlackCap {
-        screen: modelData
-        visible: delegateRoot.edgeRight > 0
-        anchors { top: true; bottom: true; right: true }
-        implicitWidth: delegateRoot.edgeRight
-      }
+  component ReservedEdge: Scope {
+    id: reserved
+    required property var screen
+    required property string side
+    required property int pixels
+    readonly property bool horizontal: side === "top" || side === "bottom"
+
+    PanelWindow {
+      screen: reserved.screen
+      visible: reserved.pixels > 0
+      anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
+      implicitHeight: reserved.horizontal ? reserved.pixels : 0
+      implicitWidth: reserved.horizontal ? 0 : reserved.pixels
+      color: "black"
+      exclusionMode: ExclusionMode.Auto
+      WlrLayershell.namespace: "pym-display-reserve-spacer"
+      WlrLayershell.layer: WlrLayer.Bottom
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    }
+
+    PanelWindow {
+      screen: reserved.screen
+      visible: reserved.pixels > 0
+      anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
+      implicitHeight: reserved.horizontal ? reserved.pixels : 0
+      implicitWidth: reserved.horizontal ? 0 : reserved.pixels
+      color: "black"
+      exclusionMode: ExclusionMode.Ignore
+      WlrLayershell.namespace: "pym-display-reserve"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      MouseArea { anchors.fill: parent }
     }
   }
 }

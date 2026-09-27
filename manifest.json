@@ -2,21 +2,23 @@
   "schemaVersion": 1,
   "id": "pym.display-reserve",
   "name": "Display Reserve",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Mateus Pym",
   "license": "MIT",
-  "description": "Black out configurable display edges and keep tiled windows in the reachable area.",
+  "description": "Black out unreachable display edges and keep the bar and tiled windows in the reachable area.",
   "kinds": ["service", "bar-widget"],
   "keepLoaded": true,
   "entryPoints": {
     "service": "Service.qml",
-    "barWidget": "DisplayReserve.qml"
+    "barWidget": "Panel.qml"
   },
   "barWidget": {
     "displayName": "Display Reserve",
-    "description": "Set black reserved display edges in pixels.",
+    "description": "Reserve black, unreachable display edges in pixels.",
     "category": "Display",
     "allowMultiple": false,
-    "defaultSection": "right"
+    "defaultSection": "right",
+    "defaults": {},
+    "schema": []
   }
 }
