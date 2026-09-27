@@ -46,7 +46,7 @@ output name and measured in logical pixels:
 A paused monitor also stores `"enabled": false`. The file is watched, so you
 can edit it by hand.
 
-The popout is shifted by the reserved edges on the bar's monitor so it opens
+The popout gap is widened by the reserved edge on the bar's side so it opens
 beside the bar, not inside the black cap. Omarchy's own popouts (clock, audio
 and others) assume the bar sits at the screen edge, so on a reserved monitor
 they still open inside the cap.

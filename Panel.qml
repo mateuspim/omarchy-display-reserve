@@ -118,12 +118,12 @@ Panel {
     contentWidth: fittedContentWidth(Style.space(380))
     contentHeight: fittedContentHeight(content.implicitHeight)
 
-    // KeyboardPanel lays its card out from the screen edge, assuming the
-    // bar sits there. Reserved edges push the bar inwards, so shrink the
-    // popup surface by the same amount to keep the card next to the bar
-    // and the bar strip click-through, instead of inside the black cap.
-    readonly property var barEdge: root.reserve.activeEdges(root.barOutput)
-    margins { top: barEdge.top; bottom: barEdge.bottom; left: barEdge.left; right: barEdge.right }
+    // KeyboardPanel measures the card's distance from the screen edge,
+    // assuming the bar sits there. A reserved edge pushes the bar inwards,
+    // so widen the gap by the same amount: the card opens beside the bar
+    // instead of inside the black cap, and the click-through bar strip
+    // grows to cover the moved bar.
+    gap: Style.gapsOut + root.reserve.activeEdges(root.barOutput)[root.barPosition]
 
     Item {
       id: keySurface
@@ -140,7 +140,6 @@ Panel {
         PanelHero {
           width: parent.width
           title: "Display Reserve"
-          detail: root.output
           meta: Model.summary(root.edge)
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -202,7 +201,7 @@ Panel {
             anchors.right: clearButton.left
             anchors.rightMargin: Style.spacing.md
             anchors.verticalCenter: parent.verticalCenter
-            text: "⇧ ×10  ·  0 zero  ·  Space pause  ·  Tab monitor"
+            text: "⇧ ×10  ·  0 zero  ·  Space pause"
             color: root.subtle
             elide: Text.ElideRight
             font.family: root.fontFamily
