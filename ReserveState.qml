@@ -120,7 +120,13 @@ QtObject {
     // A reload that races a pending save would roll the UI back a step.
     if (saveTimer.running) return
     var text = file.text()
+    // A writer that truncates first leaves the file empty for a moment; the
+    // full text follows with its own change event.
+    if (text.trim() === "") return
     if (written.indexOf(text) !== -1) return
+    // Someone else wrote the file, so our older texts are no longer echoes;
+    // restoring one of them by hand is an edit like any other.
+    written = []
     try {
       var parsed = JSON.parse(text)
       outputs = parsed && parsed.outputs ? parsed.outputs : ({})
@@ -138,7 +144,10 @@ QtObject {
     onLoaded: root.parse()
     // Atomic writes rename over the file, so it never goes missing during
     // our own saves; this only fires when the file is absent or deleted.
-    onLoadFailed: if (!saveTimer.running) root.outputs = ({})
+    onLoadFailed: if (!saveTimer.running) {
+      root.written = []
+      root.outputs = ({})
+    }
   }
 
   property Timer applyTimer: Timer {
