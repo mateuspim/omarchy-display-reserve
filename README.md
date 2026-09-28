@@ -104,9 +104,7 @@ connectors:
 
 A monitor with no description, or one that shares its description with
 another connected monitor, is keyed by its connector name (`DP-4`) instead.
-Entries that older versions keyed by connector name are still read, and move
-to the description on the next edit. A paused monitor also stores
-`"enabled": false`.
+A paused monitor also stores `"enabled": false`.
 
 The file is watched, so hand edits apply right away. An edit made within
 200 ms of a change in the panel is overwritten by that change.
@@ -116,8 +114,3 @@ The file is watched, so hand edits apply right away. An edit made within
 - Omarchy's own popouts (clock, audio and others) assume the bar sits at the
   screen edge, so on a monitor with a reserved edge on the bar's side they
   open inside the black strip. This plugin's own panel opens beside the bar.
-
-## Upgrading from 0.1
-
-Version 0.1 wrote `reserved_area = { … }` into `monitors.lua`. Remove it (or
-set it to zeros), or the edge is reserved twice.
