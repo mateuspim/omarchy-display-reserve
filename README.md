@@ -41,6 +41,11 @@ delete it.
 Click the monitor icon in the bar to open the panel. It edits the monitor the
 bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
+<p align="center">
+  <img src="docs/panel.png" width="360"
+       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with its top 400 pixels black, and a slider and pixel field for each edge">
+</p>
+
 - **Preview**: the monitor drawn to scale, with the black edges, the
   reachable area and where the bar will sit. Drag an edge to resize it
   (hold Shift for 1 px precision), or scroll over it (Shift: ×10).
