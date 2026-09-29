@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Display Reserve",
-    "description": "Reserve black, unreachable display edges in pixels.",
+    "description": "Black out unreachable display edges, set in pixels.",
     "category": "Display",
     "allowMultiple": false,
     "defaultSection": "right",

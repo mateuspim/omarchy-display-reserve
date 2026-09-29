@@ -327,7 +327,8 @@ Panel {
               "U / Ctrl Z", "Undo clear or zero",
               "Space / P", "Pause monitor",
               "Tab / ⇧ Tab", "Next / previous monitor",
-              "Drag / scroll", "Move an edge in the preview  ·  ⇧ fine",
+              "Drag", "Move an edge in the preview  ·  ⇧ 1 px",
+              "Scroll", "Move an edge 10 px  ·  ⇧ 100",
               "Esc / Q", "Close"
             ]
             Text {

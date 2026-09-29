@@ -69,7 +69,7 @@ next to the edges, since a ruler on the screen measures something else.
 | Space, `p` | Pause or resume the monitor |
 | Tab / Shift+Tab | Next or previous monitor |
 | `?` | Show or hide these shortcuts in the panel |
-| Esc, `q` | Close |
+| Esc, `q` | Close (Esc closes the shortcut sheet first) |
 
 Opposite edges share a budget: together, top and bottom (or left and right)
 can reserve at most 90% of the screen, so the bar and the panel always have
@@ -99,12 +99,12 @@ by the monitor's Hyprland description (make, model and serial, as in
 connectors:
 
 ```json
-{ "outputs": { "Dell Inc. DELL U2720Q 1A2B3C4": { "top": 350, "bottom": 0, "left": 0, "right": 0 } } }
+{ "outputs": { "Dell Inc. DELL U2720Q 1A2B3C4": { "enabled": true, "top": 350, "bottom": 0, "left": 0, "right": 0 } } }
 ```
 
 A monitor with no description, or one that shares its description with
 another connected monitor, is keyed by its connector name (`DP-4`) instead.
-A paused monitor also stores `"enabled": false`.
+Each entry also has `enabled`, which is `false` while the monitor is paused.
 
 The file is watched, so hand edits apply right away. An edit made within
 200 ms of a change in the panel is overwritten by that change.
