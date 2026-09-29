@@ -48,7 +48,7 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
   reachable area and where the bar will sit. Drag an edge to resize it
-  (hold Shift for 1 px precision), or scroll over it (Shift: ×10).
+  (hold Ctrl for 1 px precision), or scroll over it (Shift: ×10).
 - **Edge rows**: a slider for quick moves and a field for exact pixels.
   While you type in a field, keys go to the field; Enter, Esc or Tab
   applies the value and returns to the shortcuts below.

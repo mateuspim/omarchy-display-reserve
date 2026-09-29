@@ -339,7 +339,7 @@ Panel {
               "U / Ctrl Z", "Undo clear or zero",
               "Space / P", "Pause monitor",
               "Tab / ⇧ Tab", "Next / previous monitor",
-              "Drag", "Move an edge in the preview  ·  ⇧ 1 px",
+              "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
               "Scroll", "Move an edge 10 px  ·  ⇧ 100",
               "Esc / Q", "Close"
             ]
@@ -597,7 +597,7 @@ Panel {
     onPositionChanged: function(mouse) {
       if (!pressed) return
       var point = mapToItem(monitor, mouse.x, mouse.y)
-      var grid = mouse.modifiers & Qt.ShiftModifier ? 1 : 10
+      var grid = mouse.modifiers & Qt.ControlModifier ? 1 : 10
       root.setEdge(modelData, Model.fromDrag(modelData, startValue, point.x - startPoint.x, point.y - startPoint.y, view.ratio, grid, root.limit(modelData)))
     }
     onReleased: { root.reserve.hold(false); keySurface.forceActiveFocus() }
