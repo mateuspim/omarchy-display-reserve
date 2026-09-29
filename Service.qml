@@ -40,34 +40,41 @@ Scope {
     required property var screen
     required property string side
     required property int pixels
-    readonly property bool horizontal: side === "top" || side === "bottom"
     active: pixels > 0
 
     Scope {
-      PanelWindow {
+      Strip {
         screen: reserved.screen
-        anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
-        implicitHeight: reserved.horizontal ? reserved.pixels : 0
-        implicitWidth: reserved.horizontal ? 0 : reserved.pixels
-        color: "black"
+        side: reserved.side
+        pixels: reserved.pixels
         exclusionMode: ExclusionMode.Auto
         WlrLayershell.namespace: "pym-display-reserve-spacer"
         WlrLayershell.layer: WlrLayer.Bottom
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
       }
 
-      PanelWindow {
+      Strip {
         screen: reserved.screen
-        anchors { top: reserved.side !== "bottom"; bottom: reserved.side !== "top"; left: reserved.side !== "right"; right: reserved.side !== "left" }
-        implicitHeight: reserved.horizontal ? reserved.pixels : 0
-        implicitWidth: reserved.horizontal ? 0 : reserved.pixels
-        color: "black"
+        side: reserved.side
+        pixels: reserved.pixels
         exclusionMode: ExclusionMode.Ignore
         WlrLayershell.namespace: "pym-display-reserve"
         WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
         MouseArea { anchors.fill: parent }
       }
     }
+  }
+
+  // A black layer surface covering `pixels` along one edge of its screen.
+  // The spacer and the cap share it, so they always cover the same strip.
+  component Strip: PanelWindow {
+    id: strip
+    required property string side
+    required property int pixels
+    readonly property bool horizontal: Model.isHorizontal(side)
+    anchors { top: strip.side !== "bottom"; bottom: strip.side !== "top"; left: strip.side !== "right"; right: strip.side !== "left" }
+    implicitHeight: horizontal ? pixels : 0
+    implicitWidth: horizontal ? 0 : pixels
+    color: "black"
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
   }
 }

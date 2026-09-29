@@ -43,8 +43,11 @@ Panel {
       if (Quickshell.screens[i].name === output) return Quickshell.screens[i]
     return null
   }
-  readonly property var edge: reserve.edges(output)
-  readonly property var activeEdge: reserve.activeEdges(output)
+  // Fitted to the monitor like the service draws them: hand edits and mode
+  // changes never went through the panel's limits, and edits must start
+  // from what is on screen.
+  readonly property var edge: fitted(reserve.edges(output), outputScreen)
+  readonly property var activeEdge: fitted(reserve.activeEdges(output), outputScreen)
   readonly property bool reserved: reserve.isReserved(output)
   // Reservations are in logical pixels; on a scaled monitor that is not
   // what a ruler on the panel measures, so the edges header says so.
@@ -79,7 +82,7 @@ Panel {
   // Placement follows the bar's own monitor, not the one picked in the panel,
   // and the applied reservation, which is where the bar really is. It holds
   // still during a drag, so the card cannot slide under the pointer.
-  readonly property var barEdge: reserve.appliedEdges(barOutput)
+  readonly property var barEdge: fitted(reserve.appliedEdges(barOutput), barWindow ? barWindow.screen : null)
   readonly property int barSideReserve: barEdge[barPosition] || 0
 
   TransformWatcher {
@@ -117,15 +120,19 @@ Panel {
     y: root.barHorizontal ? 0 : offset
   }
 
-  // The bar as KeyboardPanel sees it. When the bar is pushed inwards,
-  // KeyboardPanel would match clicks in the black cap against bar buttons at
-  // their unshifted positions, pressing a button from inside the cap. Hide
-  // the buttons from it then: a click there just closes the card.
+  // The bar as KeyboardPanel sees it. KeyboardPanel matches clicks against
+  // bar buttons as if the bar started at the screen's top-left corner (or
+  // its bottom or right edge for such bars). A reservation on the bar's side
+  // pushes the bar inwards, and one on its leading edge (left of a
+  // horizontal bar, top of a vertical one) shifts it along; either way a
+  // click would press the wrong button, or one from inside the cap. Hide
+  // the buttons from it then: a click on the bar just closes the card.
+  readonly property bool barShifted: barSideReserve > 0 || (barHorizontal ? barEdge.left : barEdge.top) > 0
   property QtObject popupBar: QtObject {
     readonly property string position: root.barPosition
     readonly property int barSize: root.bar ? root.bar.barSize : 0
     readonly property var activePopout: root.bar ? root.bar.activePopout : null
-    readonly property var clickTargets: root.barSideReserve > 0 || !root.bar ? [] : root.bar.clickTargets
+    readonly property var clickTargets: root.barShifted || !root.bar ? [] : root.bar.clickTargets
     function requestPopout(owner) { if (root.bar) root.bar.requestPopout(owner) }
     function releasePopout(owner) { if (root.bar) root.bar.releasePopout(owner) }
     function targetBelongsToWindow(target, window) { return root.bar ? root.bar.targetBelongsToWindow(target, window) : false }
@@ -136,9 +143,14 @@ Panel {
     pickedOutput = ""
     undo = null
     showKeys = false
-    Qt.callLater(function() { keySurface.forceActiveFocus() })
   }
+  // A bar rebuild or hotplug can destroy the widget mid-drag, and nothing
+  // else would release the hold.
+  Component.onDestruction: if (opened) { reserve.hold(false); reserve.flush() }
 
+  function fitted(entry, screen) {
+    return screen ? Model.fit(entry, screen.width, screen.height) : entry
+  }
   function limit(side) {
     return Model.limit(side, outputScreen ? outputScreen.width : 0, outputScreen ? outputScreen.height : 0, edge[Model.opposite(side)])
   }
@@ -155,13 +167,13 @@ Panel {
   }
   function zero(side) {
     if (!edge[side]) return
-    var saved = { output: output, entry: edge }
+    var saved = { output: output, entry: reserve.edges(output) }
     setEdge(side, 0)
     undo = saved
   }
   function clearOutput() {
     if (!reserved) return
-    var saved = { output: output, entry: edge }
+    var saved = { output: output, entry: reserve.edges(output) }
     reserve.clear(output)
     undo = saved
   }
@@ -269,7 +281,7 @@ Panel {
         }
 
         // Equal-width monitor buttons. Every button carries an icon so they
-        // share one height; the glyph says whether that monitor is reserved.
+        // share one height; as on the bar, a crossed-out monitor is paused.
         Row {
           id: monitorRow
           visible: root.screenNames.length > 1
@@ -281,7 +293,7 @@ Panel {
               required property string modelData
               width: (monitorRow.width - monitorRow.spacing * (root.screenNames.length - 1)) / root.screenNames.length
               text: modelData
-              iconText: root.reserve.isActive(modelData) ? "󰍹" : "󰶐"
+              iconText: root.reserve.isReserved(modelData) && !root.reserve.edges(modelData).enabled ? "󰶐" : "󰍹"
               tooltipText: modelData + "  ·  " + Model.summary(root.reserve.edges(modelData))
               selected: modelData === root.output
               bordered: true
@@ -465,7 +477,7 @@ Panel {
       // the screen edge while the monitor is paused.
       Rectangle {
         readonly property real thickness: Math.max(3, Math.round(root.barThickness * preview.ratio))
-        readonly property bool horizontal: root.barPosition === "top" || root.barPosition === "bottom"
+        readonly property bool horizontal: root.barHorizontal
         x: root.barPosition === "right" ? monitor.width - root.activeEdge.right * preview.ratio - thickness : root.activeEdge.left * preview.ratio
         y: root.barPosition === "bottom" ? monitor.height - root.activeEdge.bottom * preview.ratio - thickness : root.activeEdge.top * preview.ratio
         width: horizontal ? monitor.width - (root.activeEdge.left + root.activeEdge.right) * preview.ratio : thickness

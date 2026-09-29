@@ -36,10 +36,17 @@ QtObject {
     return Model.outputKeys(pairs)
   }
 
-  // Texts this instance wrote recently. The watcher reports our own writes
-  // too, sometimes late and out of order; a reload that matches one of them
-  // is an echo, not a hand edit, and must not roll the state back.
+  // Texts this instance wrote in the last few seconds, as { text, time }.
+  // The watcher reports our own writes too, sometimes late and out of order;
+  // a reload that matches one of them is an echo, not a hand edit, and must
+  // not roll the state back. Older texts have long reached the disk, so a
+  // file that matches one of them was restored by hand.
   property var written: []
+  readonly property int echoWindow: 3000
+  function recentWrites() {
+    var since = Date.now() - echoWindow
+    return written.filter(function(write) { return write.time >= since })
+  }
 
   function keyFor(output) { return keys[output] || output }
   function entryIn(map, output) {
@@ -61,7 +68,7 @@ QtObject {
     if (!output) return
     var key = keyFor(output)
     var current = edges(output)
-    var changed = Object.assign(edges(output), change)
+    var changed = Object.assign({}, current, change)
     // Drags snap to a grid and nudges clamp at the limits, so most calls
     // change nothing. Skip them unless an entry still has to move keys.
     var migrating = key !== output && outputs[output] !== undefined
@@ -108,7 +115,7 @@ QtObject {
   function save() {
     saveTimer.stop()
     var text = JSON.stringify({ outputs: outputs }, null, 2) + "\n"
-    written = written.concat([text]).slice(-8)
+    written = recentWrites().concat([{ text: text, time: Date.now() }])
     file.setText(text)
   }
 
@@ -123,7 +130,7 @@ QtObject {
     // A writer that truncates first leaves the file empty for a moment; the
     // full text follows with its own change event.
     if (text.trim() === "") return
-    if (written.indexOf(text) !== -1) return
+    if (recentWrites().some(function(write) { return write.text === text })) return
     // Someone else wrote the file, so our older texts are no longer echoes;
     // restoring one of them by hand is an edit like any other.
     written = []
