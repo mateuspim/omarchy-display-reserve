@@ -106,6 +106,26 @@ const tests = {
     assert.equal(Model.shortSummary(Model.normalize({ top: 460, bottom: 490, fill: "logo" })), "Top 460  ·  Bottom 490")
     assert.equal(Model.shortSummary(Model.normalize({ top: 460, left: 40, right: 40, enabled: false })), "Paused  ·  T 460  ·  L 40  ·  R 40")
   },
+  "fullscreenChanges fits fullscreen windows on reserved monitors only"() {
+    const clients = [
+      { address: "0xa", monitor: 1, fullscreen: 2, fullscreenClient: 2 },
+      { address: "0xb", monitor: 0, fullscreen: 2, fullscreenClient: 2 },
+      { address: "0xc", monitor: 1, fullscreen: 1, fullscreenClient: 0 }
+    ]
+    const result = Model.fullscreenChanges(clients, [1], [])
+    assert.deepEqual([...result.changes].map(c => ({ ...c })), [{ address: "0xa", internal: 1, client: 2 }])
+    assert.deepEqual([...result.fitted], ["0xa"])
+  },
+  "fullscreenChanges keeps fitted windows and lets them leave fullscreen"() {
+    const kept = Model.fullscreenChanges([{ address: "0xa", monitor: 1, fullscreen: 1, fullscreenClient: 2 }], [1], ["0xa"])
+    assert.equal(kept.changes.length, 0)
+    assert.deepEqual([...kept.fitted], ["0xa"])
+    const again = Model.fullscreenChanges([{ address: "0xa", monitor: 1, fullscreen: 2, fullscreenClient: 2 }], [1], ["0xa"])
+    assert.deepEqual([...again.changes].map(c => ({ ...c })), [{ address: "0xa", internal: 0, client: 0 }])
+    assert.deepEqual([...again.fitted], [])
+    const left = Model.fullscreenChanges([{ address: "0xa", monitor: 1, fullscreen: 0, fullscreenClient: 0 }], [1], ["0xa"])
+    assert.deepEqual([...left.fitted], [])
+  },
   "untilNextMinute counts down to the minute"() {
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 59, 900)), 100)
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 0, 0)), 60000)

@@ -262,6 +262,28 @@ function imageOffset(side, pixels, width, height) {
   }
 }
 
+// Fullscreen windows on a monitor with a reserve, from `hyprctl -j clients`,
+// are fitted to the reachable area: maximized for Hyprland, which keeps
+// them inside the reserve, and still fullscreen for the app (state 1 2),
+// the way a browser's fullscreen fills only its window. `fitted` lists the
+// windows fitted so far: one that goes fullscreen again leaves fullscreen
+// instead of being fitted again. That covers Super+F on it, and the app
+// leaving fullscreen too, which Hyprland passes through full fullscreen.
+function fullscreenChanges(clients, reservedMonitors, fitted) {
+  var changes = [], next = []
+  for (var i = 0; i < clients.length; i++) {
+    var client = clients[i]
+    var wasFitted = fitted.indexOf(client.address) >= 0
+    if (client.fullscreen === 2 && reservedMonitors.indexOf(client.monitor) >= 0) {
+      changes.push({ address: client.address, internal: wasFitted ? 0 : 1, client: wasFitted ? 0 : 2 })
+      if (!wasFitted) next.push(client.address)
+    } else if (wasFitted && client.fullscreen === 1 && client.fullscreenClient === 2) {
+      next.push(client.address)
+    }
+  }
+  return { changes: changes, fitted: next }
+}
+
 // Never let a typo swallow the whole monitor: a tenth of each axis stays
 // usable, so the bar and the panel remain reachable. Opposite edges share
 // that budget, so `oppositePixels` comes off the limit.

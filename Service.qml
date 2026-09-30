@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import Quickshell.Wayland
 import "." as Reserve
 import "Model.js" as Model
@@ -37,6 +38,42 @@ Scope {
       ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.fillFor("bottom") }
       ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.fillFor("left") }
       ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.fillFor("right") }
+    }
+  }
+
+  // Fullscreen on a monitor with a reserve fills the reachable area rather
+  // than the whole monitor, where the cap would crop it (Model.fullscreenChanges).
+  property var fitted: []
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) { if (event.name === "fullscreen") fullscreenCheck.request() }
+  }
+
+  Process {
+    id: fullscreenCheck
+    // An event while a check runs asks for another one when it finishes.
+    property bool again: false
+    function request() { if (running) again = true; else running = true }
+    command: ["hyprctl", "-j", "clients"]
+    onExited: if (again) { again = false; running = true }
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var clients = []
+        try { clients = JSON.parse(text) } catch (e) { return }
+        var reserved = Hyprland.monitors.values
+          .filter(function(monitor) { return Reserve.ReserveState.isActive(monitor.name) })
+          .map(function(monitor) { return monitor.id })
+        var result = Model.fullscreenChanges(clients, reserved, root.fitted)
+        root.fitted = result.fitted
+        result.changes.forEach(function(change) {
+          Hyprland.dispatch(Hyprland.usingLua
+            ? 'hl.dsp.window.fullscreen_state({ window = "address:' + change.address + '", internal = ' + change.internal + ', client = ' + change.client + ' })'
+            // The old dispatcher takes no window: it acts on the focused one,
+            // which is almost always the one that just went fullscreen.
+            : "fullscreenstate " + change.internal + " " + change.client)
+        })
+      }
     }
   }
 

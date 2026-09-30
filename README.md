@@ -64,8 +64,9 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
   whenever either is reserved. The monitor's other edges stay black. The digits are always upright
   and as large as the edge allows: one line on a wide edge, hours over
   minutes on a tall one. Every fill except Black keeps something lit in the
-  same place all day, which can burn into an OLED panel. The clock moves a
-  few pixels every 5 minutes to spread the wear.
+  same place all day, which can burn into an OLED panel. The clock and the
+  logo move a few pixels every 5 minutes to spread the wear. While the
+  monitor shows a fullscreen window, every edge goes black whatever the fill.
 - **Switch**: pauses a monitor's reservation without forgetting the values.
   Right-clicking the bar icon does the same for the bar's monitor.
 - **Clear**: removes every reserved edge on the monitor. Right after a
@@ -101,8 +102,13 @@ Each reserved edge gets two layer-shell surfaces:
 | `pym-display-reserve-spacer` | Bottom | Reserves the edge with an exclusive zone. Hyprland lays out exclusive zones from the lowest layer up, so this claims the edge before the Top-layer bar, which lands just inside the reachable area with tiled windows after it. |
 | `pym-display-reserve` | Overlay | A strip in the monitor's fill that blocks the pointer and covers anything that strays into the reserved area. |
 
-Fullscreen windows ignore exclusive zones, so the strip hides the part of a
-fullscreen window under a reserved edge instead of shifting it.
+Fullscreen windows ignore exclusive zones, so on a monitor with a reserve
+the plugin fits them to the reachable area instead: when a window goes
+fullscreen there, it switches it to Hyprland's fullscreen state `1 2`,
+maximized for Hyprland (which keeps it inside the reserve) and still
+fullscreen for the app, the way a browser's fullscreen fills only its
+window. Leaving fullscreen works as usual (`Super+F`, Esc, the app's own
+button). A game in fullscreen gets the reachable area's size too.
 
 The wallpaper and dimmed fills draw the image that
 `~/.local/state/omarchy/current/background` points to, scaled and cropped
