@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Display Reserve",
-    "description": "Black out unreachable display edges, set in pixels, or fill them with a theme color, the wallpaper or the Omarchy logo.",
+    "description": "Black out unreachable display edges, set in pixels, or fill them with a theme color, the wallpaper, the Omarchy logo or a clock.",
     "category": "Display",
     "allowMultiple": false,
     "defaultSection": "right",

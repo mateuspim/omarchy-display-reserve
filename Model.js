@@ -2,9 +2,13 @@
 
 var EDGES = ["top", "bottom", "left", "right"]
 // What a reserved edge shows. Black is the default and the only one that is
-// safe on OLED panels; the others keep a static image in the same place.
-var FILLS = ["black", "theme", "logo", "wallpaper", "dim"]
-var FILL_NAMES = { black: "Black", theme: "Theme", wallpaper: "Wallpaper", dim: "Dimmed", logo: "Logo" }
+// safe on OLED panels; the others keep a static image in the same place
+// (the clock shifts a little now and then, but its digits stay lit).
+var FILLS = ["black", "theme", "logo", "wallpaper", "dim", "clock"]
+var FILL_NAMES = { black: "Black", theme: "Theme", wallpaper: "Wallpaper", dim: "Dimmed", logo: "Logo", clock: "Clock" }
+// Where the clock fill goes: the largest reserved edge, or the larger of
+// the top and bottom edges.
+var CLOCK_EDGES = ["largest", "topBottom"]
 
 function clamp(value, low, high) {
   return Math.max(low, Math.min(high, value))
@@ -29,7 +33,11 @@ function title(side) {
 // Stored entries may be partial or hand-edited; everything reads through this.
 function normalize(raw) {
   var entry = raw || {}
-  var result = { enabled: entry.enabled !== false, fill: FILLS.indexOf(entry.fill) !== -1 ? entry.fill : "black" }
+  var result = {
+    enabled: entry.enabled !== false,
+    fill: FILLS.indexOf(entry.fill) !== -1 ? entry.fill : "black",
+    clockEdge: CLOCK_EDGES.indexOf(entry.clockEdge) !== -1 ? entry.clockEdge : "largest"
+  }
   for (var i = 0; i < EDGES.length; i++) result[EDGES[i]] = pixels(entry[EDGES[i]])
   return result
 }
@@ -43,7 +51,7 @@ function active(raw) {
 
 // Whether two normalized entries reserve, enable and fill the same.
 function same(a, b) {
-  if (a.enabled !== b.enabled || a.fill !== b.fill) return false
+  if (a.enabled !== b.enabled || a.fill !== b.fill || a.clockEdge !== b.clockEdge) return false
   for (var i = 0; i < EDGES.length; i++) if (a[EDGES[i]] !== b[EDGES[i]]) return false
   return true
 }
@@ -74,6 +82,107 @@ function fillName(fill) {
 // Whether a fill draws the wallpaper, so its path has to be kept current.
 function showsWallpaper(fill) {
   return fill === "wallpaper" || fill === "dim"
+}
+
+// The largest reserved edge among `sides`, the first on a tie. "" when none
+// is reserved.
+function largestEdge(entry, sides) {
+  var best = ""
+  for (var i = 0; i < sides.length; i++)
+    if (entry[sides[i]] > 0 && (!best || entry[sides[i]] > entry[best])) best = sides[i]
+  return best
+}
+
+// The one edge that shows the clock, following the entry's clockEdge: the
+// largest edge, or the larger of top and bottom while either is reserved.
+function clockEdge(entry) {
+  return (entry.clockEdge === "topBottom" && largestEdge(entry, ["top", "bottom"])) || largestEdge(entry, EDGES)
+}
+
+// What `side` of a normalized entry shows. There is one clock per monitor;
+// its other edges stay black.
+function edgeFill(entry, side) {
+  return entry.fill === "clock" && side !== clockEdge(entry) ? "black" : entry.fill
+}
+
+// Blocky 3x5 digits in the style of clock-tui, one string per row.
+var GLYPHS = {
+  "0": ["###", "#.#", "#.#", "#.#", "###"],
+  "1": ["##.", ".#.", ".#.", ".#.", "###"],
+  "2": ["###", "..#", "###", "#..", "###"],
+  "3": ["###", "..#", "###", "..#", "###"],
+  "4": ["#.#", "#.#", "###", "..#", "..#"],
+  "5": ["###", "#..", "###", "..#", "###"],
+  "6": ["###", "#..", "###", "#.#", "###"],
+  "7": ["###", "..#", "..#", "..#", "..#"],
+  "8": ["###", "#.#", "###", "#.#", "###"],
+  "9": ["###", "#.#", "###", "..#", "###"],
+  ":": [".", "#", ".", "#", "."]
+}
+
+// 24-hour HH:MM.
+function clockText(date) {
+  return ("0" + date.getHours()).slice(-2) + ":" + ("0" + date.getMinutes()).slice(-2)
+}
+
+// The lit cells of `lines` (a string or an array of them) in GLYPHS, with
+// one blank cell between glyphs and between lines, each line centered, as
+// { columns, rows, cells: [{ x, y }] }. Unknown characters are skipped.
+function clockBitmap(lines) {
+  lines = [].concat(lines)
+  var widths = lines.map(function(line) {
+    var width = 0
+    for (var i = 0; i < line.length; i++) {
+      var glyph = GLYPHS[line.charAt(i)]
+      if (glyph) width += (width > 0 ? 1 : 0) + glyph[0].length
+    }
+    return width
+  })
+  var columns = Math.max.apply(null, widths)
+  var cells = []
+  for (var n = 0; n < lines.length; n++) {
+    var x = Math.floor((columns - widths[n]) / 2)
+    var top = n * 6
+    for (var i = 0; i < lines[n].length; i++) {
+      var glyph = GLYPHS[lines[n].charAt(i)]
+      if (!glyph) continue
+      for (var row = 0; row < glyph.length; row++)
+        for (var column = 0; column < glyph[row].length; column++)
+          if (glyph[row].charAt(column) === "#") cells.push({ x: x + column, y: top + row })
+      x += glyph[0].length + 1
+    }
+  }
+  return { columns: columns, rows: lines.length * 6 - 1, cells: cells }
+}
+
+// The clock for a strip of `width` by `height`, always upright: HH:MM on one
+// line, or HH over MM when that gives bigger blocks, as on a side edge.
+// `cell` is the block size, leaving a block of margin all round; whole
+// pixels once they are 2 or more.
+function clockLayout(text, width, height) {
+  var parts = String(text).split(":")
+  var best = null
+  var options = [clockBitmap(text), clockBitmap(parts)]
+  for (var i = 0; i < options.length; i++) {
+    var option = options[i]
+    option.cell = Math.max(0, Math.min(width / (option.columns + 2), height / (option.rows + 2)))
+    if (!best || option.cell > best.cell) best = option
+  }
+  if (best.cell >= 2) best.cell = Math.floor(best.cell)
+  return best
+}
+
+// Where the clock sits, in steps from the middle of the strip. It moves one
+// step every 5 minutes around a 3x3 square so no pixel stays lit for long.
+var SHIFTS = [[0, 0], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
+function clockShift(date) {
+  var step = SHIFTS[Math.floor((date.getHours() * 60 + date.getMinutes()) / 5) % SHIFTS.length]
+  return { x: step[0], y: step[1] }
+}
+
+// Milliseconds until the next minute starts, for a clock that ticks on it.
+function untilNextMinute(date) {
+  return 60000 - date.getSeconds() * 1000 - date.getMilliseconds()
 }
 
 // Width over height of an SVG, from its viewBox or else its width and

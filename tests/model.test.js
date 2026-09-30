@@ -10,8 +10,8 @@ vm.runInNewContext(source, Model)
 
 const tests = {
   "normalize fills missing edges and defaults to enabled"() {
-    assert.deepEqual({ ...Model.normalize({ top: "350.4", left: -5 }) }, { enabled: true, fill: "black", top: 350, bottom: 0, left: 0, right: 0 })
-    assert.deepEqual({ ...Model.normalize(undefined) }, { enabled: true, fill: "black", top: 0, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.normalize({ top: "350.4", left: -5 }) }, { enabled: true, fill: "black", clockEdge: "largest", top: 350, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.normalize(undefined) }, { enabled: true, fill: "black", clockEdge: "largest", top: 0, bottom: 0, left: 0, right: 0 })
   },
   "paused entries reserve nothing but keep their values"() {
     const raw = { top: 350, enabled: false }
@@ -26,19 +26,80 @@ const tests = {
   "fill defaults to black and keeps only known values"() {
     assert.equal(Model.normalize({ fill: "wallpaper" }).fill, "wallpaper")
     assert.equal(Model.normalize({ fill: "logo" }).fill, "logo")
-    assert.equal(Model.normalize({ fill: "dim" }).fill, "dim")
+    assert.equal(Model.normalize({ fill: "clock" }).fill, "clock")
     assert.equal(Model.normalize({ fill: "rainbow" }).fill, "black")
     assert.equal(Model.active({ top: 10, fill: "logo", enabled: false }).fill, "logo")
   },
   "nextFill cycles through every fill"() {
     const seen = ["black"]
     for (let fill = Model.nextFill("black"); fill !== "black"; fill = Model.nextFill(fill)) seen.push(fill)
-    assert.deepEqual(seen, ["black", "theme", "logo", "wallpaper", "dim"])
+    assert.deepEqual(seen, ["black", "theme", "logo", "wallpaper", "dim", "clock"])
   },
   "wallpaper and dim both draw the wallpaper"() {
     assert.ok(Model.showsWallpaper("wallpaper"))
     assert.ok(Model.showsWallpaper("dim"))
     assert.ok(!Model.showsWallpaper("logo"))
+  },
+  "the clock goes on the largest edge and the others stay black"() {
+    const entry = Model.normalize({ top: 40, bottom: 300, left: 300, fill: "clock" })
+    assert.equal(Model.clockEdge(entry), "bottom")
+    assert.equal(Model.edgeFill(entry, "bottom"), "clock")
+    assert.equal(Model.edgeFill(entry, "top"), "black")
+    assert.equal(Model.edgeFill(entry, "left"), "black")
+    assert.equal(Model.clockEdge(Model.normalize({})), "")
+    const logo = Model.normalize({ top: 460, right: 500, fill: "logo" })
+    assert.equal(Model.edgeFill(logo, "right"), "logo")
+    assert.equal(Model.edgeFill(logo, "top"), "logo")
+    assert.equal(Model.edgeFill(Model.normalize({ top: 40, left: 90, fill: "dim" }), "top"), "dim")
+  },
+  "the clock can prefer the top or bottom edge"() {
+    const entry = Model.normalize({ top: 460, bottom: 100, right: 510, fill: "clock", clockEdge: "topBottom" })
+    assert.equal(Model.clockEdge(entry), "top")
+    assert.equal(Model.edgeFill(entry, "top"), "clock")
+    assert.equal(Model.edgeFill(entry, "right"), "black")
+    assert.equal(Model.clockEdge(Model.normalize({ top: 40, bottom: 90, left: 500, clockEdge: "topBottom" })), "bottom")
+    assert.equal(Model.clockEdge(Model.normalize({ left: 500, right: 600, clockEdge: "topBottom" })), "right")
+    assert.equal(Model.normalize({ clockEdge: "middle" }).clockEdge, "largest")
+  },
+  "clockText is 24-hour HH:MM"() {
+    assert.equal(Model.clockText(new Date(2026, 8, 29, 7, 5)), "07:05")
+    assert.equal(Model.clockText(new Date(2026, 8, 29, 23, 59)), "23:59")
+  },
+  "clockBitmap lays glyphs out with a gap"() {
+    const one = Model.clockBitmap("1")
+    assert.equal(one.columns, 3)
+    assert.equal(one.cells.length, 8)
+    const time = Model.clockBitmap("12:34")
+    assert.equal(time.columns, 3 + 1 + 3 + 1 + 1 + 1 + 3 + 1 + 3)
+    assert.equal(time.rows, 5)
+    assert.ok(time.cells.some(cell => cell.x === 8 && cell.y === 1), "colon's top dot")
+    assert.ok(time.cells.every(cell => cell.x < time.columns && cell.y < 5))
+    const stacked = Model.clockBitmap(["12", "34"])
+    assert.equal(stacked.columns, 7)
+    assert.equal(stacked.rows, 11)
+    assert.ok(stacked.cells.some(cell => cell.y === 10))
+  },
+  "clockLayout stays upright and picks the bigger blocks"() {
+    const wide = Model.clockLayout("12:34", 1080, 460)
+    assert.equal(wide.columns, 17)
+    assert.equal(wide.cell, 56)
+    const tall = Model.clockLayout("12:34", 510, 1460)
+    assert.equal(tall.columns, 7)
+    assert.equal(tall.rows, 11)
+    assert.equal(tall.cell, 56)
+    assert.ok(Model.clockLayout("12:34", 30, 20).cell < 2)
+  },
+  "clockShift moves every 5 minutes within one cell"() {
+    assert.deepEqual({ ...Model.clockShift(new Date(2026, 8, 29, 0, 4)) }, { x: 0, y: 0 })
+    assert.deepEqual({ ...Model.clockShift(new Date(2026, 8, 29, 0, 5)) }, { x: 1, y: 0 })
+    for (let minute = 0; minute < 1440; minute += 5) {
+      const shift = Model.clockShift(new Date(2026, 8, 29, 0, minute))
+      assert.ok(Math.abs(shift.x) <= 1 && Math.abs(shift.y) <= 1)
+    }
+  },
+  "untilNextMinute counts down to the minute"() {
+    assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 59, 900)), 100)
+    assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 0, 0)), 60000)
   },
   "summary names a fill other than black"() {
     assert.equal(Model.summary(Model.normalize({ top: 350, fill: "wallpaper" })), "Top 350 px  ·  Wallpaper")
@@ -89,6 +150,7 @@ const tests = {
     assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 20 })))
     assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, enabled: false })))
     assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, fill: "logo" })))
+    assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, clockEdge: "topBottom" })))
   },
   "limit keeps a tenth of the axis usable"() {
     assert.equal(Model.limit("top", 1080, 1920), 1728)
@@ -101,7 +163,7 @@ const tests = {
   },
   "fit trims hand-edited entries to the shared limit"() {
     const fitted = Model.fit(Model.normalize({ top: 5000, bottom: 400, left: 100, right: 100 }), 1080, 1920)
-    assert.deepEqual({ ...fitted }, { enabled: true, fill: "black", top: 1728, bottom: 0, left: 100, right: 100 })
+    assert.deepEqual({ ...fitted }, { enabled: true, fill: "black", clockEdge: "largest", top: 1728, bottom: 0, left: 100, right: 100 })
     const kept = Model.fit(Model.normalize({ top: 400, bottom: 200 }), 1080, 1920)
     assert.equal(kept.top, 400)
     assert.equal(kept.bottom, 200)

@@ -187,6 +187,11 @@ Panel {
     undo = null
     reserve.setFill(output, fill)
   }
+  function setClockEdge(clockEdge) {
+    if (edge.fill !== "clock" || clockEdge === edge.clockEdge) return
+    undo = null
+    reserve.setClockEdge(output, clockEdge)
+  }
   function cycleOutput(direction) {
     if (screenNames.length < 2) return
     var index = screenNames.indexOf(output)
@@ -218,6 +223,7 @@ Panel {
     else if (key === Qt.Key_Backtab) cycleOutput(-1)
     else if (key === Qt.Key_Space || key === Qt.Key_P) toggleEnabled(output)
     else if (key === Qt.Key_F) setFill(Model.nextFill(edge.fill))
+    else if (key === Qt.Key_C) setClockEdge(edge.clockEdge === "largest" ? "topBottom" : "largest")
     else return
     event.accepted = true
   }
@@ -336,7 +342,8 @@ Panel {
                 { fill: "theme", icon: "󰏘", tip: "The theme's background color" },
                 { fill: "logo", icon: "󰣇", tip: "The Omarchy logo on black: stacked with its icon on the sides" },
                 { fill: "wallpaper", icon: "󰋩", tip: "The slice of the wallpaper under the edge" },
-                { fill: "dim", icon: "󰃞", tip: "The wallpaper slice, darkened" }
+                { fill: "dim", icon: "󰃞", tip: "The wallpaper slice, darkened" },
+                { fill: "clock", icon: "󰥔", tip: "A 24-hour clock on the largest edge; the others stay black" }
               ]
               Button {
                 required property var modelData
@@ -349,6 +356,31 @@ Panel {
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 onClicked: { root.setFill(modelData.fill); keySurface.forceActiveFocus() }
+              }
+            }
+          }
+          // Only for the clock: which edge shows it.
+          Row {
+            id: clockRow
+            visible: root.edge.fill === "clock"
+            width: parent.width
+            spacing: Style.spacing.md
+            Repeater {
+              model: [
+                { clockEdge: "largest", icon: "󰩨", text: "Largest edge", tip: "The clock goes on the largest reserved edge" },
+                { clockEdge: "topBottom", icon: "󰹹", text: "Top or bottom", tip: "The clock goes on the larger of the top and bottom edges, if either is reserved" }
+              ]
+              Button {
+                required property var modelData
+                width: (clockRow.width - clockRow.spacing) / 2
+                text: modelData.text
+                iconText: modelData.icon
+                tooltipText: modelData.tip
+                selected: root.edge.clockEdge === modelData.clockEdge
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: { root.setClockEdge(modelData.clockEdge); keySurface.forceActiveFocus() }
               }
             }
           }
@@ -384,6 +416,7 @@ Panel {
               "U / Ctrl Z", "Undo clear or zero",
               "Space / P", "Pause monitor",
               "F", "Next fill",
+              "C", "Clock on the largest edge / top or bottom",
               "Tab / ⇧ Tab", "Next / previous monitor",
               "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
               "Scroll", "Move an edge 10 px  ·  ⇧ 100",
@@ -537,7 +570,7 @@ Panel {
         Reserve.ReserveFill {
           required property string modelData
           side: modelData
-          mode: root.edge.fill
+          mode: Model.edgeFill(root.edge, modelData)
           size: root.edge[modelData] * preview.ratio
           screenWidth: monitor.width
           screenHeight: monitor.height

@@ -58,9 +58,14 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
   would be there, so the desktop looks like it carries on into the edge;
   **Dimmed** darkens that slice. **Logo** puts the Omarchy logo, in the
   theme's text color, on black: the wordmark on the top and bottom edges,
-  Omarchy's icon over it on the sides. Every fill except Black keeps
-  something lit in the same place all day, which can burn into an OLED
-  panel.
+  Omarchy's icon over it on the sides. **Clock** shows a 24-hour HH:MM clock
+  in big blocky digits, in the theme's accent color, on one edge: the
+  largest reserved edge, or with **Top or bottom** the larger of those two
+  whenever either is reserved. The monitor's other edges stay black. The digits are always upright
+  and as large as the edge allows: one line on a wide edge, hours over
+  minutes on a tall one. Every fill except Black keeps something lit in the
+  same place all day, which can burn into an OLED panel. The clock moves a
+  few pixels every 5 minutes to spread the wear.
 - **Switch**: pauses a monitor's reservation without forgetting the values.
   Right-clicking the bar icon does the same for the bar's monitor.
 - **Clear**: removes every reserved edge on the monitor. Right after a
@@ -77,6 +82,7 @@ next to the edges, since a ruler on the screen measures something else.
 | `u`, Ctrl+Z | Undo a Clear or a zeroed edge |
 | Space, `p` | Pause or resume the monitor |
 | `f` | Next fill |
+| `c` | Clock on the largest edge / top or bottom |
 | Tab / Shift+Tab | Next or previous monitor |
 | `?` | Show or hide these shortcuts in the panel |
 | Esc, `q` | Close (Esc closes the shortcut sheet first) |
@@ -122,7 +128,8 @@ A monitor with no description, or one that shares its description with
 another connected monitor, is keyed by its connector name (`DP-4`) instead.
 Each entry also has `enabled`, which is `false` while the monitor is paused,
 and can have `fill`: `"black"` (the default), `"theme"`, `"wallpaper"`,
-`"dim"` or `"logo"`.
+`"dim"`, `"logo"` or `"clock"`, and `clockEdge`: `"largest"` (the default)
+or `"topBottom"`.
 Clear keeps the fill.
 
 The file is watched, so hand edits apply right away. An edit made within

@@ -15,6 +15,7 @@ Rectangle {
   required property real screenWidth
   required property real screenHeight
   property color logoColor: Color.foreground
+  property color clockColor: Color.accent
   readonly property bool horizontal: Model.isHorizontal(side)
   color: mode === "theme" ? Color.background : "black"
   clip: true
@@ -84,5 +85,45 @@ Rectangle {
       fillMode: Image.PreserveAspectFit
       smooth: true
     }
+  }
+
+  // A 24-hour clock in big blocky digits, always upright: one line on a
+  // wide strip, hours over minutes on a tall one. It ticks on the minute
+  // and moves a few pixels every few minutes, against burn-in.
+  Item {
+    id: clock
+    property date now: new Date()
+    readonly property var layout: Model.clockLayout(Model.clockText(now), fill.width, fill.height)
+    readonly property var shift: Model.clockShift(now)
+    readonly property real cell: layout.cell
+    visible: fill.mode === "clock" && cell >= 1
+    width: layout.columns * cell
+    height: layout.rows * cell
+    // A twelfth of a block per step: enough to spread the wear, too little
+    // to look off-center.
+    x: Math.round((fill.width - width) / 2 + shift.x * cell / 12)
+    y: Math.round((fill.height - height) / 2 + shift.y * cell / 12)
+
+    Repeater {
+      model: clock.visible ? clock.layout.cells : []
+      Rectangle {
+        required property var modelData
+        x: modelData.x * clock.cell
+        y: modelData.y * clock.cell
+        width: clock.cell
+        height: clock.cell
+        color: fill.clockColor
+      }
+    }
+
+    // A new interval restarts it, so every tick re-aims at the next minute.
+    Timer {
+      running: clock.visible
+      repeat: true
+      interval: Model.untilNextMinute(clock.now) + 50
+      onTriggered: clock.now = new Date()
+    }
+    // Deferred: `visible` reads the layout, which reads `now`.
+    onVisibleChanged: if (visible) Qt.callLater(function() { clock.now = new Date() })
   }
 }

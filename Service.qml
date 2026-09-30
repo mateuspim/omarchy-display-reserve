@@ -27,10 +27,10 @@ Scope {
       // never go through the panel's limits.
       readonly property var edge: Model.fit(Reserve.ReserveState.appliedEdges(modelData.name), modelData.width, modelData.height)
 
-      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.edge.fill }
-      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.edge.fill }
-      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.edge.fill }
-      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.edge.fill }
+      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: Model.edgeFill(output.edge, "top") }
+      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: Model.edgeFill(output.edge, "bottom") }
+      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: Model.edgeFill(output.edge, "left") }
+      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: Model.edgeFill(output.edge, "right") }
     }
   }
 

@@ -94,16 +94,22 @@ QtObject {
     update(output, { fill: fill })
   }
 
-  // Drops the edges but keeps a chosen fill: it describes the monitor, not
-  // one reservation.
+  function setClockEdge(output, clockEdge) {
+    if (Model.CLOCK_EDGES.indexOf(clockEdge) === -1) return
+    update(output, { clockEdge: clockEdge })
+  }
+
+  // Drops the edges but keeps the fill settings: they describe the monitor,
+  // not one reservation.
   function clear(output) {
     var key = keyFor(output)
     if (outputs[key] === undefined && outputs[output] === undefined) return
-    var fill = edges(output).fill
+    var current = edges(output)
     var next = Object.assign({}, outputs)
     delete next[key]
     delete next[output]
-    if (fill !== "black") next[key] = { fill: fill }
+    if (current.fill !== "black" || current.clockEdge !== "largest")
+      next[key] = { fill: current.fill, clockEdge: current.clockEdge }
     outputs = next
     saveTimer.restart()
   }
