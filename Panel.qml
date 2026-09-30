@@ -182,6 +182,11 @@ Panel {
     reserve.update(undo.output, undo.entry)
     undo = null
   }
+  function setFill(fill) {
+    if (fill === edge.fill) return
+    undo = null
+    reserve.setFill(output, fill)
+  }
   function cycleOutput(direction) {
     if (screenNames.length < 2) return
     var index = screenNames.indexOf(output)
@@ -212,6 +217,7 @@ Panel {
     else if (key === Qt.Key_Tab) cycleOutput(shift ? -1 : 1)
     else if (key === Qt.Key_Backtab) cycleOutput(-1)
     else if (key === Qt.Key_Space || key === Qt.Key_P) toggleEnabled(output)
+    else if (key === Qt.Key_F) setFill(Model.nextFill(edge.fill))
     else return
     event.accepted = true
   }
@@ -309,6 +315,45 @@ Panel {
           height: Style.space(200)
         }
 
+        // What the reserved edges show. Black is the only safe choice on
+        // OLED panels; the others hold a static image in place.
+        Column {
+          width: parent.width
+          spacing: Style.spacing.sm
+          PanelSectionHeader {
+            text: "FILL"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+          Grid {
+            id: fillGrid
+            width: parent.width
+            columns: 3
+            spacing: Style.spacing.md
+            Repeater {
+              model: [
+                { fill: "black", icon: "󰝤", tip: "Plain black, safe on OLED panels" },
+                { fill: "theme", icon: "󰏘", tip: "The theme's background color" },
+                { fill: "logo", icon: "󰣇", tip: "The Omarchy logo on black: stacked with its icon on the sides" },
+                { fill: "wallpaper", icon: "󰋩", tip: "The slice of the wallpaper under the edge" },
+                { fill: "dim", icon: "󰃞", tip: "The wallpaper slice, darkened" }
+              ]
+              Button {
+                required property var modelData
+                width: (fillGrid.width - fillGrid.spacing * (fillGrid.columns - 1)) / fillGrid.columns
+                text: Model.fillName(modelData.fill)
+                iconText: modelData.icon
+                tooltipText: modelData.tip
+                selected: root.edge.fill === modelData.fill
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: { root.setFill(modelData.fill); keySurface.forceActiveFocus() }
+              }
+            }
+          }
+        }
+
         Column {
           width: parent.width
           spacing: Style.spacing.sm
@@ -338,6 +383,7 @@ Panel {
               "0 / ⌫", "Zero edge",
               "U / Ctrl Z", "Undo clear or zero",
               "Space / P", "Pause monitor",
+              "F", "Next fill",
               "Tab / ⇧ Tab", "Next / previous monitor",
               "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
               "Scroll", "Move an edge 10 px  ·  ⇧ 100",
@@ -488,20 +534,25 @@ Panel {
 
       Repeater {
         model: root.reserve.edgeNames
-        Rectangle {
+        Reserve.ReserveFill {
           required property string modelData
-          readonly property bool horizontal: Model.isHorizontal(modelData)
-          readonly property real size: root.edge[modelData] * preview.ratio
+          side: modelData
+          mode: root.edge.fill
+          size: root.edge[modelData] * preview.ratio
+          screenWidth: monitor.width
+          screenHeight: monitor.height
+          logoColor: root.foreground
           visible: size > 0
           x: modelData === "right" ? monitor.width - size : 0
           y: modelData === "bottom" ? monitor.height - size : 0
           width: horizontal ? monitor.width : size
           height: horizontal ? size : monitor.height
-          color: "black"
           opacity: preview.paused ? 0.45 : 1
+          // Only over plain black: it would sit on top of the logo, and the
+          // fields below show the same number.
           Text {
             anchors.centerIn: parent
-            visible: parent.horizontal ? parent.height >= font.pixelSize + 4 : parent.width >= implicitWidth + 6
+            visible: parent.mode === "black" && (parent.horizontal ? parent.height >= font.pixelSize + 4 : parent.width >= implicitWidth + 6)
             text: root.edge[parent.modelData]
             color: root.subtle
             font.family: root.fontFamily

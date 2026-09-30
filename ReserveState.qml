@@ -89,12 +89,21 @@ QtObject {
 
   function setEnabled(output, enabled) { update(output, { enabled: enabled === true }) }
 
+  function setFill(output, fill) {
+    if (Model.FILLS.indexOf(fill) === -1) return
+    update(output, { fill: fill })
+  }
+
+  // Drops the edges but keeps a chosen fill: it describes the monitor, not
+  // one reservation.
   function clear(output) {
     var key = keyFor(output)
     if (outputs[key] === undefined && outputs[output] === undefined) return
+    var fill = edges(output).fill
     var next = Object.assign({}, outputs)
     delete next[key]
     delete next[output]
+    if (fill !== "black") next[key] = { fill: fill }
     outputs = next
     saveTimer.restart()
   }
@@ -156,6 +165,52 @@ QtObject {
       root.outputs = ({})
     }
   }
+
+  // The image Omarchy's background layer shows, for the wallpaper fill.
+  // Omarchy repoints this symlink on every wallpaper or theme change, and
+  // inotify would only watch the image it points to, so it is polled, and
+  // only while some monitor uses a wallpaper fill.
+  readonly property string backgroundLink: Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
+  property string wallpaper: ""
+  readonly property bool usesWallpaper: {
+    for (var key in outputs) if (Model.showsWallpaper(Model.normalize(outputs[key]).fill)) return true
+    return false
+  }
+  onUsesWallpaperChanged: if (usesWallpaper && !wallpaperProc.running) wallpaperProc.running = true
+
+  property Process wallpaperProc: Process {
+    command: ["readlink", "-f", root.backgroundLink]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var path = String(text || "").trim()
+        if (path !== root.wallpaper) root.wallpaper = path
+      }
+    }
+  }
+
+  property Timer wallpaperTimer: Timer {
+    interval: 2000
+    repeat: true
+    running: root.usesWallpaper
+    onTriggered: if (!root.wallpaperProc.running) root.wallpaperProc.running = true
+  }
+
+  // The Omarchy logo's SVG source, for the logo fill to recolor.
+  property FileView logoFile: FileView {
+    path: (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/logo.svg"
+    printErrors: false
+    onLoaded: root.logoSvg = text()
+  }
+  property string logoSvg: ""
+
+  // Omarchy's square icon as block art, drawn over the wordmark on the
+  // side edges.
+  property FileView iconFile: FileView {
+    path: (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/icon.txt"
+    printErrors: false
+    onLoaded: root.iconArt = Model.blockBitmap(text())
+  }
+  property var iconArt: null
 
   property Timer applyTimer: Timer {
     interval: 100

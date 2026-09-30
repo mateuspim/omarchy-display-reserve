@@ -11,8 +11,9 @@ import "Model.js" as Model
 //    the spacer claims the edge before the Top-layer Omarchy bar does and the
 //    bar lands just inside the reachable area instead of underneath the cap.
 //    Tiled windows follow, with no monitors.lua rewrite or hyprctl reload.
-//  - an Overlay-layer black cap over exactly the same strip that swallows the
+//  - an Overlay-layer cap over exactly the same strip that swallows the
 //    pointer and hides fullscreen or floating windows that stray into it.
+//    It shows the monitor's fill (ReserveFill): black by default.
 Scope {
   id: root
 
@@ -26,10 +27,10 @@ Scope {
       // never go through the panel's limits.
       readonly property var edge: Model.fit(Reserve.ReserveState.appliedEdges(modelData.name), modelData.width, modelData.height)
 
-      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top }
-      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom }
-      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left }
-      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right }
+      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.edge.fill }
+      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.edge.fill }
+      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.edge.fill }
+      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.edge.fill }
     }
   }
 
@@ -40,6 +41,7 @@ Scope {
     required property var screen
     required property string side
     required property int pixels
+    required property string fill
     active: pixels > 0
 
     Scope {
@@ -60,6 +62,14 @@ Scope {
         WlrLayershell.namespace: "pym-display-reserve"
         WlrLayershell.layer: WlrLayer.Overlay
         MouseArea { anchors.fill: parent }
+        Reserve.ReserveFill {
+          anchors.fill: parent
+          side: reserved.side
+          mode: reserved.fill
+          size: reserved.pixels
+          screenWidth: reserved.screen.width
+          screenHeight: reserved.screen.height
+        }
       }
     }
   }

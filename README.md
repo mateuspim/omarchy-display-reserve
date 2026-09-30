@@ -6,7 +6,7 @@ can reach.
 
 <p align="center">
   <img src="docs/screenshot.png" width="360"
-       alt="A portrait monitor with its top 400 pixels blacked out; the Omarchy bar and a browser window sit just below the black edge">
+       alt="A portrait monitor with its top 680 and bottom 610 pixels reserved, each showing the Omarchy logo on black; the Omarchy bar and a browser window sit in the band between them">
 </p>
 
 Requires Omarchy 4 with its Quickshell bar and shell plugins (tested on
@@ -43,7 +43,7 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 <p align="center">
   <img src="docs/panel.png" width="360"
-       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with its top 400 pixels black, and a slider and pixel field for each edge">
+       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with the logo on its top and bottom edges, the six fill buttons with Logo selected, and a slider and pixel field for each edge">
 </p>
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
@@ -52,6 +52,15 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 - **Edge rows**: a slider for quick moves and a field for exact pixels.
   While you type in a field, keys go to the field; Enter, Esc or Tab
   applies the value and returns to the shortcuts below.
+- **Fill**: what the reserved edges show on this monitor. **Black** is the
+  default and the right choice for OLED panels. **Theme** uses the theme's
+  background color. **Wallpaper** shows the slice of your wallpaper that
+  would be there, so the desktop looks like it carries on into the edge;
+  **Dimmed** darkens that slice. **Logo** puts the Omarchy logo, in the
+  theme's text color, on black: the wordmark on the top and bottom edges,
+  Omarchy's icon over it on the sides. Every fill except Black keeps
+  something lit in the same place all day, which can burn into an OLED
+  panel.
 - **Switch**: pauses a monitor's reservation without forgetting the values.
   Right-clicking the bar icon does the same for the bar's monitor.
 - **Clear**: removes every reserved edge on the monitor. Right after a
@@ -67,6 +76,7 @@ next to the edges, since a ruler on the screen measures something else.
 | `0`, Backspace, Delete | Zero the selected edge |
 | `u`, Ctrl+Z | Undo a Clear or a zeroed edge |
 | Space, `p` | Pause or resume the monitor |
+| `f` | Next fill |
 | Tab / Shift+Tab | Next or previous monitor |
 | `?` | Show or hide these shortcuts in the panel |
 | Esc, `q` | Close (Esc closes the shortcut sheet first) |
@@ -83,10 +93,16 @@ Each reserved edge gets two layer-shell surfaces:
 | Surface | Layer | Purpose |
 | --- | --- | --- |
 | `pym-display-reserve-spacer` | Bottom | Reserves the edge with an exclusive zone. Hyprland lays out exclusive zones from the lowest layer up, so this claims the edge before the Top-layer bar, which lands just inside the reachable area with tiled windows after it. |
-| `pym-display-reserve` | Overlay | A black strip that blocks the pointer and covers anything that strays into the reserved area. |
+| `pym-display-reserve` | Overlay | A strip in the monitor's fill that blocks the pointer and covers anything that strays into the reserved area. |
 
-Fullscreen windows ignore exclusive zones, so the black strip hides the part
-of a fullscreen window under a reserved edge instead of shifting it.
+Fullscreen windows ignore exclusive zones, so the strip hides the part of a
+fullscreen window under a reserved edge instead of shifting it.
+
+The wallpaper and dimmed fills draw the image that
+`~/.local/state/omarchy/current/background` points to, scaled and cropped
+the way Omarchy's background layer does it. While any monitor uses one of
+them, the link is checked every 2 seconds, so after a wallpaper or theme
+change the edges can show the old image for up to 2 seconds.
 
 The plugin never edits `~/.config/hypr/monitors.lua` or runs
 `hyprctl reload`.
@@ -104,7 +120,10 @@ connectors:
 
 A monitor with no description, or one that shares its description with
 another connected monitor, is keyed by its connector name (`DP-4`) instead.
-Each entry also has `enabled`, which is `false` while the monitor is paused.
+Each entry also has `enabled`, which is `false` while the monitor is paused,
+and can have `fill`: `"black"` (the default), `"theme"`, `"wallpaper"`,
+`"dim"` or `"logo"`.
+Clear keeps the fill.
 
 The file is watched, so hand edits apply right away. An edit made within
 200 ms of a change in the panel is overwritten by that change.

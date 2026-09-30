@@ -10,8 +10,8 @@ vm.runInNewContext(source, Model)
 
 const tests = {
   "normalize fills missing edges and defaults to enabled"() {
-    assert.deepEqual({ ...Model.normalize({ top: "350.4", left: -5 }) }, { enabled: true, top: 350, bottom: 0, left: 0, right: 0 })
-    assert.deepEqual({ ...Model.normalize(undefined) }, { enabled: true, top: 0, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.normalize({ top: "350.4", left: -5 }) }, { enabled: true, fill: "black", top: 350, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.normalize(undefined) }, { enabled: true, fill: "black", top: 0, bottom: 0, left: 0, right: 0 })
   },
   "paused entries reserve nothing but keep their values"() {
     const raw = { top: 350, enabled: false }
@@ -23,10 +23,72 @@ const tests = {
     assert.equal(Model.summary(Model.normalize({ top: 350, left: 40 })), "Top 350 px  ·  Left 40 px")
     assert.equal(Model.summary(Model.normalize({ top: 350, enabled: false })), "Paused  ·  Top 350 px")
   },
-  "same compares edges and the enabled flag"() {
+  "fill defaults to black and keeps only known values"() {
+    assert.equal(Model.normalize({ fill: "wallpaper" }).fill, "wallpaper")
+    assert.equal(Model.normalize({ fill: "logo" }).fill, "logo")
+    assert.equal(Model.normalize({ fill: "dim" }).fill, "dim")
+    assert.equal(Model.normalize({ fill: "rainbow" }).fill, "black")
+    assert.equal(Model.active({ top: 10, fill: "logo", enabled: false }).fill, "logo")
+  },
+  "nextFill cycles through every fill"() {
+    const seen = ["black"]
+    for (let fill = Model.nextFill("black"); fill !== "black"; fill = Model.nextFill(fill)) seen.push(fill)
+    assert.deepEqual(seen, ["black", "theme", "logo", "wallpaper", "dim"])
+  },
+  "wallpaper and dim both draw the wallpaper"() {
+    assert.ok(Model.showsWallpaper("wallpaper"))
+    assert.ok(Model.showsWallpaper("dim"))
+    assert.ok(!Model.showsWallpaper("logo"))
+  },
+  "summary names a fill other than black"() {
+    assert.equal(Model.summary(Model.normalize({ top: 350, fill: "wallpaper" })), "Top 350 px  ·  Wallpaper")
+    assert.equal(Model.summary(Model.normalize({ top: 350, fill: "dim" })), "Top 350 px  ·  Dimmed")
+    assert.equal(Model.summary(Model.normalize({ fill: "logo" })), "No reserved edges")
+  },
+  "imageOffset lines a full-screen image up with the strip"() {
+    assert.deepEqual({ ...Model.imageOffset("top", 400, 1080, 1920) }, { x: 0, y: 0 })
+    assert.deepEqual({ ...Model.imageOffset("bottom", 400, 1080, 1920) }, { x: 0, y: -1520 })
+    assert.deepEqual({ ...Model.imageOffset("left", 40, 1080, 1920) }, { x: 0, y: 0 })
+    assert.deepEqual({ ...Model.imageOffset("right", 40, 1080, 1920) }, { x: -1040, y: 0 })
+  },
+  "svgAspect reads the viewBox, then width and height"() {
+    assert.equal(Model.svgAspect('<svg fill="none" height="285" viewBox="0 0 1215 285" width="1215">', 4), 1215 / 285)
+    assert.equal(Model.svgAspect('<svg viewBox="-10,-10, 200,100">', 4), 2)
+    assert.equal(Model.svgAspect('<svg width="300" height="100">', 4), 3)
+    assert.equal(Model.svgAspect("<svg>", 4), 4)
+    assert.equal(Model.svgAspect("", 4), 4)
+  },
+  "recolorSvg repaints black fills and leaves the rest"() {
+    assert.equal(Model.recolorSvg('<svg fill="none"><g fill="#000"><path fill="black"/></g></svg>', "#d8a657"),
+      '<svg fill="none"><g fill="#d8a657"><path fill="#d8a657"/></g></svg>')
+  },
+  "blockBitmap reads two characters per cell"() {
+    const art = Model.blockBitmap("████  ██\n██    ██\n")
+    assert.equal(art.columns, 4)
+    assert.equal(art.rows, 2)
+    assert.deepEqual([...art.cells.map(cell => cell.x + "," + cell.y)], ["0,0", "1,0", "3,0", "0,1", "3,1"])
+    assert.equal(Model.blockBitmap("").rows, 0)
+  },
+  "logoLayout stacks the icon over the wordmark only when asked"() {
+    const icon = { columns: 27, rows: 26, cells: [] }
+    const wide = Model.logoLayout(1080, 460, 1215 / 285, icon, false)
+    assert.ok(!wide.stacked)
+    assert.equal(wide.width, 540)
+    const tall = Model.logoLayout(510, 1920, 1215 / 285, icon, true)
+    assert.ok(tall.stacked)
+    assert.equal(tall.cell, 13)
+    assert.equal(tall.width, 351)
+    assert.ok(!Model.logoLayout(510, 1920, 1215 / 285, null, true).stacked)
+  },
+  "hexColor formats and clamps channels"() {
+    assert.equal(Model.hexColor(1, 0, 0.5), "#ff0080")
+    assert.equal(Model.hexColor(2, -1, 0), "#ff0000")
+  },
+  "same compares edges, the enabled flag and the fill"() {
     assert.ok(Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, enabled: true })))
     assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 20 })))
     assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, enabled: false })))
+    assert.ok(!Model.same(Model.normalize({ top: 10 }), Model.normalize({ top: 10, fill: "logo" })))
   },
   "limit keeps a tenth of the axis usable"() {
     assert.equal(Model.limit("top", 1080, 1920), 1728)
@@ -39,7 +101,7 @@ const tests = {
   },
   "fit trims hand-edited entries to the shared limit"() {
     const fitted = Model.fit(Model.normalize({ top: 5000, bottom: 400, left: 100, right: 100 }), 1080, 1920)
-    assert.deepEqual({ ...fitted }, { enabled: true, top: 1728, bottom: 0, left: 100, right: 100 })
+    assert.deepEqual({ ...fitted }, { enabled: true, fill: "black", top: 1728, bottom: 0, left: 100, right: 100 })
     const kept = Model.fit(Model.normalize({ top: 400, bottom: 200 }), 1080, 1920)
     assert.equal(kept.top, 400)
     assert.equal(kept.bottom, 200)
