@@ -17,6 +17,10 @@ Rectangle {
   property color logoColor: Color.foreground
   property color clockColor: Color.accent
   readonly property bool horizontal: Model.isHorizontal(side)
+  // The time the clock shows, and what the clock and the logo shift by
+  // against burn-in (clockShift). Only ticks while one of them is shown.
+  property date now: new Date()
+  readonly property var shift: Model.clockShift(now)
   color: mode === "theme" ? Color.background : "black"
   clip: true
 
@@ -53,8 +57,10 @@ Rectangle {
     readonly property string svg: Reserve.ReserveState.logoSvg
     readonly property real aspect: Model.svgAspect(svg, 4)
     readonly property var layout: Model.logoLayout(fill.width, fill.height, aspect, Reserve.ReserveState.iconArt, !fill.horizontal)
+    readonly property real step: Model.logoStep(width, height)
     visible: fill.mode === "logo" && svg !== "" && layout.width / aspect >= 4
-    anchors.centerIn: parent
+    x: Math.round((fill.width - width) / 2 + fill.shift.x * step)
+    y: Math.round((fill.height - height) / 2 + fill.shift.y * step)
     spacing: layout.gap
 
     Item {
@@ -92,17 +98,15 @@ Rectangle {
   // and moves a few pixels every few minutes, against burn-in.
   Item {
     id: clock
-    property date now: new Date()
-    readonly property var layout: Model.clockLayout(Model.clockText(now), fill.width, fill.height)
-    readonly property var shift: Model.clockShift(now)
+    readonly property var layout: Model.clockLayout(Model.clockText(fill.now), fill.width, fill.height)
     readonly property real cell: layout.cell
     visible: fill.mode === "clock" && cell >= 1
     width: layout.columns * cell
     height: layout.rows * cell
     // A twelfth of a block per step: enough to spread the wear, too little
     // to look off-center.
-    x: Math.round((fill.width - width) / 2 + shift.x * cell / 12)
-    y: Math.round((fill.height - height) / 2 + shift.y * cell / 12)
+    x: Math.round((fill.width - width) / 2 + fill.shift.x * cell / 12)
+    y: Math.round((fill.height - height) / 2 + fill.shift.y * cell / 12)
 
     Repeater {
       model: clock.visible ? clock.layout.cells : []
@@ -115,15 +119,15 @@ Rectangle {
         color: fill.clockColor
       }
     }
+  }
 
-    // A new interval restarts it, so every tick re-aims at the next minute.
-    Timer {
-      running: clock.visible
-      repeat: true
-      interval: Model.untilNextMinute(clock.now) + 50
-      onTriggered: clock.now = new Date()
-    }
-    // Deferred: `visible` reads the layout, which reads `now`.
-    onVisibleChanged: if (visible) Qt.callLater(function() { clock.now = new Date() })
+  // A new interval restarts it, so every tick re-aims at the next minute.
+  Timer {
+    running: clock.visible || logo.visible
+    repeat: true
+    interval: Model.untilNextMinute(fill.now) + 50
+    onTriggered: fill.now = new Date()
+    // Deferred: the clock's `visible` reads its layout, which reads `now`.
+    onRunningChanged: if (running) Qt.callLater(function() { fill.now = new Date() })
   }
 }

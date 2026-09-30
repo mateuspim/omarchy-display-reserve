@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import "." as Reserve
 import "Model.js" as Model
@@ -13,7 +14,8 @@ import "Model.js" as Model
 //    Tiled windows follow, with no monitors.lua rewrite or hyprctl reload.
 //  - an Overlay-layer cap over exactly the same strip that swallows the
 //    pointer and hides fullscreen or floating windows that stray into it.
-//    It shows the monitor's fill (ReserveFill): black by default.
+//    It shows the monitor's fill (ReserveFill): black by default, and black
+//    while the monitor shows a fullscreen window.
 Scope {
   id: root
 
@@ -26,11 +28,15 @@ Scope {
       // Fitted here as well as in the panel: hand edits and mode changes
       // never go through the panel's limits.
       readonly property var edge: Model.fit(Reserve.ReserveState.appliedEdges(modelData.name), modelData.width, modelData.height)
+      // A fullscreen window (a video, a game) gets plain black beside it,
+      // whatever the fill, rather than a bright logo or wallpaper.
+      readonly property bool fullscreen: Hyprland.monitorFor(modelData)?.activeWorkspace?.hasFullscreen ?? false
+      function fillFor(side) { return fullscreen ? "black" : Model.edgeFill(edge, side) }
 
-      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: Model.edgeFill(output.edge, "top") }
-      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: Model.edgeFill(output.edge, "bottom") }
-      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: Model.edgeFill(output.edge, "left") }
-      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: Model.edgeFill(output.edge, "right") }
+      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.fillFor("top") }
+      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.fillFor("bottom") }
+      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.fillFor("left") }
+      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.fillFor("right") }
     }
   }
 

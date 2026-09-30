@@ -97,6 +97,15 @@ const tests = {
       assert.ok(Math.abs(shift.x) <= 1 && Math.abs(shift.y) <= 1)
     }
   },
+  "logoStep is a fiftieth of the smaller side, at least a pixel"() {
+    assert.equal(Model.logoStep(400, 100), 2)
+    assert.equal(Model.logoStep(20, 10), 1)
+  },
+  "shortSummary drops units and the fill, and abbreviates past two edges"() {
+    assert.equal(Model.shortSummary(Model.normalize({})), "No reserved edges")
+    assert.equal(Model.shortSummary(Model.normalize({ top: 460, bottom: 490, fill: "logo" })), "Top 460  ·  Bottom 490")
+    assert.equal(Model.shortSummary(Model.normalize({ top: 460, left: 40, right: 40, enabled: false })), "Paused  ·  T 460  ·  L 40  ·  R 40")
+  },
   "untilNextMinute counts down to the minute"() {
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 59, 900)), 100)
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 0, 0)), 60000)

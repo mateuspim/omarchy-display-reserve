@@ -71,6 +71,17 @@ function summary(entry) {
   return (entry.enabled === false ? "Paused  ·  " : "") + parts.join("  ·  ")
 }
 
+// The panel subtitle's form of `summary`: no units and no fill (the Fill
+// grid shows it), and initials once more than two edges would not fit.
+function shortSummary(entry) {
+  var reserved = EDGES.filter(function(edge) { return entry[edge] > 0 })
+  if (!reserved.length) return "No reserved edges"
+  var parts = reserved.map(function(edge) {
+    return (reserved.length > 2 ? title(edge).charAt(0) : title(edge)) + " " + entry[edge]
+  })
+  return (entry.enabled === false ? "Paused  ·  " : "") + parts.join("  ·  ")
+}
+
 function nextFill(fill) {
   return FILLS[(FILLS.indexOf(fill) + 1) % FILLS.length]
 }
@@ -178,6 +189,12 @@ var SHIFTS = [[0, 0], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1
 function clockShift(date) {
   var step = SHIFTS[Math.floor((date.getHours() * 60 + date.getMinutes()) / 5) % SHIFTS.length]
   return { x: step[0], y: step[1] }
+}
+
+// How far one clockShift step moves the logo: a fiftieth of its smaller
+// side, at least a pixel, so it spreads the wear without looking off-center.
+function logoStep(width, height) {
+  return Math.max(1, Math.round(Math.min(width, height) / 50))
 }
 
 // Milliseconds until the next minute starts, for a clock that ticks on it.

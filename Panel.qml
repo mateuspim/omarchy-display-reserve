@@ -270,7 +270,7 @@ Panel {
         PanelHero {
           width: parent.width
           title: "Display Reserve"
-          meta: Model.summary(root.edge)
+          meta: Model.shortSummary(root.edge)
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconComponent: Component {
