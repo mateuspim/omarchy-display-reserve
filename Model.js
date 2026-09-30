@@ -140,6 +140,17 @@ var GLYPHS = {
   ":": [".", "#", ".", "#", "."]
 }
 
+// The most lit cells any HH:MM can have, so the clock can keep one set of
+// blocks and move them each minute instead of making new ones.
+var CLOCK_CELLS = (function() {
+  var most = 0
+  for (var digit in GLYPHS) {
+    if (digit === ":") continue
+    most = Math.max(most, GLYPHS[digit].join("").split("#").length - 1)
+  }
+  return 4 * most + GLYPHS[":"].join("").split("#").length - 1
+})()
+
 // 24-hour HH:MM.
 function clockText(date) {
   return ("0" + date.getHours()).slice(-2) + ":" + ("0" + date.getMinutes()).slice(-2)
@@ -209,6 +220,12 @@ function logoStep(width, height) {
 // Milliseconds until the next minute starts, for a clock that ticks on it.
 function untilNextMinute(date) {
   return 60000 - date.getSeconds() * 1000 - date.getMilliseconds()
+}
+
+// Milliseconds until clockShift next moves, for the logo, which has no
+// reason to wake up every minute.
+function untilNextShift(date) {
+  return untilNextMinute(date) + (4 - date.getMinutes() % 5) * 60000
 }
 
 // Width over height of an SVG, from its viewBox or else its width and

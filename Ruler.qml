@@ -42,32 +42,35 @@ Item {
         opacity: 0.55
       }
 
-      Repeater {
-        model: Model.rulerTicks(edgeScale.length)
+      readonly property var ticks: Model.rulerTicks(length)
 
-        Item {
-          id: tick
+      Repeater {
+        model: edgeScale.ticks
+
+        Rectangle {
           required property var modelData
           readonly property real reach: [0, 8, 16, 30][modelData.size]
+          x: edgeScale.vertical ? edgeScale.middle - reach / 2 : edgeScale.position(modelData.at)
+          y: edgeScale.vertical ? edgeScale.position(modelData.at) : edgeScale.middle - reach / 2
+          width: edgeScale.vertical ? reach : 1
+          height: edgeScale.vertical ? 1 : reach
+          color: ruler.color
+        }
+      }
 
-          Rectangle {
-            x: edgeScale.vertical ? edgeScale.middle - tick.reach / 2 : edgeScale.position(tick.modelData.at)
-            y: edgeScale.vertical ? edgeScale.position(tick.modelData.at) : edgeScale.middle - tick.reach / 2
-            width: edgeScale.vertical ? tick.reach : 1
-            height: edgeScale.vertical ? 1 : tick.reach
-            color: ruler.color
-          }
+      // Only every tenth tick has a label, so only those get a Text.
+      Repeater {
+        model: edgeScale.ticks.filter(function(tick) { return tick.label !== "" })
 
-          Text {
-            visible: tick.modelData.label !== ""
-            text: tick.modelData.label
-            color: ruler.color
-            font.family: ruler.fontFamily
-            font.pixelSize: 12
-            font.bold: true
-            x: edgeScale.vertical ? edgeScale.middle + 18 : edgeScale.position(tick.modelData.at) - Math.round(implicitWidth / 2)
-            y: edgeScale.vertical ? edgeScale.position(tick.modelData.at) - Math.round(implicitHeight / 2) : edgeScale.middle + 3
-          }
+        Text {
+          required property var modelData
+          text: modelData.label
+          color: ruler.color
+          font.family: ruler.fontFamily
+          font.pixelSize: 12
+          font.bold: true
+          x: edgeScale.vertical ? edgeScale.middle + 18 : edgeScale.position(modelData.at) - Math.round(implicitWidth / 2)
+          y: edgeScale.vertical ? edgeScale.position(modelData.at) - Math.round(implicitHeight / 2) : edgeScale.middle + 3
         }
       }
     }

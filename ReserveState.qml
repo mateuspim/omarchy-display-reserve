@@ -201,8 +201,10 @@ QtObject {
   // only while some monitor uses a wallpaper fill.
   readonly property string backgroundLink: Quickshell.env("HOME") + "/.local/state/omarchy/current/background"
   property string wallpaper: ""
+  // Only connected monitors count: a saved one that is unplugged shows
+  // nothing.
   readonly property bool usesWallpaper: {
-    for (var key in outputs) if (Model.showsWallpaper(Model.normalize(outputs[key]).fill)) return true
+    for (var output in keys) if (Model.showsWallpaper(edges(output).fill)) return true
     return false
   }
   onUsesWallpaperChanged: if (usesWallpaper && !wallpaperProc.running) wallpaperProc.running = true

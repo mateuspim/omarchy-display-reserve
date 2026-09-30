@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import qs.Commons
 import "." as Reserve
 import "Model.js" as Model
@@ -25,7 +26,10 @@ Rectangle {
   clip: true
 
   // The slice of the wallpaper that would be on screen here, scaled and
-  // cropped the way Omarchy's background layer does it.
+  // cropped the way Omarchy's background layer does it. It is decoded at
+  // the screen's size in device pixels (or the preview's), not the image's:
+  // every strip is its own window with its own copy of the texture, and a
+  // 5K wallpaper is some 60 MB at full size.
   Image {
     readonly property var offset: Model.imageOffset(fill.side, fill.size, fill.screenWidth, fill.screenHeight)
     visible: Model.showsWallpaper(fill.mode)
@@ -34,11 +38,12 @@ Rectangle {
     width: fill.screenWidth
     height: fill.screenHeight
     source: visible ? Util.fileUrl(Reserve.ReserveState.wallpaper) : ""
+    sourceSize.width: Math.ceil(fill.screenWidth * Screen.devicePixelRatio)
+    sourceSize.height: Math.ceil(fill.screenHeight * Screen.devicePixelRatio)
     fillMode: Image.PreserveAspectCrop
     asynchronous: true
     cache: true
     smooth: true
-    mipmap: true
 
     // The dimmed fill: the same slice under a translucent black.
     Rectangle {
@@ -108,12 +113,16 @@ Rectangle {
     x: Math.round((fill.width - width) / 2 + fill.shift.x * cell / 12)
     y: Math.round((fill.height - height) / 2 + fill.shift.y * cell / 12)
 
+    // One set of blocks, moved into place each minute rather than made
+    // anew; those the time does not need stay hidden.
     Repeater {
-      model: clock.visible ? clock.layout.cells : []
+      model: clock.visible ? Model.CLOCK_CELLS : 0
       Rectangle {
-        required property var modelData
-        x: modelData.x * clock.cell
-        y: modelData.y * clock.cell
+        required property int index
+        readonly property var cell: clock.layout.cells[index]
+        visible: cell !== undefined
+        x: visible ? cell.x * clock.cell : 0
+        y: visible ? cell.y * clock.cell : 0
         width: clock.cell
         height: clock.cell
         color: fill.clockColor
@@ -121,11 +130,12 @@ Rectangle {
     }
   }
 
-  // A new interval restarts it, so every tick re-aims at the next minute.
+  // A new interval restarts it, so every tick re-aims at the next minute,
+  // or for the logo alone at its next move.
   Timer {
     running: clock.visible || logo.visible
     repeat: true
-    interval: Model.untilNextMinute(fill.now) + 50
+    interval: (clock.visible ? Model.untilNextMinute(fill.now) : Model.untilNextShift(fill.now)) + 50
     onTriggered: fill.now = new Date()
     // Deferred: the clock's `visible` reads its layout, which reads `now`.
     onRunningChanged: if (running) Qt.callLater(function() { fill.now = new Date() })

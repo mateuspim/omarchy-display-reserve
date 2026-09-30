@@ -93,6 +93,12 @@ Scope {
     return names.indexOf(output) !== -1 ? [output] : []
   }
 
+  function anyActive() {
+    for (var i = 0; i < Quickshell.screens.length; i++)
+      if (root.state.isActive(Quickshell.screens[i].name)) return true
+    return false
+  }
+
   function screenFor(name) {
     for (var i = 0; i < Quickshell.screens.length; i++)
       if (Quickshell.screens[i].name === name) return Quickshell.screens[i]
@@ -182,7 +188,11 @@ Scope {
 
   Connections {
     target: Hyprland
-    function onRawEvent(event) { if (event.name === "fullscreen") fullscreenCheck.request() }
+    // Without a reserve anywhere there is nothing to fit; a check still
+    // runs while some window is fitted, so `fitted` gets cleaned up.
+    function onRawEvent(event) {
+      if (event.name === "fullscreen" && (root.fitted.length || root.anyActive())) fullscreenCheck.request()
+    }
   }
 
   Process {
@@ -223,11 +233,17 @@ Scope {
     active: pixels > 0
 
     Scope {
+      // The spacer only has to claim the edge: one transparent,
+      // click-through pixel with an exclusive zone of the whole strip, since
+      // the cap covers it anyway and a full-size buffer would be wasted.
       Strip {
         screen: reserved.screen
         side: reserved.side
-        pixels: reserved.pixels
-        exclusionMode: ExclusionMode.Auto
+        pixels: 1
+        exclusionMode: ExclusionMode.Normal
+        exclusiveZone: reserved.pixels
+        color: "transparent"
+        mask: Region {}
         WlrLayershell.namespace: "pym-display-reserve-spacer"
         WlrLayershell.layer: WlrLayer.Bottom
       }
@@ -252,8 +268,8 @@ Scope {
     }
   }
 
-  // A black layer surface covering `pixels` along one edge of its screen.
-  // The spacer and the cap share it, so they always cover the same strip.
+  // A black layer surface covering `pixels` along one edge of its screen,
+  // anchored the same way for the spacer and the cap.
   component Strip: PanelWindow {
     id: strip
     required property string side

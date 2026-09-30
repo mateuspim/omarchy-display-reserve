@@ -136,6 +136,20 @@ const tests = {
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 59, 900)), 100)
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 0, 0)), 60000)
   },
+  "untilNextShift counts down to the next clockShift move"() {
+    assert.equal(Model.untilNextShift(new Date(2026, 8, 29, 7, 9, 59, 900)), 100)
+    assert.equal(Model.untilNextShift(new Date(2026, 8, 29, 7, 5, 0, 0)), 300000)
+    const before = new Date(2026, 8, 29, 7, 7, 30, 0)
+    const after = new Date(before.getTime() + Model.untilNextShift(before))
+    assert.notDeepEqual({ ...Model.clockShift(after) }, { ...Model.clockShift(before) })
+  },
+  "CLOCK_CELLS covers every time on either layout"() {
+    for (let minutes = 0; minutes < 24 * 60; minutes++) {
+      const text = Model.clockText(new Date(2026, 8, 29, Math.floor(minutes / 60), minutes % 60))
+      assert.ok(Model.clockLayout(text, 1000, 100).cells.length <= Model.CLOCK_CELLS)
+      assert.ok(Model.clockLayout(text, 100, 1000).cells.length <= Model.CLOCK_CELLS)
+    }
+  },
   "summary names a fill other than black"() {
     assert.equal(Model.summary(Model.normalize({ top: 350, fill: "wallpaper" })), "Top 350 px  ·  Wallpaper")
     assert.equal(Model.summary(Model.normalize({ top: 350, fill: "dim" })), "Top 350 px  ·  Dimmed")
