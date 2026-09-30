@@ -20,6 +20,11 @@ QtObject {
   readonly property string path: Quickshell.env("HOME") + "/.config/omarchy/display-reserve.json"
   readonly property var edgeNames: Model.EDGES
   property var outputs: ({})
+  // Seconds without input before every edge goes black; 0 never does. One
+  // setting for the whole session, since idle is.
+  property int idleBlack: 0
+  // The monitor showing the calibration ruler, or "". Never saved.
+  property string ruler: ""
 
   // What the service draws and Hyprland reserves. It trails `outputs`: every
   // change re-tiles each window on the monitor and moves the bar, so it is
@@ -94,6 +99,22 @@ QtObject {
     update(output, { fill: fill })
   }
 
+  function setIdleBlack(seconds) {
+    var value = Model.idleSeconds(seconds)
+    if (value === idleBlack) return
+    idleBlack = value
+    saveTimer.restart()
+  }
+
+  function toggleRuler(output) { ruler = ruler === output ? "" : output }
+
+  // The edges that give `output` a reachable area of `aspect` (a number),
+  // aligned by `align`; nothing when the monitor's size is unknown.
+  function setAspect(output, width, height, aspect, align) {
+    if (!(width > 0 && height > 0 && aspect > 0)) return
+    update(output, Object.assign({ enabled: true }, Model.aspectEdges(width, height, aspect, align)))
+  }
+
   function setClockEdge(output, clockEdge) {
     if (Model.CLOCK_EDGES.indexOf(clockEdge) === -1) return
     update(output, { clockEdge: clockEdge })
@@ -129,7 +150,7 @@ QtObject {
 
   function save() {
     saveTimer.stop()
-    var text = JSON.stringify({ outputs: outputs }, null, 2) + "\n"
+    var text = JSON.stringify(idleBlack ? { outputs: outputs, idleBlack: idleBlack } : { outputs: outputs }, null, 2) + "\n"
     written = recentWrites().concat([{ text: text, time: Date.now() }])
     file.setText(text)
   }
@@ -152,6 +173,7 @@ QtObject {
     try {
       var parsed = JSON.parse(text)
       outputs = parsed && parsed.outputs ? parsed.outputs : ({})
+      idleBlack = Model.idleSeconds(parsed && parsed.idleBlack)
     } catch (error) {
       console.warn("display-reserve: invalid state file: " + error)
     }
@@ -169,6 +191,7 @@ QtObject {
     onLoadFailed: if (!saveTimer.running) {
       root.written = []
       root.outputs = ({})
+      root.idleBlack = 0
     }
   }
 

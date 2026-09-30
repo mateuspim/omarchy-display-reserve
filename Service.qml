@@ -16,9 +16,10 @@ import "Model.js" as Model
 //  - an Overlay-layer cap over exactly the same strip that swallows the
 //    pointer and hides fullscreen or floating windows that stray into it.
 //    It shows the monitor's fill (ReserveFill): black by default, and black
-//    while the monitor shows a fullscreen window.
+//    while the monitor shows a fullscreen window or the session is idle.
 Scope {
   id: root
+  readonly property var state: Reserve.ReserveState
 
   Variants {
     model: Quickshell.screens
@@ -32,12 +33,146 @@ Scope {
       // A fullscreen window (a video, a game) gets plain black beside it,
       // whatever the fill, rather than a bright logo or wallpaper.
       readonly property bool fullscreen: Hyprland.monitorFor(modelData)?.activeWorkspace?.hasFullscreen ?? false
-      function fillFor(side) { return fullscreen ? "black" : Model.edgeFill(edge, side) }
+      function fillFor(side) { return fullscreen || root.idle ? "black" : Model.edgeFill(edge, side) }
 
       ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.fillFor("top") }
       ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.fillFor("bottom") }
       ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.fillFor("left") }
       ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.fillFor("right") }
+    }
+  }
+
+  // Every edge goes black once the session has been idle for
+  // ReserveState.idleBlack seconds, and back on the next input. An app that
+  // inhibits idle, such as a video player, holds it off like it holds off
+  // the screensaver.
+  readonly property bool idle: idleMonitor.enabled && idleMonitor.isIdle
+  IdleMonitor {
+    id: idleMonitor
+    enabled: root.state.idleBlack > 0
+    timeout: Math.max(1, root.state.idleBlack)
+    respectInhibitors: true
+  }
+
+  // The calibration ruler, over everything and click-through, on the
+  // monitor ReserveState.ruler names.
+  Variants {
+    model: Quickshell.screens
+
+    delegate: Scope {
+      id: rulerOutput
+      required property var modelData
+
+      LazyLoader {
+        active: root.state.ruler === rulerOutput.modelData.name
+
+        PanelWindow {
+          screen: rulerOutput.modelData
+          anchors { top: true; bottom: true; left: true; right: true }
+          exclusionMode: ExclusionMode.Ignore
+          color: "transparent"
+          mask: Region {}
+          WlrLayershell.namespace: "pym-display-reserve-ruler"
+          WlrLayershell.layer: WlrLayer.Overlay
+          WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+          Reserve.Ruler { anchors.fill: parent }
+        }
+      }
+    }
+  }
+
+  // Monitors named by an IPC argument: a connector name (DP-4), "" or
+  // "focused" for the focused monitor, or "all".
+  function outputsFor(output) {
+    var names = []
+    for (var i = 0; i < Quickshell.screens.length; i++) names.push(String(Quickshell.screens[i].name))
+    output = String(output || "")
+    if (output === "all") return names
+    if (output === "" || output === "focused")
+      return Hyprland.focusedMonitor ? [String(Hyprland.focusedMonitor.name)] : []
+    return names.indexOf(output) !== -1 ? [output] : []
+  }
+
+  function screenFor(name) {
+    for (var i = 0; i < Quickshell.screens.length; i++)
+      if (Quickshell.screens[i].name === name) return Quickshell.screens[i]
+    return null
+  }
+
+  // Runs `action` on each monitor `output` names and answers with one line
+  // per monitor: what `action` returned (an error or a note), or the
+  // monitor's summary.
+  function each(output, action) {
+    var names = outputsFor(output)
+    if (!names.length) return output && output !== "focused" ? "No monitor named " + output : "No focused monitor"
+    return names.map(function(name) {
+      return name + "  ·  " + (action(name) || Model.summary(root.state.edges(name)))
+    }).join("\n")
+  }
+
+  function needsReserve(name) { return root.state.isReserved(name) ? "" : "No reserved edges" }
+
+  // Sets a fill and says so even without reserved edges, where the summary
+  // leaves it out.
+  function setFill(name, fill) {
+    root.state.setFill(name, fill)
+    return root.state.isReserved(name) ? "" : Model.fillName(fill) + "  ·  no reserved edges to show it"
+  }
+
+  // omarchy-shell pym.display-reserve <function> [arguments]; README.md
+  // lists them.
+  IpcHandler {
+    target: "pym.display-reserve"
+
+    function status(): string {
+      var result = { idleBlack: root.state.idleBlack, idle: root.idle, ruler: root.state.ruler, outputs: {} }
+      root.outputsFor("all").forEach(function(name) { result.outputs[name] = root.state.edges(name) })
+      return JSON.stringify(result)
+    }
+    function toggle(output: string): string {
+      return root.each(output, function(name) { return root.needsReserve(name) || root.state.setEnabled(name, !root.state.edges(name).enabled) })
+    }
+    function pause(output: string): string {
+      return root.each(output, function(name) { return root.needsReserve(name) || root.state.setEnabled(name, false) })
+    }
+    function resume(output: string): string {
+      return root.each(output, function(name) { return root.needsReserve(name) || root.state.setEnabled(name, true) })
+    }
+    function fill(output: string, fill: string): string {
+      var key = Model.fillFrom(fill)
+      if (!key) return "Unknown fill " + fill + "; one of " + Model.FILLS.join(", ")
+      return root.each(output, function(name) { return root.setFill(name, key) })
+    }
+    function nextFill(output: string): string {
+      return root.each(output, function(name) { return root.setFill(name, Model.nextFill(root.state.edges(name).fill)) })
+    }
+    function edge(output: string, side: string, pixels: int): string {
+      if (Model.EDGES.indexOf(side) === -1) return "Unknown edge " + side + "; one of " + Model.EDGES.join(", ")
+      return root.each(output, function(name) {
+        var screen = root.screenFor(name)
+        var entry = root.state.edges(name)
+        root.state.setEdge(name, side, Model.clamp(pixels, 0, Model.limit(side, screen.width, screen.height, entry[Model.opposite(side)])))
+      })
+    }
+    function aspect(output: string, ratio: string, align: string): string {
+      var value = Model.parseAspect(ratio)
+      if (!value) return "Unknown aspect " + ratio + "; for example 16:9"
+      if (align && !Model.alignment(align)) return "Unknown alignment " + align + "; top, left, center, bottom or right"
+      return root.each(output, function(name) {
+        var screen = root.screenFor(name)
+        root.state.setAspect(name, screen.width, screen.height, value,
+          Model.alignment(align) || Model.inferAlign(root.state.edges(name), screen.width, screen.height))
+      })
+    }
+    function ruler(output: string): string {
+      var names = root.outputsFor(output)
+      if (names.length !== 1) return names.length ? "The ruler shows on one monitor at a time" : "No monitor named " + output
+      root.state.toggleRuler(names[0])
+      return root.state.ruler ? "Ruler on " + root.state.ruler : "Ruler off"
+    }
+    function idle(seconds: int): string {
+      root.state.setIdleBlack(seconds)
+      return "Black when idle: " + Model.idleName(root.state.idleBlack)
     }
   }
 

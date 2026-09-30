@@ -35,6 +35,12 @@ const tests = {
     for (let fill = Model.nextFill("black"); fill !== "black"; fill = Model.nextFill(fill)) seen.push(fill)
     assert.deepEqual(seen, ["black", "theme", "logo", "wallpaper", "dim", "clock"])
   },
+  "fillFrom accepts keys and labels"() {
+    assert.equal(Model.fillFrom("Logo"), "logo")
+    assert.equal(Model.fillFrom("dimmed"), "dim")
+    assert.equal(Model.fillFrom("dim"), "dim")
+    assert.equal(Model.fillFrom("rainbow"), "")
+  },
   "wallpaper and dim both draw the wallpaper"() {
     assert.ok(Model.showsWallpaper("wallpaper"))
     assert.ok(Model.showsWallpaper("dim"))
@@ -220,6 +226,65 @@ const tests = {
       { name: "HDMI-A-2", description: "Same Panel 0" },
     ])
     assert.deepEqual({ ...keys }, { "DP-4": "Dell Inc. DELL U2720Q 1A2B3C4", "DP-5": "DP-5", "HDMI-A-1": "HDMI-A-1", "HDMI-A-2": "HDMI-A-2" })
+  },
+  "idle timeouts cycle and read as minutes or seconds"() {
+    assert.equal(Model.nextIdle(0), 30)
+    assert.equal(Model.nextIdle(300), 0)
+    assert.equal(Model.nextIdle(45), 0)
+    assert.equal(Model.idleName(0), "Off")
+    assert.equal(Model.idleName(30), "30 s")
+    assert.equal(Model.idleName(120), "2 min")
+    assert.equal(Model.idleSeconds("-5"), 0)
+  },
+  "parseAspect reads ratios and plain numbers"() {
+    assert.equal(Model.parseAspect("16:9"), 16 / 9)
+    assert.equal(Model.parseAspect("4/3"), 4 / 3)
+    assert.equal(Model.parseAspect("1.5"), 1.5)
+    assert.equal(Model.parseAspect("16:0"), 0)
+    assert.equal(Model.parseAspect("wide"), 0)
+  },
+  "alignment accepts edge names"() {
+    assert.equal(Model.alignment("Top"), "start")
+    assert.equal(Model.alignment("right"), "end")
+    assert.equal(Model.alignment("center"), "center")
+    assert.equal(Model.alignment("diagonal"), "")
+    assert.equal(Model.nextAlign("end"), "start")
+  },
+  "aspectEdges cuts the axis that is too long"() {
+    // Portrait 1080x1920 to 16:9 leaves 1080x608 and reserves 1312 px.
+    assert.deepEqual({ ...Model.aspectEdges(1080, 1920, 16 / 9, "end") }, { top: 1312, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.aspectEdges(1080, 1920, 16 / 9, "start") }, { top: 0, bottom: 1312, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.aspectEdges(1080, 1920, 1, "center") }, { top: 420, bottom: 420, left: 0, right: 0 })
+    // Landscape 2560x1440 to 4:3 cuts the sides; the odd pixel goes to the end.
+    assert.deepEqual({ ...Model.aspectEdges(2560, 1440, 4 / 3, "center") }, { top: 0, bottom: 0, left: 320, right: 320 })
+    assert.deepEqual({ ...Model.aspectEdges(2561, 1440, 4 / 3, "center") }, { top: 0, bottom: 0, left: 320, right: 321 })
+    // 21:9 on the same screen cuts top and bottom instead.
+    assert.deepEqual({ ...Model.aspectEdges(2560, 1440, 21 / 9, "start") }, { top: 0, bottom: 343, left: 0, right: 0 })
+    assert.equal(Model.total(Model.aspectEdges(2560, 1440, 16 / 9, "center")), 0)
+    assert.equal(Model.total(Model.aspectEdges(0, 0, 16 / 9, "center")), 0)
+  },
+  "aspectEdges stays within the shared limit"() {
+    const edges = Model.aspectEdges(1080, 1920, 10, "end")
+    assert.equal(edges.top, 1728)
+  },
+  "the alignment starts from the reserved edges"() {
+    assert.equal(Model.inferAlign(Model.normalize({ top: 990 }), 1080, 1920), "end")
+    assert.equal(Model.inferAlign(Model.normalize({ bottom: 10 }), 1080, 1920), "start")
+    assert.equal(Model.inferAlign(Model.normalize({ left: 5, right: 5 }), 2560, 1440), "center")
+    assert.equal(Model.alignName("end", 1080, 1920), "Bottom")
+    assert.equal(Model.alignName("start", 2560, 1440), "Left")
+  },
+  "matchingAspect finds the preset an entry reserves"() {
+    assert.equal(Model.matchingAspect(Model.normalize({ top: 1312 }), 1080, 1920, "end"), "16:9")
+    assert.equal(Model.matchingAspect(Model.normalize({ top: 1312 }), 1080, 1920, "start"), "")
+    assert.equal(Model.matchingAspect(Model.normalize({ top: 990 }), 1080, 1920, "end"), "")
+  },
+  "rulerTicks marks every 10 px and labels every 100"() {
+    const ticks = Model.rulerTicks(250)
+    assert.equal(ticks.length, 25)
+    assert.deepEqual({ ...ticks[0] }, { at: 10, size: 1, label: "" })
+    assert.equal(ticks[4].size, 2)
+    assert.deepEqual({ ...ticks[9] }, { at: 100, size: 3, label: "100" })
   },
   "nudge clamps to the valid range"() {
     assert.equal(Model.nudge(5, -10, 100), 0)

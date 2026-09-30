@@ -64,6 +64,14 @@ Panel {
   readonly property bool canUndo: undo !== null && undo.output === output
   property bool showKeys: false
 
+  // Where an aspect preset puts the reachable area: picked in the panel, or
+  // else read off the current edges.
+  readonly property real screenWidth: outputScreen ? outputScreen.width : 0
+  readonly property real screenHeight: outputScreen ? outputScreen.height : 0
+  property string pickedAlign: ""
+  readonly property string align: pickedAlign || Model.inferAlign(edge, screenWidth, screenHeight)
+  readonly property string aspect: edge.enabled ? Model.matchingAspect(edge, screenWidth, screenHeight, align) : ""
+
   // Keyboard cursor over the four edge rows.
   property int cursor: 0
   readonly property string cursorEdge: reserve.edgeNames[cursor]
@@ -139,10 +147,17 @@ Panel {
   }
 
   onOpenedChanged: {
-    if (!opened) { reserve.hold(false); reserve.flush(); return }
+    // The ruler is for setting edges up here, so it goes with the panel.
+    if (!opened) { reserve.hold(false); reserve.flush(); reserve.ruler = ""; return }
     pickedOutput = ""
+    pickedAlign = ""
     undo = null
     showKeys = false
+  }
+  // The ruler follows the monitor being edited.
+  onOutputChanged: {
+    pickedAlign = ""
+    if (opened && reserve.ruler !== "") reserve.ruler = output
   }
   // A bar rebuild or hotplug can destroy the widget mid-drag, and nothing
   // else would release the hold.
@@ -192,6 +207,27 @@ Panel {
     undo = null
     reserve.setClockEdge(output, clockEdge)
   }
+  // Replaces every edge, so it can be undone like Clear.
+  function applyAspect(ratio) {
+    if (!outputScreen) return
+    var saved = { output: output, entry: reserve.edges(output) }
+    reserve.setAspect(output, screenWidth, screenHeight, Model.parseAspect(ratio), align)
+    undo = Model.same(saved.entry, reserve.edges(output)) ? undo : saved
+  }
+  // Moves the reachable area along, and with it a preset that is in use.
+  function cycleAlign() {
+    var current = aspect
+    pickedAlign = Model.nextAlign(align)
+    if (current) applyAspect(current)
+  }
+  function toggleRuler() { reserve.toggleRuler(output) }
+  function cycleIdle() { reserve.setIdleBlack(Model.nextIdle(reserve.idleBlack)) }
+  function alignIcon(align) {
+    var vertical = screenHeight > screenWidth
+    if (align === "start") return vertical ? "󰅃" : "󰅁"
+    if (align === "end") return vertical ? "󰅀" : "󰅂"
+    return vertical ? "󱇌" : "󱇉"
+  }
   function cycleOutput(direction) {
     if (screenNames.length < 2) return
     var index = screenNames.indexOf(output)
@@ -224,6 +260,9 @@ Panel {
     else if (key === Qt.Key_Space || key === Qt.Key_P) toggleEnabled(output)
     else if (key === Qt.Key_F) setFill(Model.nextFill(edge.fill))
     else if (key === Qt.Key_C) setClockEdge(edge.clockEdge === "largest" ? "topBottom" : "largest")
+    else if (key === Qt.Key_A) cycleAlign()
+    else if (key === Qt.Key_R) toggleRuler()
+    else if (key === Qt.Key_I) cycleIdle()
     else return
     event.accepted = true
   }
@@ -399,6 +438,38 @@ Panel {
             model: root.reserve.edgeNames
             EdgeRow { width: parent.width }
           }
+          // Presets that leave a reachable area of a given shape, and where
+          // it goes.
+          Row {
+            id: aspectRow
+            width: parent.width
+            spacing: Style.spacing.md
+            readonly property real buttonWidth: (width - spacing * Model.ASPECTS.length) / (Model.ASPECTS.length + 1)
+            Repeater {
+              model: Model.ASPECTS
+              Button {
+                required property string modelData
+                width: aspectRow.buttonWidth
+                text: modelData
+                tooltipText: "Reserve edges so the reachable area is " + modelData
+                selected: root.aspect === modelData
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: { root.applyAspect(modelData); keySurface.forceActiveFocus() }
+              }
+            }
+            Button {
+              width: aspectRow.buttonWidth
+              text: Model.alignName(root.align, root.screenWidth, root.screenHeight)
+              iconText: root.alignIcon(root.align)
+              tooltipText: "Where a preset puts the reachable area; the other edge of the pair gets the rest"
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              onClicked: { root.cycleAlign(); keySurface.forceActiveFocus() }
+            }
+          }
         }
 
         // Shortcut sheet, toggled with ?.
@@ -417,6 +488,9 @@ Panel {
               "Space / P", "Pause monitor",
               "F", "Next fill",
               "C", "Clock on the largest edge / top or bottom",
+              "A", "Move the reachable area of an aspect preset",
+              "R", "Ruler on the monitor",
+              "I", "Black when idle: off, 30 s, 1 min, 5 min",
               "Tab / ⇧ Tab", "Next / previous monitor",
               "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
               "Scroll", "Move an edge 10 px  ·  ⇧ 100",
@@ -439,7 +513,7 @@ Panel {
           height: clearButton.implicitHeight
           Text {
             anchors.left: parent.left
-            anchors.right: clearButton.left
+            anchors.right: idleButton.left
             anchors.rightMargin: Style.spacing.md
             anchors.verticalCenter: parent.verticalCenter
             text: root.showKeys ? "? hide shortcuts" : "? shortcuts"
@@ -447,6 +521,35 @@ Panel {
             elide: Text.ElideRight
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
+          }
+          // Session-wide, unlike everything above it.
+          Button {
+            id: idleButton
+            anchors.right: rulerButton.left
+            anchors.rightMargin: Style.spacing.md
+            text: Model.idleName(root.reserve.idleBlack)
+            iconText: "󰒲"
+            selected: root.reserve.idleBlack > 0
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            tooltipText: root.reserve.idleBlack > 0
+              ? "Every edge on every monitor goes black after " + Model.idleName(root.reserve.idleBlack) + " without input"
+              : "Black when idle: off. Click to black out every edge after a while without input"
+            onClicked: { root.cycleIdle(); keySurface.forceActiveFocus() }
+          }
+          Button {
+            id: rulerButton
+            anchors.right: clearButton.left
+            anchors.rightMargin: Style.spacing.md
+            text: "Ruler"
+            iconText: "󰑭"
+            selected: root.reserve.ruler === root.output
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            tooltipText: "Show a ruler on " + root.output + " to read how much of each edge is hidden"
+            onClicked: { root.toggleRuler(); keySurface.forceActiveFocus() }
           }
           Button {
             id: clearButton

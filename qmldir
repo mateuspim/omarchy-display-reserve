@@ -1,2 +1,3 @@
 singleton ReserveState 1.0 ReserveState.qml
 ReserveFill 1.0 ReserveFill.qml
+Ruler 1.0 Ruler.qml

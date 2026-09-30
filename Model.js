@@ -86,6 +86,15 @@ function nextFill(fill) {
   return FILLS[(FILLS.indexOf(fill) + 1) % FILLS.length]
 }
 
+// The fill a name stands for, by key or label in any case ("Dimmed" is
+// "dim"); "" for an unknown name.
+function fillFrom(text) {
+  text = String(text).toLowerCase()
+  for (var i = 0; i < FILLS.length; i++)
+    if (text === FILLS[i] || text === FILL_NAMES[FILLS[i]].toLowerCase()) return FILLS[i]
+  return ""
+}
+
 function fillName(fill) {
   return FILL_NAMES[fill] || title(String(fill))
 }
@@ -282,6 +291,103 @@ function fullscreenChanges(clients, reservedMonitors, fitted) {
     }
   }
   return { changes: changes, fitted: next }
+}
+
+// Seconds of inactivity before every edge goes black, the panel's choices;
+// 0 never does. Any other whole number of seconds from a hand edit works too.
+var IDLE_TIMEOUTS = [0, 30, 60, 300]
+
+function idleSeconds(value) {
+  return pixels(value)
+}
+
+function nextIdle(seconds) {
+  var index = IDLE_TIMEOUTS.indexOf(idleSeconds(seconds))
+  return IDLE_TIMEOUTS[(index + 1) % IDLE_TIMEOUTS.length]
+}
+
+function idleName(seconds) {
+  seconds = idleSeconds(seconds)
+  if (!seconds) return "Off"
+  return seconds % 60 === 0 ? seconds / 60 + " min" : seconds + " s"
+}
+
+// Aspect presets: the reachable area's width over height. `start` puts the
+// reachable area at the top or left, `end` at the bottom or right.
+var ASPECTS = ["21:9", "16:9", "4:3", "1:1"]
+var ALIGNS = ["start", "center", "end"]
+
+// "16:9", "16/9" or "1.78" as a number; 0 when it is not a positive ratio.
+function parseAspect(text) {
+  var parts = String(text).split(/[:\/x]/)
+  var value = parts.length === 2 ? Number(parts[0]) / Number(parts[1]) : Number(text)
+  return isFinite(value) && value > 0 ? value : 0
+}
+
+// "top" and "left" mean start, "bottom" and "right" end; "" for anything
+// that is not an alignment.
+function alignment(text) {
+  text = String(text).toLowerCase()
+  if (text === "start" || text === "top" || text === "left") return "start"
+  if (text === "end" || text === "bottom" || text === "right") return "end"
+  return text === "center" || text === "middle" ? "center" : ""
+}
+
+function nextAlign(align) {
+  return ALIGNS[(ALIGNS.indexOf(align) + 1) % ALIGNS.length]
+}
+
+// The edges that leave a `width` by `height` screen a reachable area of
+// `aspect`, placed by `align` along the axis that is cut. Only the pair of
+// edges on that axis is reserved; center gives the odd pixel to the end.
+function aspectEdges(width, height, aspect, align) {
+  var edges = { top: 0, bottom: 0, left: 0, right: 0 }
+  if (!(width > 0 && height > 0 && aspect > 0)) return edges
+  var wide = width / height > aspect
+  var cut = wide ? width - Math.round(height * aspect) : height - Math.round(width / aspect)
+  var first = wide ? "left" : "top", second = wide ? "right" : "bottom"
+  var before = align === "start" ? 0 : align === "end" ? cut : Math.floor(cut / 2)
+  edges[first] = before
+  edges[second] = cut - before
+  return fit(edges, width, height)
+}
+
+// Where the reserved edges put the reachable area along the screen's long
+// axis, for an alignment control that starts from what is on screen.
+function inferAlign(entry, width, height) {
+  var vertical = height > width
+  var before = vertical ? entry.top : entry.left
+  var after = vertical ? entry.bottom : entry.right
+  return before === after ? "center" : before > after ? "end" : "start"
+}
+
+// The name of the reachable area's place for `align` on a screen of this
+// shape: portrait screens are cut top and bottom, landscape ones mostly on
+// the sides.
+function alignName(align, width, height) {
+  var vertical = height > width
+  if (align === "start") return vertical ? "Top" : "Left"
+  if (align === "end") return vertical ? "Bottom" : "Right"
+  return "Center"
+}
+
+// The preset in ASPECTS whose edges `entry` reserves exactly for `align`,
+// or "" when none does.
+function matchingAspect(entry, width, height, align) {
+  for (var i = 0; i < ASPECTS.length; i++) {
+    var edges = aspectEdges(width, height, parseAspect(ASPECTS[i]), align)
+    if (EDGES.every(function(edge) { return edges[edge] === entry[edge] })) return ASPECTS[i]
+  }
+  return ""
+}
+
+// The marks of a ruler running `length` pixels in from a screen edge: a
+// tick every 10 px, a longer one every 50 and a labelled one every 100.
+function rulerTicks(length) {
+  var ticks = []
+  for (var at = 10; at <= length; at += 10)
+    ticks.push({ at: at, size: at % 100 === 0 ? 3 : at % 50 === 0 ? 2 : 1, label: at % 100 === 0 ? String(at) : "" })
+  return ticks
 }
 
 // Never let a typo swallow the whole monitor: a tenth of each axis stays
