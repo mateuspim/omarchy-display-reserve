@@ -25,8 +25,11 @@ QtObject {
   property int idleBlack: 0
   // Named snapshots of `outputs` (Model.snapshot), saved beside it.
   property var profiles: ({})
+  // The profile last applied or saved, which wins over other profiles
+  // holding the same entries. Never saved.
+  property string lastProfile: ""
   // The profile `outputs` matches right now, or "".
-  readonly property string currentProfile: Model.currentProfile(profiles, outputs)
+  readonly property string currentProfile: Model.currentProfile(profiles, outputs, lastProfile)
   // The monitor showing the calibration ruler, or "". Never saved.
   property string ruler: ""
 
@@ -130,6 +133,7 @@ QtObject {
     name = Model.findProfile(profiles, name) || Model.profileName(name)
     if (!name) return ""
     setProfile(name, outputs)
+    lastProfile = name
     return name
   }
 
@@ -146,6 +150,7 @@ QtObject {
   function applyProfile(name) {
     name = Model.findProfile(profiles, name)
     if (!name) return ""
+    lastProfile = name
     setOutputs(profiles[name])
     return name
   }

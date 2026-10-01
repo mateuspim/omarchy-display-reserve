@@ -169,6 +169,13 @@ const tests = {
     assert.equal(Model.currentProfile(profiles, { A: { top: 310 } }), "")
     assert.equal(Model.currentProfile({}, {}), "")
   },
+  "currentProfile prefers the last profile among equal ones"() {
+    const profiles = { Alpha: { A: { top: 300 } }, Beta: { A: { top: 300 } } }
+    assert.equal(Model.currentProfile(profiles, { A: { top: 300 } }), "Alpha")
+    assert.equal(Model.currentProfile(profiles, { A: { top: 300 } }, "Beta"), "Beta")
+    assert.equal(Model.currentProfile(profiles, { A: { top: 310 } }, "Beta"), "")
+    assert.equal(Model.currentProfile(profiles, { A: { top: 300 } }, "Gone"), "Alpha")
+  },
   "findProfile matches a name exactly, else ignoring case"() {
     const profiles = { Desk: {}, desk: {}, Gaming: {} }
     assert.equal(Model.findProfile(profiles, "desk"), "desk")

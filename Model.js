@@ -529,8 +529,11 @@ function profileNames(profiles) {
 }
 
 // The profile `outputs` matches, or "" when none does (or no profile
-// exists).
-function currentProfile(profiles, outputs) {
+// exists). Several profiles can hold the same thing; `preferred`, the one
+// last applied or saved, wins while it still matches, and otherwise the
+// first by name.
+function currentProfile(profiles, outputs, preferred) {
+  if (preferred && profiles && profiles[preferred] !== undefined && sameOutputs(profiles[preferred], outputs)) return preferred
   var names = profileNames(profiles)
   for (var i = 0; i < names.length; i++) if (sameOutputs(profiles[names[i]], outputs)) return names[i]
   return ""
