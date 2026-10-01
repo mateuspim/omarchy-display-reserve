@@ -58,10 +58,15 @@ Panel {
   readonly property var barEntry: reserve.edges(barOutput)
   readonly property bool barReserved: Model.total(barEntry) > 0
 
-  // One step back for the edits that throw values away: Clear and zeroing an
-  // edge. Any other edit, or closing the panel, drops it.
+  // One step back for the edits that throw values away: Clear, zeroing an
+  // edge, an aspect preset, applying or deleting a profile. Any other edit,
+  // or closing the panel, drops it. An undo for one monitor (`output` and
+  // `entry`) only shows on that monitor; one for every monitor (`outputs`)
+  // or a profile (`profile` and `entries`) shows on all. `text` says what
+  // it restores.
   property var undo: null
-  readonly property bool canUndo: undo !== null && undo.output === output
+  readonly property bool canUndo: undo !== null && (undo.output === undefined || undo.output === output)
+  readonly property var profileNames: Model.profileNames(reserve.profiles)
   property bool showKeys: false
 
   // Where an aspect preset puts the reachable area: picked in the panel, or
@@ -153,6 +158,7 @@ Panel {
     pickedAlign = ""
     undo = null
     showKeys = false
+    profileField.text = ""
   }
   // The ruler follows the monitor being edited.
   onOutputChanged: {
@@ -182,20 +188,49 @@ Panel {
   }
   function zero(side) {
     if (!edge[side]) return
-    var saved = { output: output, entry: reserve.edges(output) }
+    var saved = outputUndo()
     setEdge(side, 0)
     undo = saved
   }
   function clearOutput() {
     if (!reserved) return
-    var saved = { output: output, entry: reserve.edges(output) }
+    var saved = outputUndo()
     reserve.clear(output)
     undo = saved
   }
+  function outputUndo() {
+    var entry = reserve.edges(output)
+    return { output: output, entry: entry, text: "Restore " + Model.summary(entry) }
+  }
   function undoLast() {
     if (!canUndo) return
-    reserve.update(undo.output, undo.entry)
+    if (undo.outputs) reserve.setOutputs(undo.outputs)
+    else if (undo.profile) reserve.setProfile(undo.profile, undo.entries)
+    else reserve.update(undo.output, undo.entry)
     undo = null
+  }
+  // Every monitor changes at once, so the undo covers them all. The name
+  // goes into the field, so tweaking the profile and pressing Update saves
+  // over it.
+  function applyProfile(name) {
+    var before = reserve.outputs
+    var from = reserve.currentProfile
+    name = reserve.applyProfile(name)
+    if (!name) return
+    profileField.text = name
+    if (Model.sameOutputs(before, reserve.outputs)) return
+    undo = { outputs: before, text: "Restore every monitor as before " + name + (from ? ", " + from : "") }
+  }
+  function applyProfileAt(index) { if (index < profileNames.length) applyProfile(profileNames[index]) }
+  function saveProfile(name) {
+    if (reserve.saveProfile(name)) undo = null
+    profileField.text = ""
+  }
+  function deleteProfile(name) {
+    var entries = reserve.profiles[name]
+    if (!reserve.deleteProfile(name)) return
+    if (Model.profileName(profileField.text) === name) profileField.text = ""
+    undo = { profile: name, entries: entries, text: "Restore the profile " + name }
   }
   function setFill(fill) {
     if (fill === edge.fill) return
@@ -210,7 +245,7 @@ Panel {
   // Replaces every edge, so it can be undone like Clear.
   function applyAspect(ratio) {
     if (!outputScreen) return
-    var saved = { output: output, entry: reserve.edges(output) }
+    var saved = outputUndo()
     reserve.setAspect(output, screenWidth, screenHeight, Model.parseAspect(ratio), align)
     undo = Model.same(saved.entry, reserve.edges(output)) ? undo : saved
   }
@@ -263,6 +298,8 @@ Panel {
     else if (key === Qt.Key_A) cycleAlign()
     else if (key === Qt.Key_R) toggleRuler()
     else if (key === Qt.Key_I) cycleIdle()
+    else if (key >= Qt.Key_1 && key <= Qt.Key_9) applyProfileAt(key - Qt.Key_1)
+    else if (key === Qt.Key_S) profileField.forceActiveFocus()
     else return
     event.accepted = true
   }
@@ -309,7 +346,7 @@ Panel {
         PanelHero {
           width: parent.width
           title: "Display Reserve"
-          meta: Model.shortSummary(root.edge)
+          meta: (root.reserve.currentProfile ? root.reserve.currentProfile + "  ·  " : "") + Model.shortSummary(root.edge)
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconComponent: Component {
@@ -472,6 +509,71 @@ Panel {
           }
         }
 
+        // Named snapshots of every monitor. A chip applies one; the one on
+        // screen is selected.
+        Column {
+          width: parent.width
+          spacing: Style.spacing.sm
+          PanelSectionHeader {
+            text: "PROFILES"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+          }
+          Flow {
+            visible: root.profileNames.length > 0
+            width: parent.width
+            spacing: Style.spacing.md
+            Repeater {
+              model: root.profileNames
+              Button {
+                required property string modelData
+                required property int index
+                text: modelData
+                iconText: index < 9 ? String(index + 1) : ""
+                tooltipText: "Apply " + modelData + " to every monitor" + (index < 9 ? "  ·  " + (index + 1) : "") + "\nRight click to delete"
+                selected: root.reserve.currentProfile === modelData
+                bordered: true
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: { root.applyProfile(modelData); keySurface.forceActiveFocus() }
+                onRightClicked: { root.deleteProfile(modelData); keySurface.forceActiveFocus() }
+              }
+            }
+          }
+          Item {
+            width: parent.width
+            height: Math.max(profileField.implicitHeight, saveProfileButton.implicitHeight)
+            TextField {
+              id: profileField
+              anchors.left: parent.left
+              anchors.right: saveProfileButton.left
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              placeholderText: root.reserve.currentProfile || "Name a profile of every monitor"
+              foreground: root.foreground
+              font.family: root.fontFamily
+              maximumLength: 32
+              onAccepted: { root.saveProfile(text); keySurface.forceActiveFocus() }
+            }
+            Button {
+              id: saveProfileButton
+              readonly property string name: Model.profileName(profileField.text)
+              readonly property string existing: Model.findProfile(root.reserve.profiles, name)
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              text: existing ? "Update" : "Save"
+              iconText: "󰆓"
+              enabled: name !== ""
+              opacity: enabled ? 1 : 0.4
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              tooltipText: existing ? "Save every monitor as it is now over " + existing : "Save every monitor as it is now under this name"
+              onClicked: { root.saveProfile(profileField.text); keySurface.forceActiveFocus() }
+            }
+          }
+        }
+
         // Shortcut sheet, toggled with ?.
         Grid {
           visible: root.showKeys
@@ -491,6 +593,8 @@ Panel {
               "A", "Move the reachable area of an aspect preset",
               "R", "Ruler on the monitor",
               "I", "Black when idle: off, 30 s, 1 min, 5 min",
+              "1 – 9", "Apply a profile",
+              "S", "Name a profile to save",
               "Tab / ⇧ Tab", "Next / previous monitor",
               "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
               "Scroll", "Move an edge 10 px  ·  ⇧ 100",
@@ -562,7 +666,7 @@ Panel {
             bordered: true
             foreground: root.foreground
             fontFamily: root.fontFamily
-            tooltipText: root.canUndo ? "Restore " + Model.summary(root.undo.entry) : "Remove every reserved edge on " + root.output
+            tooltipText: root.canUndo ? root.undo.text : "Remove every reserved edge on " + root.output
             onClicked: {
               if (root.canUndo) root.undoLast()
               else root.clearOutput()

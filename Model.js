@@ -476,3 +476,73 @@ function outputKeys(monitors) {
   }
   return keys
 }
+
+// Profiles: named snapshots of every saved monitor's entry ("Desk",
+// "Gaming"). Applying one makes the saved entries exactly what it holds.
+
+// A profile name as typed: trimmed, at most 32 characters; "" is no name.
+function profileName(text) {
+  return String(text || "").trim().replace(/\s+/g, " ").slice(0, 32)
+}
+
+// Whether an entry says anything: a monitor without one is left out of a
+// snapshot, as it would be missing from `outputs`.
+function isDefault(entry) {
+  return same(normalize(entry), normalize(null))
+}
+
+// The entries in `outputs` worth keeping, normalized, as a profile holds
+// them.
+function snapshot(outputs) {
+  var result = {}
+  for (var key in outputs || {}) if (!isDefault(outputs[key])) result[key] = normalize(outputs[key])
+  return result
+}
+
+// Whether two maps of entries reserve, enable and fill the same, a missing
+// entry counting as the default one.
+function sameOutputs(a, b) {
+  a = a || {}
+  b = b || {}
+  var keys = Object.keys(a).concat(Object.keys(b))
+  for (var i = 0; i < keys.length; i++)
+    if (!same(normalize(a[keys[i]]), normalize(b[keys[i]]))) return false
+  return true
+}
+
+// Profiles read from the state file: valid names with an object of
+// entries, anything else dropped.
+function profiles(raw) {
+  var result = {}
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result
+  for (var name in raw) {
+    var clean = profileName(name)
+    if (clean && raw[name] && typeof raw[name] === "object" && !Array.isArray(raw[name]))
+      result[clean] = snapshot(raw[name])
+  }
+  return result
+}
+
+// Profile names in the order the panel lists them.
+function profileNames(profiles) {
+  return Object.keys(profiles || {}).sort(function(a, b) { return a.localeCompare(b) })
+}
+
+// The profile `outputs` matches, or "" when none does (or no profile
+// exists).
+function currentProfile(profiles, outputs) {
+  var names = profileNames(profiles)
+  for (var i = 0; i < names.length; i++) if (sameOutputs(profiles[names[i]], outputs)) return names[i]
+  return ""
+}
+
+// The profile `text` names, by exact name or else ignoring case; "" when
+// none does.
+function findProfile(profiles, text) {
+  var name = profileName(text)
+  if (!name) return ""
+  if (profiles && profiles[name] !== undefined) return name
+  var names = profileNames(profiles)
+  for (var i = 0; i < names.length; i++) if (names[i].toLowerCase() === name.toLowerCase()) return names[i]
+  return ""
+}

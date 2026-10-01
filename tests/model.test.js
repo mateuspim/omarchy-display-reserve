@@ -136,6 +136,46 @@ const tests = {
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 59, 900)), 100)
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 0, 0)), 60000)
   },
+  "profileName trims and bounds a typed name"() {
+    assert.equal(Model.profileName("  Desk   setup "), "Desk setup")
+    assert.equal(Model.profileName("   "), "")
+    assert.equal(Model.profileName(undefined), "")
+    assert.equal(Model.profileName("x".repeat(40)).length, 32)
+  },
+  "snapshot keeps only entries that say something"() {
+    const shot = Model.snapshot({ A: { top: 300 }, B: {}, C: { fill: "logo" }, D: { enabled: true, top: 0 } })
+    assert.deepEqual([...Object.keys(shot)].sort(), ["A", "C"])
+    assert.equal(shot.A.top, 300)
+    assert.equal(shot.A.fill, "black")
+    assert.equal(shot.C.fill, "logo")
+  },
+  "sameOutputs treats a missing entry as the default"() {
+    assert.ok(Model.sameOutputs({ A: { top: 300 } }, { A: { top: 300, enabled: true }, B: {} }))
+    assert.ok(!Model.sameOutputs({ A: { top: 300 } }, { A: { top: 300 }, B: { left: 10 } }))
+    assert.ok(!Model.sameOutputs({ A: { top: 300 } }, { A: { top: 300, enabled: false } }))
+    assert.ok(Model.sameOutputs({}, undefined))
+  },
+  "profiles drops what is not a profile"() {
+    const read = Model.profiles({ " Desk ": { A: { top: 300 } }, "": { A: {} }, Bad: 3, List: [], Empty: {} })
+    assert.deepEqual([...Model.profileNames(read)], ["Desk", "Empty"])
+    assert.equal(read.Desk.A.top, 300)
+    assert.deepEqual({ ...Model.profiles(null) }, {})
+    assert.deepEqual({ ...Model.profiles([1]) }, {})
+  },
+  "currentProfile finds the profile on screen"() {
+    const profiles = { Gaming: { A: { top: 0, left: 200, right: 200 } }, Desk: { A: { top: 300 } }, Off: {} }
+    assert.equal(Model.currentProfile(profiles, { A: { top: 300 } }), "Desk")
+    assert.equal(Model.currentProfile(profiles, {}), "Off")
+    assert.equal(Model.currentProfile(profiles, { A: { top: 310 } }), "")
+    assert.equal(Model.currentProfile({}, {}), "")
+  },
+  "findProfile matches a name exactly, else ignoring case"() {
+    const profiles = { Desk: {}, desk: {}, Gaming: {} }
+    assert.equal(Model.findProfile(profiles, "desk"), "desk")
+    assert.equal(Model.findProfile(profiles, " GAMING "), "Gaming")
+    assert.equal(Model.findProfile(profiles, "Laptop"), "")
+    assert.equal(Model.findProfile(profiles, ""), "")
+  },
   "untilNextShift counts down to the next clockShift move"() {
     assert.equal(Model.untilNextShift(new Date(2026, 8, 29, 7, 9, 59, 900)), 100)
     assert.equal(Model.untilNextShift(new Date(2026, 8, 29, 7, 5, 0, 0)), 300000)

@@ -116,6 +116,11 @@ Scope {
     }).join("\n")
   }
 
+  function noProfile(name) {
+    var names = Model.profileNames(root.state.profiles)
+    return "No profile named " + name + (names.length ? "; one of " + names.join(", ") : "; none saved yet")
+  }
+
   function needsReserve(name) { return root.state.isReserved(name) ? "" : "No reserved edges" }
 
   // Sets a fill and says so even without reserved edges, where the summary
@@ -131,7 +136,10 @@ Scope {
     target: "pym.display-reserve"
 
     function status(): string {
-      var result = { idleBlack: root.state.idleBlack, idle: root.idle, ruler: root.state.ruler, outputs: {} }
+      var result = {
+        idleBlack: root.state.idleBlack, idle: root.idle, ruler: root.state.ruler,
+        profile: root.state.currentProfile, profiles: Model.profileNames(root.state.profiles), outputs: {}
+      }
       root.outputsFor("all").forEach(function(name) { result.outputs[name] = root.state.edges(name) })
       return JSON.stringify(result)
     }
@@ -175,6 +183,25 @@ Scope {
       if (names.length !== 1) return names.length ? "The ruler shows on one monitor at a time" : "No monitor named " + output
       root.state.toggleRuler(names[0])
       return root.state.ruler ? "Ruler on " + root.state.ruler : "Ruler off"
+    }
+    function profile(name: string): string {
+      var applied = root.state.applyProfile(name)
+      if (!applied) return root.noProfile(name)
+      return "Profile " + applied + "\n" + root.each("all", function() {})
+    }
+    function saveProfile(name: string): string {
+      var saved = root.state.saveProfile(name)
+      return saved ? "Saved profile " + saved : "A profile needs a name"
+    }
+    function deleteProfile(name: string): string {
+      var deleted = root.state.deleteProfile(name)
+      return deleted ? "Deleted profile " + deleted : root.noProfile(name)
+    }
+    // One name per line, the one on screen marked.
+    function profiles(): string {
+      var names = Model.profileNames(root.state.profiles)
+      if (!names.length) return "No profiles"
+      return names.map(function(name) { return (name === root.state.currentProfile ? "* " : "  ") + name }).join("\n")
     }
     function idle(seconds: int): string {
       root.state.setIdleBlack(seconds)

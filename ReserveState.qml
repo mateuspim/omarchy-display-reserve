@@ -23,6 +23,10 @@ QtObject {
   // Seconds without input before every edge goes black; 0 never does. One
   // setting for the whole session, since idle is.
   property int idleBlack: 0
+  // Named snapshots of `outputs` (Model.snapshot), saved beside it.
+  property var profiles: ({})
+  // The profile `outputs` matches right now, or "".
+  readonly property string currentProfile: Model.currentProfile(profiles, outputs)
   // The monitor showing the calibration ruler, or "". Never saved.
   property string ruler: ""
 
@@ -120,6 +124,49 @@ QtObject {
     update(output, { clockEdge: clockEdge })
   }
 
+  // Saves every monitor's entry as profile `name`, replacing one of that
+  // name. Returns the name it saved under, or "" for a blank name.
+  function saveProfile(name) {
+    name = Model.findProfile(profiles, name) || Model.profileName(name)
+    if (!name) return ""
+    setProfile(name, outputs)
+    return name
+  }
+
+  // Stores `map` as profile `name` as it is, for saving or undoing a delete.
+  function setProfile(name, map) {
+    var next = Object.assign({}, profiles)
+    next[name] = Model.snapshot(map)
+    profiles = next
+    saveTimer.restart()
+  }
+
+  // Makes the saved entries exactly what profile `name` holds. Returns the
+  // profile's name, or "" when there is none by that name.
+  function applyProfile(name) {
+    name = Model.findProfile(profiles, name)
+    if (!name) return ""
+    setOutputs(profiles[name])
+    return name
+  }
+
+  function deleteProfile(name) {
+    name = Model.findProfile(profiles, name)
+    if (!name) return ""
+    var next = Object.assign({}, profiles)
+    delete next[name]
+    profiles = next
+    saveTimer.restart()
+    return name
+  }
+
+  // Replaces every saved entry at once, for a profile or undoing one.
+  function setOutputs(map) {
+    if (Model.sameOutputs(map, outputs)) return
+    outputs = JSON.parse(JSON.stringify(map || {}))
+    saveTimer.restart()
+  }
+
   // Drops the edges but keeps the fill settings: they describe the monitor,
   // not one reservation.
   function clear(output) {
@@ -150,7 +197,10 @@ QtObject {
 
   function save() {
     saveTimer.stop()
-    var text = JSON.stringify(idleBlack ? { outputs: outputs, idleBlack: idleBlack } : { outputs: outputs }, null, 2) + "\n"
+    var state = { outputs: outputs }
+    if (idleBlack) state.idleBlack = idleBlack
+    if (Object.keys(profiles).length) state.profiles = profiles
+    var text = JSON.stringify(state, null, 2) + "\n"
     written = recentWrites().concat([{ text: text, time: Date.now() }])
     file.setText(text)
   }
@@ -174,6 +224,7 @@ QtObject {
       var parsed = JSON.parse(text)
       outputs = parsed && parsed.outputs ? parsed.outputs : ({})
       idleBlack = Model.idleSeconds(parsed && parsed.idleBlack)
+      profiles = Model.profiles(parsed && parsed.profiles)
     } catch (error) {
       console.warn("display-reserve: invalid state file: " + error)
     }
@@ -192,6 +243,7 @@ QtObject {
       root.written = []
       root.outputs = ({})
       root.idleBlack = 0
+      root.profiles = ({})
     }
   }
 
