@@ -5,7 +5,7 @@
   "version": "1.5.0",
   "author": "Mateus Pym",
   "license": "MIT",
-  "description": "Black out unreachable display edges and keep the bar and tiled windows in the reachable area.",
+  "description": "Black out monitor edges you can't reach, like the top of a tall rotated screen, and keep the bar and tiled windows in the part you can, with optional fills.",
   "kinds": ["service", "bar-widget"],
   "keepLoaded": true,
   "entryPoints": {
