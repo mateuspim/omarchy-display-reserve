@@ -43,7 +43,7 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 <p align="center">
   <img src="docs/panel.png" width="360"
-       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with the logo on its top and bottom edges, the six fill buttons with Logo selected, and a slider and pixel field for each edge">
+       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with the logo on its top edge, the six fill buttons with Logo selected, a slider and pixel field for each edge, the aspect presets, two saved profiles with a name field, Auto and Save, and the idle, ruler and clear buttons">
 </p>
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
@@ -62,14 +62,17 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
   default and the right choice for OLED panels. **Theme** uses the theme's
   background color. **Wallpaper** shows the slice of your wallpaper that
   would be there, so the desktop looks like it carries on into the edge;
-  **Dimmed** darkens that slice. **Logo** puts the Omarchy logo, in the
+  **Dimmed** darkens that slice, by 60% unless you move its **Dim**
+  slider (10% to 90%). **Logo** puts the Omarchy logo, in the
   theme's text color, on black: the wordmark on the top and bottom edges,
   Omarchy's icon over it on the sides. **Clock** shows a 24-hour HH:MM clock
   in big blocky digits, in the theme's accent color, on one edge: the
   largest reserved edge, or with **Top or bottom** the larger of those two
-  whenever either is reserved. The monitor's other edges stay black. The digits are always upright
-  and as large as the edge allows: one line on a wide edge, hours over
-  minutes on a tall one. Every fill except Black keeps something lit in the
+  whenever either is reserved. The monitor's other edges stay black. The
+  digits are always upright and as large as the edge allows: one line on a
+  wide edge, hours over minutes on a tall one. Right-click a fill to give
+  it to every monitor, with this monitor's dim amount and clock edge.
+  Every fill except Black keeps something lit in the
   same place all day, which can burn into an OLED panel. The clock and the
   logo move a few pixels every 5 minutes to spread the wear. While the
   monitor shows a fullscreen window, every edge goes black whatever the fill.
@@ -90,6 +93,10 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
   profile that matches the screen is selected, and its name shows in the
   panel's title. Right-click a profile to delete it. Applying or deleting
   one can be undone. Black when idle is not part of a profile.
+  With a profile's name in the field, **Auto** ties it to the monitors
+  connected now: whenever exactly those monitors connect, such as when you
+  dock, the profile applies by itself. One profile per set of monitors. A
+  shell restart with the same monitors leaves your edits alone.
 - **Switch**: pauses a monitor's reservation without forgetting the values.
   Right-clicking the bar icon does the same for the bar's monitor.
 - **Clear**: removes every reserved edge on the monitor. Right after a
@@ -134,6 +141,7 @@ The shell answers IPC calls on the target `pym.display-reserve`, through
 | `pause <monitor>`, `resume <monitor>` | Pause, resume |
 | `fill <monitor> <fill>` | Set the fill: `black`, `theme`, `logo`, `wallpaper`, `dim` or `clock` |
 | `nextFill <monitor>` | Next fill, as `f` in the panel |
+| `dim <monitor> <percent>` | How dark the dimmed fill is, 10 to 90 |
 | `edge <monitor> <side> <pixels>` | Reserve `pixels` on `top`, `bottom`, `left` or `right` |
 | `aspect <monitor> <ratio> <place>` | An aspect preset: `16:9`, `4:3`, any `w:h`; `top`, `left`, `center`, `bottom`, `right`, or `""` to keep the current place |
 | `ruler <monitor>` | Show or hide the ruler |
@@ -141,6 +149,7 @@ The shell answers IPC calls on the target `pym.display-reserve`, through
 | `profile <name>` | Apply a profile to every monitor |
 | `saveProfile <name>` | Save every monitor as profile `name`, replacing one of that name |
 | `deleteProfile <name>` | Delete a profile |
+| `autoProfile <name> <on\|off>` | Apply a profile by itself whenever the monitors connected now connect, or stop |
 | `profiles` | List the profiles, the one on screen marked `*` |
 
 For example, from a terminal:
@@ -205,12 +214,15 @@ A monitor with no description, or one that shares its description with
 another connected monitor, is keyed by its connector name (`DP-4`) instead.
 Each entry also has `enabled`, which is `false` while the monitor is paused,
 and can have `fill`: `"black"` (the default), `"theme"`, `"wallpaper"`,
-`"dim"`, `"logo"` or `"clock"`, and `clockEdge`: `"largest"` (the default)
-or `"topBottom"`.
+`"dim"`, `"logo"` or `"clock"`, `clockEdge`: `"largest"` (the default)
+or `"topBottom"`, and `dim`: the dimmed fill's percent (60 by default).
 Clear keeps the fill. Black when idle is one setting for every monitor,
 stored beside `outputs` as `"idleBlack"`: seconds, left out while it is
 off. Profiles are stored beside them as `"profiles"`, each a copy of
 `outputs` under its name; applying one makes `outputs` exactly that copy.
+`"autoProfiles"` maps a profile's name to the monitor keys it applies with,
+and `"monitors"` holds the keys connected last, so the plugin can tell a
+new set of monitors from a restart.
 
 The file is watched, so hand edits apply right away. An edit made within
 200 ms of a change in the panel is overwritten by that change.
