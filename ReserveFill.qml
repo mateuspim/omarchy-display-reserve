@@ -15,6 +15,8 @@ Rectangle {
   required property real size
   required property real screenWidth
   required property real screenHeight
+  // How dark the dimmed fill is, 0 to 1.
+  property real dim: Model.DIM_DEFAULT / 100
   property color logoColor: Color.foreground
   property color clockColor: Color.accent
   readonly property bool horizontal: Model.isHorizontal(side)
@@ -50,7 +52,7 @@ Rectangle {
       anchors.fill: parent
       visible: fill.mode === "dim"
       color: "black"
-      opacity: 0.6
+      opacity: fill.dim
     }
   }
 

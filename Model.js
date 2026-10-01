@@ -9,6 +9,18 @@ var FILL_NAMES = { black: "Black", theme: "Theme", wallpaper: "Wallpaper", dim: 
 // Where the clock fill goes: the largest reserved edge, or the larger of
 // the top and bottom edges.
 var CLOCK_EDGES = ["largest", "topBottom"]
+// How dark the dimmed fill makes the wallpaper, in percent.
+var DIM_DEFAULT = 60
+var DIM_MIN = 10
+var DIM_MAX = 90
+
+// A dim amount from a hand edit or IPC: whole percent within the range,
+// the default for anything that is not a number.
+function dimPercent(value) {
+  var number = Number(value)
+  if (value === null || value === undefined || value === "" || !isFinite(number)) return DIM_DEFAULT
+  return clamp(Math.round(number), DIM_MIN, DIM_MAX)
+}
 
 function clamp(value, low, high) {
   return Math.max(low, Math.min(high, value))
@@ -36,7 +48,8 @@ function normalize(raw) {
   var result = {
     enabled: entry.enabled !== false,
     fill: FILLS.indexOf(entry.fill) !== -1 ? entry.fill : "black",
-    clockEdge: CLOCK_EDGES.indexOf(entry.clockEdge) !== -1 ? entry.clockEdge : "largest"
+    clockEdge: CLOCK_EDGES.indexOf(entry.clockEdge) !== -1 ? entry.clockEdge : "largest",
+    dim: dimPercent(entry.dim)
   }
   for (var i = 0; i < EDGES.length; i++) result[EDGES[i]] = pixels(entry[EDGES[i]])
   return result
@@ -51,7 +64,7 @@ function active(raw) {
 
 // Whether two normalized entries reserve, enable and fill the same.
 function same(a, b) {
-  if (a.enabled !== b.enabled || a.fill !== b.fill || a.clockEdge !== b.clockEdge) return false
+  if (a.enabled !== b.enabled || a.fill !== b.fill || a.clockEdge !== b.clockEdge || a.dim !== b.dim) return false
   for (var i = 0; i < EDGES.length; i++) if (a[EDGES[i]] !== b[EDGES[i]]) return false
   return true
 }
@@ -547,5 +560,57 @@ function findProfile(profiles, text) {
   if (profiles && profiles[name] !== undefined) return name
   var names = profileNames(profiles)
   for (var i = 0; i < names.length; i++) if (names[i].toLowerCase() === name.toLowerCase()) return names[i]
+  return ""
+}
+
+// Automatic profiles: a profile can be tied to a set of monitors (their
+// storage keys) and is applied whenever exactly that set is connected.
+
+// The storage keys of the connected monitors, from outputKeys, sorted.
+function monitorSet(keys) {
+  var set = []
+  for (var name in keys || {}) if (set.indexOf(keys[name]) === -1) set.push(String(keys[name]))
+  return set.sort()
+}
+
+function sameSet(a, b) {
+  a = a || []
+  b = b || []
+  if (a.length !== b.length) return false
+  for (var i = 0; i < a.length; i++) if (b.indexOf(a[i]) === -1) return false
+  return true
+}
+
+// A set of monitor keys read from the state file: strings, sorted, each
+// once; [] for anything else.
+function keyList(raw) {
+  if (!Array.isArray(raw)) return []
+  var list = []
+  for (var i = 0; i < raw.length; i++) {
+    var key = String(raw[i] || "").trim()
+    if (key && list.indexOf(key) === -1) list.push(key)
+  }
+  return list.sort()
+}
+
+// Automatic profiles read from the state file, as { name: [keys] }: only
+// profiles that exist, with a set of at least one monitor.
+function autoProfiles(raw, profiles) {
+  var result = {}
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result
+  for (var name in raw) {
+    var found = findProfile(profiles, name)
+    var set = keyList(raw[name])
+    if (found && set.length) result[found] = set
+  }
+  return result
+}
+
+// The automatic profile for this set of monitors, the first by name; ""
+// when there is none.
+function autoProfileFor(autos, set) {
+  if (!set || !set.length) return ""
+  var names = profileNames(autos)
+  for (var i = 0; i < names.length; i++) if (sameSet(autos[names[i]], set)) return names[i]
   return ""
 }

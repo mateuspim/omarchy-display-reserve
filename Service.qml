@@ -35,10 +35,10 @@ Scope {
       readonly property bool fullscreen: Hyprland.monitorFor(modelData)?.activeWorkspace?.hasFullscreen ?? false
       function fillFor(side) { return fullscreen || root.idle ? "black" : Model.edgeFill(edge, side) }
 
-      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.fillFor("top") }
-      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.fillFor("bottom") }
-      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.fillFor("left") }
-      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.fillFor("right") }
+      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.fillFor("top"); dim: output.edge.dim }
+      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.fillFor("bottom"); dim: output.edge.dim }
+      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.fillFor("left"); dim: output.edge.dim }
+      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.fillFor("right"); dim: output.edge.dim }
     }
   }
 
@@ -138,7 +138,8 @@ Scope {
     function status(): string {
       var result = {
         idleBlack: root.state.idleBlack, idle: root.idle, ruler: root.state.ruler,
-        profile: root.state.currentProfile, profiles: Model.profileNames(root.state.profiles), outputs: {}
+        profile: root.state.currentProfile, profiles: Model.profileNames(root.state.profiles),
+        autoProfiles: root.state.autoProfiles, monitors: root.state.connected, outputs: {}
       }
       root.outputsFor("all").forEach(function(name) { result.outputs[name] = root.state.edges(name) })
       return JSON.stringify(result)
@@ -156,6 +157,12 @@ Scope {
       var key = Model.fillFrom(fill)
       if (!key) return "Unknown fill " + fill + "; one of " + Model.FILLS.join(", ")
       return root.each(output, function(name) { return root.setFill(name, key) })
+    }
+    function dim(output: string, percent: int): string {
+      return root.each(output, function(name) {
+        root.state.setDim(name, percent)
+        return "Dim " + root.state.edges(name).dim + "%"
+      })
     }
     function nextFill(output: string): string {
       return root.each(output, function(name) { return root.setFill(name, Model.nextFill(root.state.edges(name).fill)) })
@@ -197,11 +204,21 @@ Scope {
       var deleted = root.state.deleteProfile(name)
       return deleted ? "Deleted profile " + deleted : root.noProfile(name)
     }
+    // "on" ties the profile to the monitors connected now, "off" unties it.
+    function autoProfile(name: string, state: string): string {
+      if (state !== "on" && state !== "off") return "Say on or off"
+      var found = root.state.setAuto(name, state === "on")
+      if (!found) return root.noProfile(name)
+      return state === "on" ? found + " applies by itself with " + root.state.connected.join(", ") : found + " no longer applies by itself"
+    }
     // One name per line, the one on screen marked.
     function profiles(): string {
       var names = Model.profileNames(root.state.profiles)
       if (!names.length) return "No profiles"
-      return names.map(function(name) { return (name === root.state.currentProfile ? "* " : "  ") + name }).join("\n")
+      return names.map(function(name) {
+        var auto = root.state.autoProfiles[name]
+        return (name === root.state.currentProfile ? "* " : "  ") + name + (auto ? "  ·  auto with " + auto.join(", ") : "")
+      }).join("\n")
     }
     function idle(seconds: int): string {
       root.state.setIdleBlack(seconds)
@@ -257,6 +274,7 @@ Scope {
     required property string side
     required property int pixels
     required property string fill
+    required property int dim
     active: pixels > 0
 
     Scope {
@@ -287,6 +305,7 @@ Scope {
           anchors.fill: parent
           side: reserved.side
           mode: reserved.fill
+          dim: reserved.dim / 100
           size: reserved.pixels
           screenWidth: reserved.screen.width
           screenHeight: reserved.screen.height

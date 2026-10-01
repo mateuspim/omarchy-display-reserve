@@ -25,6 +25,17 @@ QtObject {
   property int idleBlack: 0
   // Named snapshots of `outputs` (Model.snapshot), saved beside it.
   property var profiles: ({})
+  // Profiles applied by themselves when exactly a set of monitors is
+  // connected, as { name: [storage keys] } (Model.autoProfiles).
+  property var autoProfiles: ({})
+  // The storage keys of the connected monitors, and the set last seen,
+  // which is saved: a shell restart with the same monitors keeps the
+  // edits made since, while a different set (docking, or booting docked
+  // after a session without the dock) applies its automatic profile.
+  readonly property var connected: Model.monitorSet(keys)
+  property var lastMonitors: []
+  property bool loaded: false
+  onConnectedChanged: monitorTimer.restart()
   // The profile last applied or saved, which wins over other profiles
   // holding the same entries. Never saved.
   property string lastProfile: ""
@@ -122,6 +133,8 @@ QtObject {
     update(output, Object.assign({ enabled: true }, Model.aspectEdges(width, height, aspect, align)))
   }
 
+  function setDim(output, percent) { update(output, { dim: Model.dimPercent(percent) }) }
+
   function setClockEdge(output, clockEdge) {
     if (Model.CLOCK_EDGES.indexOf(clockEdge) === -1) return
     update(output, { clockEdge: clockEdge })
@@ -161,8 +174,44 @@ QtObject {
     var next = Object.assign({}, profiles)
     delete next[name]
     profiles = next
+    setAutoProfile(name, [])
     saveTimer.restart()
     return name
+  }
+
+  // Ties profile `name` to the monitor keys in `set`, replacing any
+  // profile tied to the same set; an empty set unties it.
+  function setAutoProfile(name, set) {
+    var next = {}
+    for (var other in autoProfiles)
+      if (other !== name && !(set.length && Model.sameSet(autoProfiles[other], set))) next[other] = autoProfiles[other]
+    if (set.length && profiles[name] !== undefined) next[name] = set.slice().sort()
+    if (JSON.stringify(next) === JSON.stringify(autoProfiles)) return
+    autoProfiles = next
+    saveTimer.restart()
+  }
+
+  // Ties profile `name` to the monitors connected now, or unties it.
+  // Returns the profile's name, or "" when there is none by that name.
+  function setAuto(name, on) {
+    name = Model.findProfile(profiles, name)
+    if (!name) return ""
+    setAutoProfile(name, on ? connected : [])
+    return name
+  }
+
+  function isAuto(name) {
+    return autoProfiles[name] !== undefined && Model.sameSet(autoProfiles[name], connected)
+  }
+
+  // Once the monitors settle after a change, a new set applies its
+  // automatic profile.
+  function checkMonitors() {
+    if (!loaded || !connected.length || Model.sameSet(connected, lastMonitors)) return
+    lastMonitors = connected
+    saveTimer.restart()
+    var name = Model.autoProfileFor(autoProfiles, connected)
+    if (name) applyProfile(name)
   }
 
   // Replaces every saved entry at once, for a profile or undoing one.
@@ -181,8 +230,8 @@ QtObject {
     var next = Object.assign({}, outputs)
     delete next[key]
     delete next[output]
-    if (current.fill !== "black" || current.clockEdge !== "largest")
-      next[key] = { fill: current.fill, clockEdge: current.clockEdge }
+    if (current.fill !== "black" || current.clockEdge !== "largest" || current.dim !== Model.DIM_DEFAULT)
+      next[key] = { fill: current.fill, clockEdge: current.clockEdge, dim: current.dim }
     outputs = next
     saveTimer.restart()
   }
@@ -205,6 +254,8 @@ QtObject {
     var state = { outputs: outputs }
     if (idleBlack) state.idleBlack = idleBlack
     if (Object.keys(profiles).length) state.profiles = profiles
+    if (Object.keys(autoProfiles).length) state.autoProfiles = autoProfiles
+    if (lastMonitors.length) state.monitors = lastMonitors
     var text = JSON.stringify(state, null, 2) + "\n"
     written = recentWrites().concat([{ text: text, time: Date.now() }])
     file.setText(text)
@@ -230,6 +281,8 @@ QtObject {
       outputs = parsed && parsed.outputs ? parsed.outputs : ({})
       idleBlack = Model.idleSeconds(parsed && parsed.idleBlack)
       profiles = Model.profiles(parsed && parsed.profiles)
+      autoProfiles = Model.autoProfiles(parsed && parsed.autoProfiles, profiles)
+      lastMonitors = Model.keyList(parsed && parsed.monitors)
     } catch (error) {
       console.warn("display-reserve: invalid state file: " + error)
     }
@@ -241,7 +294,7 @@ QtObject {
     atomicWrites: true
     printErrors: false
     onFileChanged: reload()
-    onLoaded: root.parse()
+    onLoaded: { root.parse(); root.loaded = true; monitorTimer.restart() }
     // Atomic writes rename over the file, so it never goes missing during
     // our own saves; this only fires when the file is absent or deleted.
     onLoadFailed: if (!saveTimer.running) {
@@ -249,6 +302,10 @@ QtObject {
       root.outputs = ({})
       root.idleBlack = 0
       root.profiles = ({})
+      root.autoProfiles = ({})
+      root.lastMonitors = []
+      root.loaded = true
+      monitorTimer.restart()
     }
   }
 
@@ -303,6 +360,13 @@ QtObject {
   property Timer applyTimer: Timer {
     interval: 100
     onTriggered: if (!root.holding && root.applied !== root.outputs) root.apply()
+  }
+
+  // Docking connects monitors one at a time; act on the set once it holds
+  // still.
+  property Timer monitorTimer: Timer {
+    interval: 1500
+    onTriggered: root.checkMonitors()
   }
 
   property Timer saveTimer: Timer {

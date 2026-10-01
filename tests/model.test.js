@@ -10,8 +10,8 @@ vm.runInNewContext(source, Model)
 
 const tests = {
   "normalize fills missing edges and defaults to enabled"() {
-    assert.deepEqual({ ...Model.normalize({ top: "350.4", left: -5 }) }, { enabled: true, fill: "black", clockEdge: "largest", top: 350, bottom: 0, left: 0, right: 0 })
-    assert.deepEqual({ ...Model.normalize(undefined) }, { enabled: true, fill: "black", clockEdge: "largest", top: 0, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.normalize({ top: "350.4", left: -5 }) }, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 350, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual({ ...Model.normalize(undefined) }, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 0, bottom: 0, left: 0, right: 0 })
   },
   "paused entries reserve nothing but keep their values"() {
     const raw = { top: 350, enabled: false }
@@ -136,6 +136,16 @@ const tests = {
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 59, 900)), 100)
     assert.equal(Model.untilNextMinute(new Date(2026, 8, 29, 7, 5, 0, 0)), 60000)
   },
+  "dimPercent bounds the dim amount"() {
+    assert.equal(Model.dimPercent(undefined), 60)
+    assert.equal(Model.dimPercent("abc"), 60)
+    assert.equal(Model.dimPercent(""), 60)
+    assert.equal(Model.dimPercent(0), 10)
+    assert.equal(Model.dimPercent(95), 90)
+    assert.equal(Model.dimPercent("44.6"), 45)
+    assert.equal(Model.normalize({ dim: 30 }).dim, 30)
+    assert.ok(!Model.same(Model.normalize({ dim: 30 }), Model.normalize({})))
+  },
   "profileName trims and bounds a typed name"() {
     assert.equal(Model.profileName("  Desk   setup "), "Desk setup")
     assert.equal(Model.profileName("   "), "")
@@ -182,6 +192,27 @@ const tests = {
     assert.equal(Model.findProfile(profiles, " GAMING "), "Gaming")
     assert.equal(Model.findProfile(profiles, "Laptop"), "")
     assert.equal(Model.findProfile(profiles, ""), "")
+  },
+  "monitorSet lists the connected monitors' keys once, sorted"() {
+    assert.deepEqual([...Model.monitorSet({ "DP-5": "LG 27", "DP-4": "Dell U27" })], ["Dell U27", "LG 27"])
+    assert.deepEqual([...Model.monitorSet({})], [])
+    assert.ok(Model.sameSet(["a", "b"], ["b", "a"]))
+    assert.ok(!Model.sameSet(["a"], ["a", "b"]))
+    assert.ok(Model.sameSet(undefined, []))
+  },
+  "autoProfiles keeps sets for profiles that exist"() {
+    const profiles = { Docked: {}, Laptop: {} }
+    const autos = Model.autoProfiles({ docked: ["B", "A", "A", ""], Laptop: [], Gone: ["A"], Bad: "A" }, profiles)
+    assert.deepEqual(Object.keys(autos), ["Docked"])
+    assert.deepEqual([...autos.Docked], ["A", "B"])
+    assert.deepEqual({ ...Model.autoProfiles(null, profiles) }, {})
+  },
+  "autoProfileFor picks the profile tied to exactly these monitors"() {
+    const autos = { Docked: ["A", "B"], Laptop: ["eDP-1"] }
+    assert.equal(Model.autoProfileFor(autos, ["B", "A"]), "Docked")
+    assert.equal(Model.autoProfileFor(autos, ["eDP-1"]), "Laptop")
+    assert.equal(Model.autoProfileFor(autos, ["A"]), "")
+    assert.equal(Model.autoProfileFor(autos, []), "")
   },
   "untilNextShift counts down to the next clockShift move"() {
     assert.equal(Model.untilNextShift(new Date(2026, 8, 29, 7, 9, 59, 900)), 100)
@@ -259,7 +290,7 @@ const tests = {
   },
   "fit trims hand-edited entries to the shared limit"() {
     const fitted = Model.fit(Model.normalize({ top: 5000, bottom: 400, left: 100, right: 100 }), 1080, 1920)
-    assert.deepEqual({ ...fitted }, { enabled: true, fill: "black", clockEdge: "largest", top: 1728, bottom: 0, left: 100, right: 100 })
+    assert.deepEqual({ ...fitted }, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 1728, bottom: 0, left: 100, right: 100 })
     const kept = Model.fit(Model.normalize({ top: 400, bottom: 200 }), 1080, 1920)
     assert.equal(kept.top, 400)
     assert.equal(kept.bottom, 200)

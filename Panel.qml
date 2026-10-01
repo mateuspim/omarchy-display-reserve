@@ -205,7 +205,10 @@ Panel {
   function undoLast() {
     if (!canUndo) return
     if (undo.outputs) reserve.setOutputs(undo.outputs)
-    else if (undo.profile) reserve.setProfile(undo.profile, undo.entries)
+    else if (undo.profile) {
+      reserve.setProfile(undo.profile, undo.entries)
+      if (undo.auto) reserve.setAutoProfile(undo.profile, undo.auto)
+    }
     else reserve.update(undo.output, undo.entry)
     undo = null
   }
@@ -228,14 +231,29 @@ Panel {
   }
   function deleteProfile(name) {
     var entries = reserve.profiles[name]
+    var auto = reserve.autoProfiles[name]
     if (!reserve.deleteProfile(name)) return
     if (Model.profileName(profileField.text) === name) profileField.text = ""
-    undo = { profile: name, entries: entries, text: "Restore the profile " + name }
+    undo = { profile: name, entries: entries, auto: auto, text: "Restore the profile " + name }
   }
   function setFill(fill) {
     if (fill === edge.fill) return
     undo = null
     reserve.setFill(output, fill)
+  }
+  // Gives every connected monitor `fill`, with this monitor's dim amount
+  // and clock edge, so they all look alike; one undo puts them all back.
+  function setFillEverywhere(fill) {
+    var before = reserve.outputs
+    var settings = { fill: fill, dim: edge.dim, clockEdge: edge.clockEdge }
+    screenNames.forEach(function(name) { reserve.update(name, settings) })
+    if (!Model.sameOutputs(before, reserve.outputs))
+      undo = { outputs: before, text: "Restore each monitor's own fill" }
+  }
+  function setDim(percent) {
+    if (Model.dimPercent(percent) === edge.dim) return
+    undo = null
+    reserve.setDim(output, percent)
   }
   function setClockEdge(clockEdge) {
     if (edge.fill !== "clock" || clockEdge === edge.clockEdge) return
@@ -426,13 +444,58 @@ Panel {
                 width: (fillGrid.width - fillGrid.spacing * (fillGrid.columns - 1)) / fillGrid.columns
                 text: Model.fillName(modelData.fill)
                 iconText: modelData.icon
-                tooltipText: modelData.tip
+                tooltipText: modelData.tip + "\nRight click for every monitor"
                 selected: root.edge.fill === modelData.fill
                 bordered: true
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 onClicked: { root.setFill(modelData.fill); keySurface.forceActiveFocus() }
+                onRightClicked: { root.setFillEverywhere(modelData.fill); keySurface.forceActiveFocus() }
               }
+            }
+          }
+          // Only for the dimmed fill: how dark it is.
+          Item {
+            visible: root.edge.fill === "dim"
+            width: parent.width
+            height: dimSlider.implicitHeight
+            Text {
+              id: dimLabel
+              width: Style.space(58)
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Dim"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+            PanelSlider {
+              id: dimSlider
+              bar: root.bar
+              anchors.left: dimLabel.right
+              anchors.right: dimValue.left
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              minimum: Model.DIM_MIN
+              maximum: Model.DIM_MAX
+              step: 5
+              integer: true
+              value: root.edge.dim
+              fillColor: root.foreground
+              knobColor: fillColor
+              onMoved: function(value) { root.setDim(value) }
+              onReleased: keySurface.forceActiveFocus()
+            }
+            Text {
+              id: dimValue
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(40)
+              horizontalAlignment: Text.AlignRight
+              text: root.edge.dim + "%"
+              color: root.subtle
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
             }
           }
           // Only for the clock: which edge shows it.
@@ -530,7 +593,9 @@ Panel {
                 required property int index
                 text: modelData
                 iconText: index < 9 ? String(index + 1) : ""
-                tooltipText: "Apply " + modelData + " to every monitor" + (index < 9 ? "  ·  " + (index + 1) : "") + "\nRight click to delete"
+                tooltipText: "Apply " + modelData + " to every monitor" + (index < 9 ? "  ·  " + (index + 1) : "")
+                  + (root.reserve.autoProfiles[modelData] ? "\nApplied by itself with " + root.reserve.autoProfiles[modelData].join(", ") : "")
+                  + "\nRight click to delete"
                 selected: root.reserve.currentProfile === modelData
                 bordered: true
                 foreground: root.foreground
@@ -546,14 +611,34 @@ Panel {
             TextField {
               id: profileField
               anchors.left: parent.left
-              anchors.right: saveProfileButton.left
+              anchors.right: autoButton.left
               anchors.rightMargin: Style.spacing.md
               anchors.verticalCenter: parent.verticalCenter
-              placeholderText: root.reserve.currentProfile || "Name a profile of every monitor"
+              placeholderText: root.reserve.currentProfile || "Profile name"
               foreground: root.foreground
               font.family: root.fontFamily
               maximumLength: 32
               onAccepted: { root.saveProfile(text); keySurface.forceActiveFocus() }
+            }
+            // Ties the named profile to the monitors connected now.
+            Button {
+              id: autoButton
+              readonly property string existing: Model.findProfile(root.reserve.profiles, profileField.text)
+              anchors.right: saveProfileButton.left
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Auto"
+              iconText: "󰁪"
+              enabled: existing !== ""
+              opacity: enabled ? 1 : 0.4
+              selected: enabled && root.reserve.isAuto(existing)
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              tooltipText: !enabled ? "Name a saved profile to apply it by itself when these monitors connect"
+                : selected ? existing + " applies by itself whenever exactly these monitors connect. Click to stop"
+                : "Apply " + existing + " by itself whenever exactly these monitors connect: " + root.screenNames.join(", ")
+              onClicked: { root.reserve.setAuto(existing, !selected); keySurface.forceActiveFocus() }
             }
             Button {
               id: saveProfileButton
@@ -778,6 +863,7 @@ Panel {
           required property string modelData
           side: modelData
           mode: Model.edgeFill(root.edge, modelData)
+          dim: root.edge.dim / 100
           size: root.edge[modelData] * preview.ratio
           screenWidth: monitor.width
           screenHeight: monitor.height
