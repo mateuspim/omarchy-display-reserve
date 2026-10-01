@@ -83,6 +83,13 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
   30 s, 1 min or 5 min without input, and back on the next input, whatever
   the fill. Off by default. An app that holds off the screensaver, such as a
   video player, holds this off too.
+- **Profiles**: save every monitor as it is now (edges, fill, paused or
+  not) under a name, such as "Desk" or "Gaming", and apply it later with
+  one click or `1` to `9`. Applying one also puts its name in the name
+  field, so after tweaking it, **Update** saves the changes over it. The
+  profile that matches the screen is selected, and its name shows in the
+  panel's title. Right-click a profile to delete it. Applying or deleting
+  one can be undone. Black when idle is not part of a profile.
 - **Switch**: pauses a monitor's reservation without forgetting the values.
   Right-clicking the bar icon does the same for the bar's monitor.
 - **Clear**: removes every reserved edge on the monitor. Right after a
@@ -96,13 +103,15 @@ next to the edges, since a ruler on the screen measures something else.
 | `j` / `k`, ↓ / ↑ | Select an edge |
 | `h` / `l`, ← / → | Shrink or grow it by 10 px (Shift: 100, Ctrl: 1) |
 | `0`, Backspace, Delete | Zero the selected edge |
-| `u`, Ctrl+Z | Undo a Clear or a zeroed edge |
+| `u`, Ctrl+Z | Undo a Clear, a zeroed edge, a preset or a profile change |
 | Space, `p` | Pause or resume the monitor |
 | `f` | Next fill |
 | `c` | Clock on the largest edge / top or bottom |
 | `a` | Move the reachable area of an aspect preset |
 | `r` | Show or hide the ruler |
 | `i` | Black when idle: off, 30 s, 1 min, 5 min |
+| `1` – `9` | Apply a profile |
+| `s` | Name a profile to save (Enter saves it) |
 | Tab / Shift+Tab | Next or previous monitor |
 | `?` | Show or hide these shortcuts in the panel |
 | Esc, `q` | Close (Esc closes the shortcut sheet first) |
@@ -115,7 +124,7 @@ monitor switches to a smaller mode, are trimmed when drawn.
 ## Keybinds and scripts
 
 The shell answers IPC calls on the target `pym.display-reserve`, through
-`omarchy-shell`. The first argument names the monitor: a connector such as
+`omarchy-shell`. For the calls that take one, the first argument names the monitor: a connector such as
 `DP-4`, `""` or `focused` for the focused monitor, or `all`.
 
 | Call | Does |
@@ -129,13 +138,20 @@ The shell answers IPC calls on the target `pym.display-reserve`, through
 | `aspect <monitor> <ratio> <place>` | An aspect preset: `16:9`, `4:3`, any `w:h`; `top`, `left`, `center`, `bottom`, `right`, or `""` to keep the current place |
 | `ruler <monitor>` | Show or hide the ruler |
 | `idle <seconds>` | Black when idle after `seconds`; `0` turns it off |
+| `profile <name>` | Apply a profile to every monitor |
+| `saveProfile <name>` | Save every monitor as profile `name`, replacing one of that name |
+| `deleteProfile <name>` | Delete a profile |
+| `profiles` | List the profiles, the one on screen marked `*` |
 
 For example, from a terminal:
 
 ```bash
 omarchy-shell pym.display-reserve fill DP-4 clock
 omarchy-shell pym.display-reserve aspect DP-4 16:9 bottom
+omarchy-shell pym.display-reserve profile Gaming
 ```
+
+Profile names are matched ignoring case.
 
 To pause the focused monitor with Super+Alt+P and cycle its fill with
 Super+Alt+Shift+P, add to `~/.config/hypr/bindings.lua`:
@@ -193,7 +209,8 @@ and can have `fill`: `"black"` (the default), `"theme"`, `"wallpaper"`,
 or `"topBottom"`.
 Clear keeps the fill. Black when idle is one setting for every monitor,
 stored beside `outputs` as `"idleBlack"`: seconds, left out while it is
-off.
+off. Profiles are stored beside them as `"profiles"`, each a copy of
+`outputs` under its name; applying one makes `outputs` exactly that copy.
 
 The file is watched, so hand edits apply right away. An edit made within
 200 ms of a change in the panel is overwritten by that change.
