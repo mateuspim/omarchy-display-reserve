@@ -43,7 +43,7 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 <p align="center">
   <img src="docs/panel.png" width="360"
-       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with the logo on its top edge, the six fill buttons with Logo selected, a slider and pixel field for each edge, the aspect presets, two saved profiles with a name field, Auto and Save, and the idle, ruler and clear buttons">
+       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with the logo on its top edge, the six fill buttons with Logo selected, a slider and pixel field for each edge, the aspect presets, two saved profiles with Omarchy applied and set to Auto, and the idle, ruler and undo buttons">
 </p>
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
