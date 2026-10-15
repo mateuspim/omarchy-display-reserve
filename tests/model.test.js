@@ -10,8 +10,56 @@ vm.runInNewContext(source, Model)
 
 const tests = {
   "normalize fills missing edges and defaults to enabled"() {
-    assert.deepEqual({ ...Model.normalize({ top: "350.4", left: -5 }) }, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 350, bottom: 0, left: 0, right: 0 })
-    assert.deepEqual({ ...Model.normalize(undefined) }, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 0, bottom: 0, left: 0, right: 0 })
+    const { panels, ...entry } = Model.normalize({ top: "350.4", left: -5 })
+    assert.deepEqual(entry, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 350, bottom: 0, left: 0, right: 0 })
+    assert.deepEqual([...panels], ["gpu", "cpu", "memory", "network"])
+    const { panels: _, ...empty } = Model.normalize(undefined)
+    assert.deepEqual(empty, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 0, bottom: 0, left: 0, right: 0 })
+  },
+  "panels keep known names, once each, in the dashboard's order"() {
+    assert.deepEqual([...Model.panelList(["network", "gpu", "rainbow", "gpu"])], ["gpu", "network"])
+    assert.deepEqual([...Model.panelList([])], [])
+    assert.deepEqual([...Model.panelList("gpu")], [...Model.STATS_DEFAULT])
+    assert.deepEqual([...Model.panelList(undefined)], ["gpu", "cpu", "memory", "network"])
+    assert.deepEqual([...Model.normalize({ panels: ["fans", "cpu"] }).panels], ["cpu", "fans"])
+    assert.equal(Model.STATS_PANELS.length, 9)
+    assert.equal(Model.STATS_PANELS[1], "igpu")
+    assert.equal(Model.panelFrom("iGPU"), "igpu")
+    assert.equal(Model.panelFrom("integrated"), "igpu")
+  },
+  "togglePanel adds or removes one panel"() {
+    assert.deepEqual([...Model.togglePanel(["gpu", "cpu"], "cpu")], ["gpu"])
+    assert.deepEqual([...Model.togglePanel(["gpu", "cpu"], "pressure")], ["gpu", "cpu", "pressure"])
+    assert.deepEqual([...Model.togglePanel(["gpu"], "nope")], ["gpu"])
+    assert.deepEqual([...Model.togglePanel(["gpu"], "gpu", true)], ["gpu"])
+    assert.deepEqual([...Model.togglePanel(["gpu"], "cpu", false)], ["gpu"])
+  },
+  "panelsFrom reads a comma list of names or labels"() {
+    assert.deepEqual([...Model.panelsFrom("CPU, gpu ,Disks")], ["gpu", "cpu", "disks"])
+    assert.deepEqual([...Model.panelsFrom("all")], [...Model.STATS_PANELS])
+    assert.deepEqual([...Model.panelsFrom("none")], [])
+    assert.equal(Model.panelsFrom("gpu,rainbow"), null)
+    assert.equal(Model.panelFrom("Top processes"), "processes")
+    assert.equal(Model.panelFrom("procs"), "processes")
+    assert.equal(Model.panelFrom("mem"), "memory")
+    assert.equal(Model.panelFrom("rainbow"), "")
+  },
+  "the panel list counts in same and isDefault"() {
+    assert.ok(!Model.same(Model.normalize({ panels: ["gpu"] }), Model.normalize({})))
+    assert.ok(Model.same(Model.normalize({ panels: ["cpu", "gpu", "memory", "network"] }), Model.normalize({})))
+    assert.ok(!Model.isDefault({ panels: ["fans"] }))
+  },
+  "the stats dashboard goes on one edge like the clock"() {
+    const entry = Model.normalize({ top: 660, bottom: 100, fill: "stats" })
+    assert.equal(Model.edgeFill(entry, "top"), "stats")
+    assert.equal(Model.edgeFill(entry, "bottom"), "black")
+    assert.equal(Model.fillFrom("Stats"), "stats")
+    assert.equal(Model.fillName("stats"), "Stats")
+  },
+  "only the stats fill stays up beside a fullscreen window"() {
+    assert.equal(Model.fullscreenFill("stats"), "stats")
+    assert.equal(Model.fullscreenFill("logo"), "black")
+    assert.equal(Model.fullscreenFill("black"), "black")
   },
   "paused entries reserve nothing but keep their values"() {
     const raw = { top: 350, enabled: false }
@@ -33,7 +81,7 @@ const tests = {
   "nextFill cycles through every fill"() {
     const seen = ["black"]
     for (let fill = Model.nextFill("black"); fill !== "black"; fill = Model.nextFill(fill)) seen.push(fill)
-    assert.deepEqual(seen, ["black", "theme", "logo", "wallpaper", "dim", "clock"])
+    assert.deepEqual(seen, ["black", "theme", "logo", "wallpaper", "dim", "clock", "stats"])
   },
   "fillFrom accepts keys and labels"() {
     assert.equal(Model.fillFrom("Logo"), "logo")
@@ -290,7 +338,8 @@ const tests = {
   },
   "fit trims hand-edited entries to the shared limit"() {
     const fitted = Model.fit(Model.normalize({ top: 5000, bottom: 400, left: 100, right: 100 }), 1080, 1920)
-    assert.deepEqual({ ...fitted }, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 1728, bottom: 0, left: 100, right: 100 })
+    const { panels, ...edges } = fitted
+    assert.deepEqual(edges, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 1728, bottom: 0, left: 100, right: 100 })
     const kept = Model.fit(Model.normalize({ top: 400, bottom: 200 }), 1080, 1920)
     assert.equal(kept.top, 400)
     assert.equal(kept.bottom, 200)

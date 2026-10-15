@@ -19,6 +19,10 @@ Rectangle {
   property real dim: Model.DIM_DEFAULT / 100
   property color logoColor: Color.foreground
   property color clockColor: Color.accent
+  // The stats fill's panels, and how many strip pixels one screen pixel
+  // takes up: 1 on the monitor, the preview's scale in the panel.
+  property var panels: []
+  property real pixelRatio: 1
   readonly property bool horizontal: Model.isHorizontal(side)
   // The time the clock shows, and what the clock and the logo shift by
   // against burn-in (clockShift). Only ticks while one of them is shown.
@@ -132,10 +136,22 @@ Rectangle {
     }
   }
 
+  Loader {
+    anchors.fill: parent
+    active: fill.mode === "stats"
+    sourceComponent: Component {
+      Reserve.StatsFill {
+        panels: fill.panels
+        pixelRatio: fill.pixelRatio
+        shift: fill.shift
+      }
+    }
+  }
+
   // A new interval restarts it, so every tick re-aims at the next minute,
-  // or for the logo alone at its next move.
+  // or for the logo and the stats alone at their next move.
   Timer {
-    running: clock.visible || logo.visible
+    running: clock.visible || logo.visible || fill.mode === "stats"
     repeat: true
     interval: (clock.visible ? Model.untilNextMinute(fill.now) : Model.untilNextShift(fill.now)) + 50
     onTriggered: fill.now = new Date()

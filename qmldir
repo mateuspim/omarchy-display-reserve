@@ -1,3 +1,7 @@
 singleton ReserveState 1.0 ReserveState.qml
 ReserveFill 1.0 ReserveFill.qml
 Ruler 1.0 Ruler.qml
+StatsSampler 1.0 StatsSampler.qml
+StatsFill 1.0 StatsFill.qml
+StatsCard 1.0 StatsCard.qml
+StatsGraph 1.0 StatsGraph.qml

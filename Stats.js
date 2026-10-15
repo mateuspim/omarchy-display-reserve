@@ -1,0 +1,883 @@
+.pragma library
+
+// The stats fill's data, without any QML: parsing what stats.sh and
+// nvidia-smi print, turning counters into rates, the theme's palette, how
+// the panels tile a strip and what each panel shows.
+
+// Samples kept for each graph.
+var HISTORY = 60
+// Seconds between two frames past which their counters no longer make a
+// rate: the sampler was paused, or the session slept.
+var GAP = 10
+// Seconds between two process samples past which the same holds.
+var PROCESS_GAP = 30
+// Clock ticks per second in /proc/<pid>/stat (USER_HZ), 100 on Linux.
+var HZ = 100
+var MIB = 1048576
+
+// --- stats.sh frames ---------------------------------------------------------
+
+// A frame's lines by section, as { time, stat: [lines], meminfo: [...] }.
+// Sections are opened by "@name" lines; "@time" carries its value.
+function parseFrame(text) {
+  var sections = { time: null }
+  var current = null
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    if (line.charAt(0) === "@") {
+      var parts = line.slice(1).split(" ")
+      if (parts[0] === "time") { sections.time = Number(parts[1]); current = null; continue }
+      if (parts[0] === "end") break
+      current = sections[parts[0]] = []
+    } else if (current && line !== "") {
+      current.push(line)
+    }
+  }
+  return sections
+}
+
+function ticks(line) {
+  var f = line.trim().split(/\s+/).slice(1).map(Number)
+  // user nice system idle iowait irq softirq steal; guest time is already
+  // part of user.
+  var idle = (f[3] || 0) + (f[4] || 0)
+  var busy = (f[0] || 0) + (f[1] || 0) + (f[2] || 0) + (f[5] || 0) + (f[6] || 0) + (f[7] || 0)
+  return { busy: busy, all: busy + idle }
+}
+
+// Busy and total ticks from /proc/stat's cpu lines.
+function parseCpu(lines) {
+  var result = { total: { busy: 0, all: 0 }, cores: [] }
+  for (var i = 0; i < lines.length; i++) {
+    if (/^cpu\s/.test(lines[i])) result.total = ticks(lines[i])
+    else if (/^cpu\d/.test(lines[i])) result.cores.push(ticks(lines[i]))
+  }
+  return result
+}
+
+function share(a, b) {
+  var all = b.all - a.all
+  return all > 0 ? Math.max(0, Math.min(100, (b.busy - a.busy) / all * 100)) : 0
+}
+
+// Percent busy between two parseCpu samples, in total and per core.
+function cpuLoad(before, after) {
+  return {
+    total: share(before.total, after.total),
+    cores: after.cores.map(function(core, i) { return before.cores[i] ? share(before.cores[i], core) : 0 })
+  }
+}
+
+// Bytes from /proc/meminfo. Used is what the kernel could not hand out
+// right now: total less available, as free and btop count it.
+function parseMeminfo(lines) {
+  var kb = {}
+  for (var i = 0; i < lines.length; i++) {
+    var match = /^(\w+):\s+(\d+)/.exec(lines[i])
+    if (match) kb[match[1]] = Number(match[2]) * 1024
+  }
+  var total = kb.MemTotal || 0
+  var available = kb.MemAvailable !== undefined ? kb.MemAvailable : (kb.MemFree || 0)
+  return {
+    total: total,
+    used: Math.max(0, total - available),
+    available: available,
+    cached: (kb.Cached || 0) + (kb.Buffers || 0),
+    swapTotal: kb.SwapTotal || 0,
+    swapUsed: Math.max(0, (kb.SwapTotal || 0) - (kb.SwapFree || 0))
+  }
+}
+
+// The interface of the default route in /proc/net/route, the lowest
+// metric first; "" without one.
+function defaultInterface(lines) {
+  var best = "", metric = Infinity
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].trim().split(/\s+/)
+    if (f.length < 8 || f[1] !== "00000000" || f[7] !== "00000000") continue
+    if (Number(f[6]) < metric) { best = f[0]; metric = Number(f[6]) }
+  }
+  return best
+}
+
+// Received and sent bytes per interface from /proc/net/dev. Large counters
+// can run into the colon, so the line splits there first.
+function parseNetDev(lines) {
+  var result = {}
+  for (var i = 0; i < lines.length; i++) {
+    var colon = lines[i].indexOf(":")
+    if (colon < 0) continue
+    var f = lines[i].slice(colon + 1).trim().split(/\s+/)
+    if (f.length < 9) continue
+    result[lines[i].slice(0, colon).trim()] = { rx: Number(f[0]), tx: Number(f[8]) }
+  }
+  return result
+}
+
+// Whole disks, not partitions, device mapper or zram.
+var DISK = /^(sd[a-z]+|hd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)$/
+
+// Bytes read and written per disk from /proc/diskstats, which counts
+// 512-byte sectors whatever the disk's own sector size.
+function parseDiskstats(lines) {
+  var result = {}
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].trim().split(/\s+/)
+    if (f.length < 10 || !DISK.test(f[2])) continue
+    result[f[2]] = { read: Number(f[5]) * 512, written: Number(f[9]) * 512 }
+  }
+  return result
+}
+
+// The share of the last 10 s some task stalled on each resource, from
+// /proc/pressure, in percent.
+function parsePressure(lines) {
+  var result = { cpu: null, memory: null, io: null }
+  for (var i = 0; i < lines.length; i++) {
+    var match = /^(cpu|memory|io) some avg10=([\d.]+)/.exec(lines[i])
+    if (match) result[match[1]] = Number(match[2])
+  }
+  return result
+}
+
+var CPU_CHIPS = ["k10temp", "zenpower", "coretemp", "k8temp", "cpu_thermal", "acpitz"]
+var CPU_LABELS = ["Tctl", "Tdie", "Package id 0"]
+
+// From stats.sh's hwmon lines (chip, sensor, label, value) and nvme lines
+// (controller, value): the CPU temperature, every fan and the temperature
+// of each NVMe controller. Temperatures in °C.
+function parseSensors(hwmon, nvme) {
+  var result = { cpuTemp: null, fans: [], nvme: {} }
+  var fallback = null, rank = Infinity
+  for (var i = 0; i < hwmon.length; i++) {
+    var f = hwmon[i].split("\t")
+    if (f.length < 4 || f[3] === "") continue
+    var value = Number(f[3])
+    if (/^fan/.test(f[1])) {
+      result.fans.push({ name: f[2] || f[0] + " " + f[1], rpm: value })
+    } else if (/^temp/.test(f[1]) && CPU_CHIPS.indexOf(f[0]) !== -1) {
+      var labelRank = CPU_LABELS.indexOf(f[2])
+      if (labelRank !== -1 && labelRank < rank) { rank = labelRank; result.cpuTemp = value / 1000 }
+      if (fallback === null) fallback = value / 1000
+    }
+  }
+  if (result.cpuTemp === null) result.cpuTemp = fallback
+  for (var j = 0; j < nvme.length; j++) {
+    var g = nvme[j].split("\t")
+    if (g.length === 2 && g[1] !== "") result.nvme[g[0]] = Number(g[1]) / 1000
+  }
+  return result
+}
+
+// The mean of cpufreq's scaling_cur_freq values (kHz), in MHz.
+function averageFrequency(lines) {
+  var values = lines.map(Number).filter(function(n) { return n > 0 })
+  if (!values.length) return null
+  return values.reduce(function(a, b) { return a + b }, 0) / values.length / 1000
+}
+
+// nvidia-smi's "[N/A]" and "[Not Supported]" are null.
+function reading(text) {
+  var value = Number(text)
+  return text === "" || /^\[/.test(text) || !isFinite(value) ? null : value
+}
+
+// The marketing prefixes nobody reads on a small card.
+function gpuName(name) {
+  return String(name).replace(/^NVIDIA\s+/, "").replace(/^GeForce\s+/, "").trim()
+}
+
+// One line of nvidia-smi --query-gpu=index,name,utilization.gpu,
+// memory.used,memory.total,temperature.gpu,power.draw,power.limit,
+// clocks.gr,fan.speed,utilization.encoder,utilization.decoder
+// --format=csv,noheader,nounits; null for anything else.
+function parseGpu(line) {
+  var f = String(line).split(",").map(function(part) { return part.trim() })
+  if (f.length !== 12 || !/^\d+$/.test(f[0])) return null
+  var memUsed = reading(f[3]), memTotal = reading(f[4])
+  return {
+    index: Number(f[0]),
+    name: gpuName(f[1]),
+    load: reading(f[2]),
+    memUsed: memUsed === null ? null : memUsed * MIB,
+    memTotal: memTotal === null ? null : memTotal * MIB,
+    temp: reading(f[5]),
+    power: reading(f[6]),
+    powerLimit: reading(f[7]),
+    clock: reading(f[8]),
+    fan: reading(f[9]),
+    encoder: reading(f[10]),
+    decoder: reading(f[11])
+  }
+}
+
+// A process's short name: its file name without a Windows .exe, as Proton
+// games report a full Windows path.
+function shortName(path) {
+  var parts = String(path).trim().split(/[\\\/]/)
+  return parts[parts.length - 1].replace(/\.exe$/i, "")
+}
+
+// Apps on the GPU from nvidia-smi --query-compute-apps=pid,process_name,
+// used_memory --format=csv,noheader,nounits, by video memory.
+function parseGpuApps(lines) {
+  var apps = []
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split(",")
+    if (f.length < 3 || !/^\s*\d+\s*$/.test(f[0])) continue
+    var memory = reading(f[f.length - 1].trim())
+    apps.push({ pid: Number(f[0]), name: shortName(f.slice(1, -1).join(",")), memory: memory === null ? 0 : memory * MIB })
+  }
+  return apps.sort(function(a, b) { return b.memory - a.memory })
+}
+
+// Name and CPU ticks (user plus system) per pid from /proc/<pid>/stat
+// lines. The name sits in parentheses and can hold anything, parentheses
+// included, so it runs to the last one.
+function parseProcs(lines) {
+  var result = {}
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    var open = line.indexOf(" ("), close = line.lastIndexOf(")")
+    if (open < 0 || close < open) continue
+    var f = line.slice(close + 2).split(" ")
+    if (f.length < 13) continue
+    result[line.slice(0, open)] = { name: line.slice(open + 2, close), ticks: Number(f[11]) + Number(f[12]) }
+  }
+  return result
+}
+
+// The busiest programs between two parseProcs samples `seconds` apart, as
+// top counts it: 100% is one core. Processes of the same name add up, as
+// a browser's dozens of them are one program at a glance; `pid` is the
+// busiest one's and `count` how many there are. A pid that changed name
+// was reused, and one that is new has no baseline; both are left out.
+function topProcesses(before, after, seconds, count) {
+  var byName = {}
+  if (!(seconds > 0)) return []
+  for (var pid in after) {
+    var was = before[pid]
+    if (!was || was.name !== after[pid].name) continue
+    var cpu = (after[pid].ticks - was.ticks) / HZ / seconds * 100
+    if (!(cpu > 0)) continue
+    var name = after[pid].name
+    var entry = byName[name] || (byName[name] = { pid: Number(pid), name: name, cpu: 0, count: 0, most: 0 })
+    entry.cpu += cpu
+    entry.count++
+    if (cpu > entry.most) { entry.most = cpu; entry.pid = Number(pid) }
+  }
+  return Object.keys(byName).map(function(name) {
+    var entry = byName[name]
+    return { pid: entry.pid, name: entry.name, cpu: entry.cpu, count: entry.count }
+  }).sort(function(a, b) { return b.cpu - a.cpu }).slice(0, count)
+}
+
+// --- state -----------------------------------------------------------------
+
+function pushHistory(series, value, length) {
+  var next = series.concat([value])
+  var keep = length || HISTORY
+  return next.length > keep ? next.slice(next.length - keep) : next
+}
+
+function empty() {
+  return {
+    time: null,
+    counters: null,
+    cpu: { total: null, cores: [], threads: 0, temp: null, frequency: null, loadavg: [] },
+    memory: null,
+    network: { interface: "", rx: null, tx: null, rxTotal: 0, txTotal: 0 },
+    disks: [],
+    pressure: null,
+    fans: [],
+    processes: [],
+    processSample: null,
+    // The NVIDIA GPU from nvidia-smi, and AMD and Intel GPUs from sysfs
+    // (drmGpus); gpuRoles picks which panel shows which. `gpuKey` is the
+    // main GPU whose history `history.gpu` holds.
+    nvidia: null,
+    nvidiaMissing: false,
+    drm: [],
+    gpuKey: "",
+    gpuApps: [],
+    history: { cpu: [], gpu: [], igpu: [], fan: [], memory: [], rx: [], tx: [], disk: [], pressure: [] }
+  }
+}
+
+function rate(before, after, seconds) {
+  if (before === undefined || before === null || !(seconds > 0)) return null
+  var value = (after - before) / seconds
+  // A counter that went backwards was reset.
+  return value >= 0 ? value : null
+}
+
+// The busiest interface when there is no default route.
+function busiestInterface(net) {
+  var best = "", most = -1
+  for (var name in net) {
+    if (name === "lo") continue
+    if (net[name].rx + net[name].tx > most) { best = name; most = net[name].rx + net[name].tx }
+  }
+  return best
+}
+
+// `state` updated with one parsed stats.sh frame. Rates need the frame
+// before, so the first frame (and the first after a gap) has none.
+function ingest(state, frame) {
+  state = state || empty()
+  var next = Object.assign({}, state)
+  var history = Object.assign({}, state.history)
+  var seconds = state.time === null ? 0 : frame.time - state.time
+  var fresh = state.counters !== null && seconds > 0 && seconds <= GAP
+  var before = fresh ? state.counters : null
+  var cards = parseDrm(frame.drm || [])
+  var counters = {
+    cpu: parseCpu(frame.stat || []),
+    net: parseNetDev(frame.net || []),
+    disk: parseDiskstats(frame.disk || []),
+    drmIdle: {}
+  }
+  for (var card in cards) if (cards[card].idle_ms !== undefined) counters.drmIdle[card] = cards[card].idle_ms
+  var sensors = parseSensors(frame.hwmon || [], frame.nvme || [])
+
+  var load = before ? cpuLoad(before.cpu, counters.cpu) : null
+  next.cpu = {
+    total: load ? load.total : null,
+    cores: load ? load.cores : [],
+    threads: counters.cpu.cores.length,
+    temp: sensors.cpuTemp,
+    frequency: averageFrequency(frame.freq || []),
+    loadavg: (frame.loadavg && frame.loadavg[0] ? frame.loadavg[0].split(" ").slice(0, 3).map(Number) : [])
+  }
+  if (load) history.cpu = pushHistory(history.cpu, load.total)
+
+  next.memory = parseMeminfo(frame.meminfo || [])
+  if (next.memory.total > 0) history.memory = pushHistory(history.memory, next.memory.used / next.memory.total * 100)
+
+  var name = defaultInterface(frame.route || []) || busiestInterface(counters.net)
+  var now = counters.net[name]
+  var was = before && before.net[name]
+  next.network = {
+    interface: now ? name : "",
+    rx: now && was ? rate(was.rx, now.rx, seconds) : null,
+    tx: now && was ? rate(was.tx, now.tx, seconds) : null,
+    rxTotal: now ? now.rx : 0,
+    txTotal: now ? now.tx : 0
+  }
+  if (next.network.rx !== null) history.rx = pushHistory(history.rx, next.network.rx)
+  if (next.network.tx !== null) history.tx = pushHistory(history.tx, next.network.tx)
+
+  var models = {}
+  ;(frame.model || []).forEach(function(line) {
+    var f = line.split("\t")
+    models[f[0]] = (f[1] || "").trim()
+  })
+  var total = null
+  next.disks = Object.keys(counters.disk).sort().map(function(disk) {
+    var then = before && before.disk[disk]
+    var controller = /^(nvme\d+)n/.exec(disk)
+    var entry = {
+      name: disk,
+      model: models[disk] || "",
+      read: then ? rate(then.read, counters.disk[disk].read, seconds) : null,
+      write: then ? rate(then.written, counters.disk[disk].written, seconds) : null,
+      temp: controller && sensors.nvme[controller[1]] !== undefined ? sensors.nvme[controller[1]] : null
+    }
+    if (entry.read !== null || entry.write !== null) total = (total || 0) + (entry.read || 0) + (entry.write || 0)
+    return entry
+  })
+  if (total !== null) history.disk = pushHistory(history.disk, total)
+
+  next.pressure = parsePressure(frame.psi || [])
+  var worst = Math.max(next.pressure.cpu || 0, next.pressure.memory || 0, next.pressure.io || 0)
+  if (frame.psi) history.pressure = pushHistory(history.pressure, worst)
+
+  next.fans = sensors.fans
+  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds)
+
+  if (frame.procs) {
+    var procs = parseProcs(frame.procs)
+    var last = state.processSample
+    var elapsed = last ? frame.time - last.time : 0
+    if (last && elapsed > 0 && elapsed <= PROCESS_GAP) next.processes = topProcesses(last.procs, procs, elapsed, 10)
+    next.processSample = { time: frame.time, procs: procs }
+  }
+  if (frame.gpuapps) next.gpuApps = parseGpuApps(frame.gpuapps)
+
+  next.time = frame.time
+  next.counters = counters
+  next.history = history
+  return next
+}
+
+// `state` updated with one line of nvidia-smi. With several NVIDIA GPUs
+// the one with the lowest index is shown.
+function ingestGpu(state, line) {
+  var gpu = parseGpu(line)
+  if (!gpu) return state
+  if (state.nvidia && gpu.index > state.nvidia.index) return state
+  var next = Object.assign({}, state)
+  next.nvidia = gpu
+  next.nvidiaMissing = false
+  return next
+}
+
+// The AMD and Intel lines of stats.sh's @drm section (card, driver, key,
+// value) by card: { card2: { driver: "amdgpu", busy: 99, ... } }.
+function parseDrm(lines) {
+  var cards = {}
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split("\t")
+    if (f.length < 4 || f[3] === "") continue
+    var card = cards[f[0]] || (cards[f[0]] = { driver: f[1] })
+    card[f[2]] = f[2] === "status" ? f[3] : Number(f[3])
+  }
+  return cards
+}
+
+// AMD cards with this much VRAM or more are discrete; less is the share of
+// system memory an integrated GPU sets aside.
+var DISCRETE_VRAM = 4 * 1073741824
+
+// GPUs, in the shape parseGpu gives NVIDIA's, from parseDrm's cards.
+// `idleBefore` holds each Intel card's idle milliseconds from the frame
+// `seconds` before: Intel has no load reading, so load is the share of
+// that time the GPU was not idle. A card the kernel has put to sleep is
+// left asleep, with no readings: reading it would wake it.
+function drmGpus(cards, idleBefore, seconds) {
+  return Object.keys(cards).sort().map(function(id) {
+    var c = cards[id]
+    var amd = c.driver === "amdgpu"
+    var memTotal = c.vram_total !== undefined ? c.vram_total : null
+    var discrete = memTotal !== null && memTotal >= DISCRETE_VRAM
+    var gpu = {
+      id: id,
+      vendor: amd ? "AMD" : "Intel",
+      name: amd ? (discrete ? "Radeon" : "Radeon Graphics") : (discrete ? "Intel Arc" : "Intel Graphics"),
+      kind: discrete ? "discrete" : "integrated",
+      asleep: c.status === "suspended",
+      load: null, memUsed: null, memTotal: null, temp: null, power: null, powerLimit: null,
+      clock: null, fan: null, encoder: null, decoder: null
+    }
+    if (gpu.asleep) return gpu
+    if (c.busy !== undefined) gpu.load = c.busy
+    else if (c.idle_ms !== undefined && idleBefore[id] !== undefined && seconds > 0)
+      gpu.load = Math.max(0, Math.min(100, 100 * (1 - (c.idle_ms - idleBefore[id]) / (seconds * 1000))))
+    gpu.memTotal = memTotal
+    if (c.vram_used !== undefined) gpu.memUsed = c.vram_used
+    if (c.temp !== undefined) gpu.temp = c.temp / 1000
+    if (c.power !== undefined) gpu.power = c.power / 1e6
+    if (c.power_cap !== undefined) gpu.powerLimit = c.power_cap / 1e6
+    if (c.freq !== undefined) gpu.clock = c.freq / 1e6
+    else if (c.freq_mhz !== undefined) gpu.clock = c.freq_mhz
+    if (c.pwm !== undefined) gpu.fan = Math.round(c.pwm / 255 * 100)
+    return gpu
+  })
+}
+
+// Which GPU each panel shows: `main`, for the GPU panel, is the first
+// discrete one (NVIDIA first), or else the only kind there is; `integrated`,
+// for the iGPU panel, an integrated GPU beside it, or null.
+function gpuRoles(state) {
+  var all = []
+  if (state.nvidia) all.push(Object.assign({ id: "nvidia" + state.nvidia.index, vendor: "NVIDIA", kind: "discrete", asleep: false }, state.nvidia))
+  all = all.concat(state.drm || [])
+  var main = null, integrated = null
+  for (var i = 0; i < all.length; i++) if (all[i].kind === "discrete") { main = all[i]; break }
+  if (!main) main = all[0] || null
+  for (var j = 0; j < all.length; j++) if (all[j].kind === "integrated" && all[j] !== main) { integrated = all[j]; break }
+  return { main: main, integrated: integrated }
+}
+
+// One update of the dashboard: a stats.sh frame (its text) with the
+// latest nvidia-smi line since the frame before, or "" when none came.
+// Everything on screen changes at once, a sample a second, and the GPU's
+// history advances with the frames like the others: a frame without a new
+// line repeats the last reading.
+function step(state, text, gpuLine) {
+  var next = ingest(state, parseFrame(text))
+  if (gpuLine) next = ingestGpu(next, gpuLine)
+  var roles = gpuRoles(next)
+  var history = next.history
+  var key = roles.main ? roles.main.id : ""
+  // Another GPU taking over the panel starts its own history.
+  if (key !== next.gpuKey) { history.gpu = []; history.fan = []; next.gpuKey = key }
+  if (roles.main && roles.main.load !== null) history.gpu = pushHistory(history.gpu, roles.main.load)
+  if (roles.main && roles.main.fan !== null) history.fan = pushHistory(history.fan, roles.main.fan)
+  if (roles.integrated && roles.integrated.load !== null) history.igpu = pushHistory(history.igpu, roles.integrated.load)
+  return next
+}
+
+// --- theme -------------------------------------------------------------------
+
+// The #rrggbb colors of an Omarchy colors.toml by name, lowercase.
+function parseColors(text) {
+  var colors = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var match = /^\s*([A-Za-z0-9_-]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})\b/.exec(lines[i])
+    if (match) colors[match[1]] = match[2].toLowerCase()
+  }
+  return colors
+}
+
+// The dashboard's colors from the theme's colors.toml, built the way
+// Omarchy's btop themes are: each box has its own hue and graphs run
+// through three. Names missing from the theme fall back to the numbered
+// terminal colors, then to `fallback` (the shell's own foreground, accent
+// and so on).
+function palette(colors, fallback) {
+  colors = colors || {}
+  fallback = fallback || {}
+  var foreground = colors.foreground || colors.color7 || fallback.foreground || "#cccccc"
+  var background = colors.background || colors.color0 || fallback.background || "#000000"
+  var accent = colors.accent || colors.color4 || fallback.accent || foreground
+  var muted = colors.muted || colors.color8 || fallback.muted || mix(foreground, background, 0.5)
+  function named(name, number, extra) { return colors[name] || colors[number] || extra || accent }
+  var red = named("red", "color1", fallback.urgent)
+  var green = named("green", "color2")
+  var yellow = named("yellow", "color3")
+  var blue = named("blue", "color4")
+  var magenta = named("magenta", "color5")
+  var cyan = named("cyan", "color6")
+  var orange = colors.orange || yellow
+  return {
+    foreground: foreground,
+    background: background,
+    accent: accent,
+    line: muted,
+    subtle: mix(foreground, background, 0.35),
+    // The dashboard sits on black, so its tracks are mixed from black too.
+    meter: mix("#000000", foreground, 0.13),
+    boxes: { gpu: cyan, igpu: mix(cyan, green, 0.5), cpu: magenta, memory: green, network: red, disks: yellow, processes: blue, pressure: orange, fans: accent },
+    gradients: {
+      cpu: [cyan, blue, magenta],
+      temp: [green, yellow, red],
+      used: [green, cyan, blue],
+      download: [yellow, orange, red],
+      upload: [green, cyan, blue],
+      process: [cyan, blue, magenta]
+    }
+  }
+}
+
+function channels(hex) {
+  var n = parseInt(String(hex).slice(1), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+// `a` moved towards `b` by `t` (0 to 1).
+function mix(a, b, t) {
+  var x = channels(a), y = channels(b)
+  return "#" + x.map(function(c, i) {
+    return ("0" + Math.round(c + (y[i] - c) * t).toString(16)).slice(-2)
+  }).join("")
+}
+
+// The color at `fraction` (0 to 1) along evenly spaced `stops`.
+function gradientAt(stops, fraction) {
+  var t = Math.max(0, Math.min(1, Number(fraction) || 0)) * (stops.length - 1)
+  var i = Math.min(Math.floor(t), stops.length - 2)
+  return mix(stops[i], stops[i + 1], t - i)
+}
+
+// --- text --------------------------------------------------------------------
+
+var UNITS = ["B", "KiB", "MiB", "GiB", "TiB"]
+
+function scaled(bytes) {
+  var value = Math.max(0, Number(bytes) || 0), unit = 0
+  while (value >= 1024 && unit < UNITS.length - 1) { value /= 1024; unit++ }
+  return { value: value, unit: unit }
+}
+
+function number(value, unit) {
+  return unit === 0 ? String(Math.round(value)) : value < 100 ? value.toFixed(1) : String(Math.round(value))
+}
+
+function formatBytes(bytes) {
+  if (bytes === null || bytes === undefined) return "—"
+  var s = scaled(bytes)
+  return number(s.value, s.unit) + " " + UNITS[s.unit]
+}
+
+// "7.4 / 16.0 GiB": both in the unit of the total.
+function formatPair(used, total) {
+  var s = scaled(total)
+  var factor = Math.pow(1024, s.unit)
+  return number(used / factor, s.unit) + " / " + number(s.value, s.unit) + " " + UNITS[s.unit]
+}
+
+function formatRate(bytes) {
+  return bytes === null || bytes === undefined ? "—" : formatBytes(bytes) + "/s"
+}
+
+// A byte count in a few characters, for rows with several of them: "936K".
+function formatShort(bytes) {
+  if (bytes === null || bytes === undefined) return "—"
+  var s = scaled(bytes)
+  return number(s.value, s.unit) + (s.unit ? UNITS[s.unit].charAt(0) : "")
+}
+
+function formatPercent(value) {
+  return value === null || value === undefined ? "—" : Math.round(value) + "%"
+}
+
+function formatTemp(value) {
+  return value === null || value === undefined ? "—" : Math.round(value) + "°C"
+}
+
+function formatFrequency(mhz) {
+  if (mhz === null || mhz === undefined) return "—"
+  return mhz >= 1000 ? (mhz / 1000).toFixed(2) + " GHz" : Math.round(mhz) + " MHz"
+}
+
+// --- layout ------------------------------------------------------------------
+
+// The dashboard's base size, its text height in pixels, for a strip of
+// `width` by `height`: an eighth of the short side, within readable bounds.
+function unitFor(width, height) {
+  return Math.max(9, Math.min(18, Math.floor(Math.min(width, height) / 8)))
+}
+
+// Cards are about this wide for their height, and never smaller than this
+// many units.
+var CARD_ASPECT = 1.8
+var CARD_MIN_WIDTH = 14
+var CARD_MIN_HEIGHT = 6
+
+// Units of height a card needs for its content: stacked, and wide with
+// its rows beside the graphs. A card is wide past this width for its
+// height.
+var CARD_ROOM = 14
+var WIDE_ROOM = 10
+var WIDE_CARD = 2
+
+function roomy(card, unit) {
+  return card.height >= (card.width > card.height * WIDE_CARD ? WIDE_ROOM : CARD_ROOM) * unit
+}
+
+// The layout with the largest text that keeps every panel and gives each
+// card room for its content: unitFor's size for a few panels, smaller for
+// a crowded grid. When nothing makes room, the smallest text shows what
+// fits. Returns layout's result with its `unit`.
+function fit(panels, width, height) {
+  for (var unit = unitFor(width, height); unit >= 9; unit--) {
+    var grid = layout(panels, width, height, unit)
+    if (grid.dropped.length) continue
+    if (grid.cards.every(function(card) { return roomy(card, unit) })) return { unit: unit, cards: grid.cards, dropped: grid.dropped }
+  }
+  var fallback = layout(panels, width, height, 9)
+  return { unit: 9, cards: fallback.cards, dropped: fallback.dropped }
+}
+
+// Where each of `panels` goes on a `width` by `height` strip with text
+// `unit` pixels high: a grid with a unit of margin and gap, the columns and
+// rows picked for the largest cards near CARD_ASPECT, a short last row
+// stretched across. Panels that do not fit even one to a card are dropped
+// from the end. Returns { cards: [{ panel, x, y, width, height }], dropped }.
+function layout(panels, width, height, unit) {
+  var gap = unit
+  var innerWidth = width - 2 * unit, innerHeight = height - 2 * unit
+  for (var count = panels.length; count > 0; count--) {
+    var best = null
+    for (var columns = 1; columns <= count; columns++) {
+      var rows = Math.ceil(count / columns)
+      var cardWidth = (innerWidth - gap * (columns - 1)) / columns
+      var cardHeight = (innerHeight - gap * (rows - 1)) / rows
+      if (cardWidth < CARD_MIN_WIDTH * unit || cardHeight < CARD_MIN_HEIGHT * unit) continue
+      var score = Math.min(cardWidth, cardHeight * CARD_ASPECT)
+      if (!best || score > best.score) best = { score: score, columns: columns, rows: rows, height: cardHeight }
+    }
+    if (!best) continue
+    var cards = []
+    for (var i = 0; i < count; i++) {
+      var row = Math.floor(i / best.columns)
+      var inRow = row === best.rows - 1 ? count - row * best.columns : best.columns
+      var w = (innerWidth - gap * (inRow - 1)) / inRow
+      cards.push({
+        panel: panels[i],
+        x: unit + (i % best.columns) * (w + gap),
+        y: unit + row * (best.height + gap),
+        width: w,
+        height: best.height
+      })
+    }
+    return { cards: cards, dropped: panels.slice(count) }
+  }
+  return { cards: [], dropped: panels.slice() }
+}
+
+// --- views -------------------------------------------------------------------
+
+var ICONS = {
+  gpu: "\u{f08ae}", igpu: "\u{f08ae}", cpu: "\u{f061a}", memory: "\u{f035b}", network: "\u{f0200}",
+  disks: "\u{f02ca}", processes: "\u{f0279}", pressure: "\u{f029a}", fans: "\u{f0210}"
+}
+var TITLES = { gpu: "GPU", igpu: "iGPU", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", pressure: "Pressure", fans: "Fans" }
+
+function row(label, text, fraction, color) {
+  return { label: label, text: text, fraction: fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, fraction)), color: color || "" }
+}
+
+// A graph's top: its largest value, at least `floor`.
+function graphMax(values, floor) {
+  return Math.max.apply(null, [floor].concat(values))
+}
+
+// What one panel shows, ready to draw: a title with an icon and the box's
+// color, an optional big value with a caption, graphs, per-core bars,
+// label/value rows with meters and ranked lists. `empty` replaces the
+// content with a message. `room` is how many rows the card has space for,
+// for panels whose lists can grow to fill it.
+function view(panel, state, palette, room) {
+  var g = palette.gradients
+  var result = {
+    title: TITLES[panel] || panel, icon: ICONS[panel] || "", color: palette.boxes[panel] || palette.accent,
+    info: "", value: "", valueColor: palette.foreground, caption: "",
+    graphs: [], bars: [], rows: [], lists: [], empty: ""
+  }
+  var build = VIEWS[panel]
+  if (build) build(result, state, palette, g, room)
+  return result
+}
+
+// The rows of a GPU panel for one GPU, whichever its vendor: load with
+// its `history`, then every reading it has.
+function gpuView(v, gpu, history, g) {
+  v.info = gpu.name
+  if (gpu.asleep) { v.empty = "Asleep"; return }
+  v.value = formatPercent(gpu.load)
+  v.valueColor = gradientAt(g.cpu, (gpu.load || 0) / 100)
+  v.caption = "load"
+  v.graphs.push({ values: history, max: 100, stops: g.cpu, label: "" })
+    if (gpu.memUsed !== null && gpu.memTotal) v.rows.push(row("VRAM", formatPair(gpu.memUsed, gpu.memTotal), gpu.memUsed / gpu.memTotal, gradientAt(g.used, gpu.memUsed / gpu.memTotal)))
+  if (gpu.temp !== null) v.rows.push(row("Temp", formatTemp(gpu.temp), gpu.temp / 100, gradientAt(g.temp, gpu.temp / 100)))
+  if (gpu.power !== null) {
+    var limit = gpu.powerLimit
+    v.rows.push(row("Power", limit ? watts(gpu.power) + " / " + watts(limit) + " W" : watts(gpu.power) + " W",
+      limit ? gpu.power / limit : null, limit ? gradientAt(g.temp, gpu.power / limit) : ""))
+  }
+  if (gpu.clock !== null) v.rows.push(row("Clock", formatFrequency(gpu.clock), null))
+  if (gpu.fan !== null) v.rows.push(row("Fan", formatPercent(gpu.fan), gpu.fan / 100, gradientAt(g.cpu, gpu.fan / 100)))
+  if (gpu.encoder) v.rows.push(row("Encode", formatPercent(gpu.encoder), gpu.encoder / 100, gradientAt(g.cpu, gpu.encoder / 100)))
+  if (gpu.decoder) v.rows.push(row("Decode", formatPercent(gpu.decoder), gpu.decoder / 100, gradientAt(g.cpu, gpu.decoder / 100)))
+}
+
+// Watts, with a decimal below 10: an iGPU draws fractions of one.
+function watts(value) {
+  return value < 10 ? value.toFixed(1) : String(Math.round(value))
+}
+
+var VIEWS = {
+  gpu: function(v, state, palette, g) {
+    var gpu = gpuRoles(state).main
+    if (!gpu) { v.empty = state.time !== null && state.nvidiaMissing ? "No GPU found" : "Waiting for data"; return }
+    gpuView(v, gpu, state.history.gpu, g)
+  },
+
+  igpu: function(v, state, palette, g) {
+    var roles = gpuRoles(state)
+    if (roles.integrated) gpuView(v, roles.integrated, state.history.igpu, g)
+    else v.empty = roles.main && roles.main.kind === "integrated" ? "Shown as GPU" : "No integrated GPU"
+  },
+  cpu: function(v, state, palette, g) {
+    var cpu = state.cpu
+    v.info = cpu.threads ? cpu.threads + " threads" : ""
+    v.value = formatPercent(cpu.total)
+    v.valueColor = gradientAt(g.cpu, (cpu.total || 0) / 100)
+    v.caption = "load"
+    v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
+    v.bars = cpu.cores.map(function(load) { return { fraction: load / 100, color: gradientAt(g.cpu, load / 100) } })
+    if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))
+    if (cpu.frequency !== null) v.rows.push(row("Clock", formatFrequency(cpu.frequency), null))
+    if (cpu.loadavg.length) v.rows.push(row("Load", cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
+  },
+
+  memory: function(v, state, palette, g) {
+    var m = state.memory
+    if (!m || !m.total) { v.empty = "Waiting for data"; return }
+    var used = m.used / m.total
+    v.info = formatBytes(m.total)
+    v.value = formatPercent(used * 100)
+    v.valueColor = gradientAt(g.used, used)
+    v.caption = "used"
+    v.graphs.push({ values: state.history.memory, max: 100, stops: g.used, label: "" })
+    v.rows.push(row("Used", formatBytes(m.used), used, gradientAt(g.used, used)))
+    v.rows.push(row("Available", formatBytes(m.available), m.available / m.total, gradientAt(g.upload, m.available / m.total)))
+    v.rows.push(row("Cached", formatBytes(m.cached), m.cached / m.total, gradientAt(g.process, m.cached / m.total)))
+    if (m.swapTotal) v.rows.push(row("Swap", formatPair(m.swapUsed, m.swapTotal), m.swapUsed / m.swapTotal, gradientAt(g.temp, m.swapUsed / m.swapTotal)))
+  },
+
+  network: function(v, state, palette, g) {
+    var n = state.network
+    if (!n.interface) { v.empty = "No network"; return }
+    v.info = n.interface
+    v.graphs.push({ values: state.history.rx, max: graphMax(state.history.rx, 10240), stops: g.download, label: "↓ " + formatRate(n.rx) })
+    v.graphs.push({ values: state.history.tx, max: graphMax(state.history.tx, 10240), stops: g.upload, label: "↑ " + formatRate(n.tx) })
+    v.rows.push(row("Received", formatBytes(n.rxTotal), null))
+    v.rows.push(row("Sent", formatBytes(n.txTotal), null))
+  },
+
+  disks: function(v, state, palette, g) {
+    if (!state.disks.length) { v.empty = "No disks"; return }
+    v.info = state.disks.length === 1 ? "1 disk" : state.disks.length + " disks"
+    v.graphs.push({ values: state.history.disk, max: graphMax(state.history.disk, 1048576), stops: g.process, label: "I/O" })
+    v.rows = state.disks.map(function(disk) {
+      var text = "R " + formatShort(disk.read) + "  W " + formatShort(disk.write)
+      if (disk.temp !== null) text += "  " + formatTemp(disk.temp)
+      return row(disk.name, text, null, disk.temp !== null ? gradientAt(g.temp, disk.temp / 100) : "")
+    })
+  },
+
+  processes: function(v, state, palette, g, room) {
+    // The busiest five programs and three GPU apps, or as many as fill
+    // `room`, which also holds a title per list; always one of each.
+    var vram = state.nvidia || state.gpuApps.length
+    var apps = Math.min(state.gpuApps.length, 3)
+    var programs = 5
+    if (room !== undefined) {
+      if (vram) apps = Math.min(apps, Math.max(1, room - 3))
+      programs = Math.max(1, room - (vram ? 2 + apps : 1))
+    }
+    v.lists.push({ title: "CPU", items: state.processes.slice(0, programs).map(function(p) {
+      return { name: p.count > 1 ? p.name + " ×" + p.count : p.name, text: formatPercent(p.cpu), fraction: Math.min(1, p.cpu / 100), color: gradientAt(g.process, Math.min(1, p.cpu / 100)) }
+    }) })
+    if (vram) {
+      var total = state.nvidia && state.nvidia.memTotal
+      v.lists.push({ title: "VRAM", items: state.gpuApps.slice(0, apps).map(function(app) {
+        var share = total ? app.memory / total : null
+        return { name: app.name, text: formatBytes(app.memory), fraction: share, color: gradientAt(g.used, share || 0) }
+      }) })
+    }
+  },
+
+  pressure: function(v, state, palette, g) {
+    var p = state.pressure
+    if (!p) { v.empty = "Waiting for data"; return }
+    v.info = "stalled, 10 s"
+    v.graphs.push({ values: state.history.pressure, max: graphMax(state.history.pressure, 5), stops: g.temp, label: "" })
+    ;[["CPU", p.cpu], ["Memory", p.memory], ["I/O", p.io]].forEach(function(pair) {
+      if (pair[1] === null) return
+      // Stalls of a few percent already matter; the square root shows them.
+      var fraction = Math.sqrt(pair[1] / 100)
+      v.rows.push(row(pair[0], pair[1].toFixed(1) + "%", fraction, gradientAt(g.temp, fraction)))
+    })
+  },
+
+  fans: function(v, state, palette, g) {
+    var gpu = gpuRoles(state).main
+    if (gpu && gpu.fan !== null) {
+      v.value = formatPercent(gpu.fan)
+      v.valueColor = gradientAt(g.cpu, gpu.fan / 100)
+      v.caption = "GPU fan"
+      v.graphs.push({ values: state.history.fan || [], max: 100, stops: g.cpu, label: "" })
+    }
+    v.rows = state.fans.map(function(fan) {
+      return row(fan.name, fan.rpm + " RPM", fan.rpm / 3000, gradientAt(g.cpu, fan.rpm / 3000))
+    })
+    if (gpu && gpu.fan !== null) v.rows.push(row("GPU", formatPercent(gpu.fan), gpu.fan / 100, gradientAt(g.cpu, gpu.fan / 100)))
+    if (!v.rows.length) v.empty = "No fan sensors"
+  }
+}

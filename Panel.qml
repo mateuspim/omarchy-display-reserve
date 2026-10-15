@@ -5,6 +5,7 @@ import qs.Ui
 import qs.Commons
 import "." as Reserve
 import "Model.js" as Model
+import "Stats.js" as Stats
 
 // Bar button plus popout for editing reserved display edges. Edits go
 // straight into ReserveState, so the caps, the bar and tiled windows move
@@ -68,6 +69,10 @@ Panel {
   readonly property bool canUndo: undo !== null && (undo.output === undefined || undo.output === output)
   readonly property var profileNames: Model.profileNames(reserve.profiles)
   property bool showKeys: false
+  // While open on the stats fill, the preview needs live numbers, so the
+  // sampler runs even if no monitor shows the dashboard yet.
+  readonly property bool previewingStats: opened && edge.fill === "stats"
+  onPreviewingStatsChanged: reserve.statsPreviews += previewingStats ? 1 : -1
 
   // Where an aspect preset puts the reachable area: picked in the panel, or
   // else read off the current edges.
@@ -167,7 +172,10 @@ Panel {
   }
   // A bar rebuild or hotplug can destroy the widget mid-drag, and nothing
   // else would release the hold.
-  Component.onDestruction: if (opened) { reserve.hold(false); reserve.flush() }
+  Component.onDestruction: {
+    if (previewingStats) reserve.statsPreviews--
+    if (opened) { reserve.hold(false); reserve.flush() }
+  }
 
   function fitted(entry, screen) {
     return screen ? Model.fit(entry, screen.width, screen.height) : entry
@@ -245,7 +253,7 @@ Panel {
   // and clock edge, so they all look alike; one undo puts them all back.
   function setFillEverywhere(fill) {
     var before = reserve.outputs
-    var settings = { fill: fill, dim: edge.dim, clockEdge: edge.clockEdge }
+    var settings = { fill: fill, dim: edge.dim, clockEdge: edge.clockEdge, panels: edge.panels }
     screenNames.forEach(function(name) { reserve.update(name, settings) })
     if (!Model.sameOutputs(before, reserve.outputs))
       undo = { outputs: before, text: "Restore each monitor's own fill" }
@@ -256,9 +264,22 @@ Panel {
     reserve.setDim(output, percent)
   }
   function setClockEdge(clockEdge) {
-    if (edge.fill !== "clock" || clockEdge === edge.clockEdge) return
+    if (Model.SINGLE_FILLS.indexOf(edge.fill) === -1 || clockEdge === edge.clockEdge) return
     undo = null
     reserve.setClockEdge(output, clockEdge)
+  }
+  function togglePanel(panel) {
+    undo = null
+    reserve.togglePanel(output, panel)
+  }
+  // Gives every connected monitor this monitor's choice for `panel`,
+  // flipped; one undo puts them all back.
+  function togglePanelEverywhere(panel) {
+    var before = reserve.outputs
+    var on = edge.panels.indexOf(panel) === -1
+    screenNames.forEach(function(name) { reserve.togglePanel(name, panel, on) })
+    if (!Model.sameOutputs(before, reserve.outputs))
+      undo = { outputs: before, text: "Restore each monitor's own stats panels" }
   }
   // Replaces every edge, so it can be undone like Clear.
   function applyAspect(ratio) {
@@ -345,7 +366,9 @@ Panel {
     bar: root.popupBar
     open: root.opened
     focusTarget: keySurface
-    contentWidth: fittedContentWidth(Style.space(380))
+    // Wide enough for four fill and panel buttons a row, "Wallpaper" and
+    // "Processes" included.
+    contentWidth: fittedContentWidth(Style.space(430))
     contentHeight: fittedContentHeight(content.implicitHeight)
     gap: Style.gapsOut + root.barSideReserve
 
@@ -428,7 +451,7 @@ Panel {
           Grid {
             id: fillGrid
             width: parent.width
-            columns: 3
+            columns: 4
             spacing: Style.spacing.md
             Repeater {
               model: [
@@ -437,13 +460,16 @@ Panel {
                 { fill: "logo", icon: "󰣇", tip: "The Omarchy logo on black: stacked with its icon on the sides" },
                 { fill: "wallpaper", icon: "󰋩", tip: "The slice of the wallpaper under the edge" },
                 { fill: "dim", icon: "󰃞", tip: "The wallpaper slice, darkened" },
-                { fill: "clock", icon: "󰥔", tip: "A 24-hour clock on the largest edge; the others stay black" }
+                { fill: "clock", icon: "󰥔", tip: "A 24-hour clock on the largest edge; the others stay black" },
+                { fill: "stats", icon: "󰨇", tip: "A btop-style dashboard of GPU, CPU, memory and more on the largest edge; it stays up beside fullscreen games" }
               ]
               Button {
                 required property var modelData
                 width: (fillGrid.width - fillGrid.spacing * (fillGrid.columns - 1)) / fillGrid.columns
                 text: Model.fillName(modelData.fill)
                 iconText: modelData.icon
+                // Four to a row: "Wallpaper" needs the room.
+                horizontalPadding: Style.spacing.sm
                 tooltipText: modelData.tip + "\nRight click for every monitor"
                 selected: root.edge.fill === modelData.fill
                 bordered: true
@@ -498,16 +524,16 @@ Panel {
               font.pixelSize: Style.font.caption
             }
           }
-          // Only for the clock: which edge shows it.
+          // Only for the clock and the stats: which edge shows them.
           Row {
             id: clockRow
-            visible: root.edge.fill === "clock"
+            visible: Model.SINGLE_FILLS.indexOf(root.edge.fill) !== -1
             width: parent.width
             spacing: Style.spacing.md
             Repeater {
               model: [
-                { clockEdge: "largest", icon: "󰩨", text: "Largest edge", tip: "The clock goes on the largest reserved edge" },
-                { clockEdge: "topBottom", icon: "󰹹", text: "Top or bottom", tip: "The clock goes on the larger of the top and bottom edges, if either is reserved" }
+                { clockEdge: "largest", icon: "󰩨", text: "Largest edge", tip: "The " + Model.fillName(root.edge.fill).toLowerCase() + " goes on the largest reserved edge" },
+                { clockEdge: "topBottom", icon: "󰹹", text: "Top or bottom", tip: "The " + Model.fillName(root.edge.fill).toLowerCase() + " goes on the larger of the top and bottom edges, if either is reserved" }
               ]
               Button {
                 required property var modelData
@@ -520,6 +546,41 @@ Panel {
                 foreground: root.foreground
                 fontFamily: root.fontFamily
                 onClicked: { root.setClockEdge(modelData.clockEdge); keySurface.forceActiveFocus() }
+              }
+            }
+          }
+          // Only for the stats: which panels the dashboard shows. Panels
+          // that do not fit the strip are left off from the end.
+          Column {
+            visible: root.edge.fill === "stats"
+            width: parent.width
+            spacing: Style.spacing.sm
+            PanelSectionHeader {
+              text: "PANELS  ·  " + root.edge.panels.length + " OF " + Model.STATS_PANELS.length
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+            Grid {
+              id: panelGrid
+              width: parent.width
+              columns: 3
+              spacing: Style.spacing.md
+              Repeater {
+                model: Model.STATS_PANELS
+                Button {
+                  required property string modelData
+                  width: (panelGrid.width - panelGrid.spacing * (panelGrid.columns - 1)) / panelGrid.columns
+                  text: Model.panelName(modelData)
+                  iconText: Stats.ICONS[modelData]
+                  horizontalPadding: Style.spacing.sm
+                  tooltipText: (selected ? "Hide " : "Show ") + Model.panelName(modelData).toLowerCase() + " on the dashboard\nRight click for every monitor"
+                  selected: root.edge.panels.indexOf(modelData) !== -1
+                  bordered: true
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  onClicked: { root.togglePanel(modelData); keySurface.forceActiveFocus() }
+                  onRightClicked: { root.togglePanelEverywhere(modelData); keySurface.forceActiveFocus() }
+                }
               }
             }
           }
@@ -674,7 +735,7 @@ Panel {
               "U / Ctrl Z", "Undo clear or zero",
               "Space / P", "Pause monitor",
               "F", "Next fill",
-              "C", "Clock on the largest edge / top or bottom",
+              "C", "Clock or stats on the largest edge / top or bottom",
               "A", "Move the reachable area of an aspect preset",
               "R", "Ruler on the monitor",
               "I", "Black when idle: off, 30 s, 1 min, 5 min",
@@ -864,6 +925,8 @@ Panel {
           side: modelData
           mode: Model.edgeFill(root.edge, modelData)
           dim: root.edge.dim / 100
+          panels: root.edge.panels
+          pixelRatio: preview.ratio
           size: root.edge[modelData] * preview.ratio
           screenWidth: monitor.width
           screenHeight: monitor.height

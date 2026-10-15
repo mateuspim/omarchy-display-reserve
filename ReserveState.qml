@@ -4,6 +4,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import "." as Reserve
 import "Model.js" as Model
 
 // Shared reservation state for the service (black caps) and every bar widget
@@ -135,6 +136,11 @@ QtObject {
 
   function setDim(output, percent) { update(output, { dim: Model.dimPercent(percent) }) }
 
+  // The stats panels `output` shows, as a list (Model.panelList).
+  function setPanels(output, panels) { update(output, { panels: Model.panelList(panels) }) }
+  // Switches one stats panel on `output` on or off; without `on`, flips it.
+  function togglePanel(output, panel, on) { setPanels(output, Model.togglePanel(edges(output).panels, panel, on)) }
+
   function setClockEdge(output, clockEdge) {
     if (Model.CLOCK_EDGES.indexOf(clockEdge) === -1) return
     update(output, { clockEdge: clockEdge })
@@ -230,8 +236,8 @@ QtObject {
     var next = Object.assign({}, outputs)
     delete next[key]
     delete next[output]
-    if (current.fill !== "black" || current.clockEdge !== "largest" || current.dim !== Model.DIM_DEFAULT)
-      next[key] = { fill: current.fill, clockEdge: current.clockEdge, dim: current.dim }
+    var kept = { fill: current.fill, clockEdge: current.clockEdge, dim: current.dim, panels: current.panels }
+    if (!Model.isDefault(kept)) next[key] = kept
     outputs = next
     saveTimer.restart()
   }
@@ -338,6 +344,28 @@ QtObject {
     repeat: true
     running: root.usesWallpaper
     onTriggered: if (!root.wallpaperProc.running) root.wallpaperProc.running = true
+  }
+
+  // The stats fill's numbers, from one sampler for every monitor. It runs
+  // only while a connected monitor shows the dashboard, or a panel previews
+  // it, and never while the session is idle: every edge is black then.
+  // `idle` is the service's; `statsPreviews` counts open panels showing
+  // the stats fill.
+  property bool idle: false
+  property int statsPreviews: 0
+  readonly property var statsPanels: {
+    if (statsPreviews > 0) return Model.STATS_PANELS
+    var shown = []
+    for (var output in keys) {
+      var entry = activeEdges(output)
+      if (entry.fill === "stats" && Model.total(entry) > 0) shown = shown.concat(entry.panels)
+    }
+    return Model.panelList(shown)
+  }
+  property Reserve.StatsSampler stats: Reserve.StatsSampler {
+    running: root.statsPanels.length > 0 && !root.idle
+    processes: root.statsPanels.indexOf("processes") !== -1
+    gpu: ["gpu", "processes", "fans"].some(function(panel) { return root.statsPanels.indexOf(panel) !== -1 })
   }
 
   // The Omarchy logo's SVG source, for the logo fill to recolor.

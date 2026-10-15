@@ -4,8 +4,18 @@ var EDGES = ["top", "bottom", "left", "right"]
 // What a reserved edge shows. Black is the default and the only one that is
 // safe on OLED panels; the others keep a static image in the same place
 // (the clock shifts a little now and then, but its digits stay lit).
-var FILLS = ["black", "theme", "logo", "wallpaper", "dim", "clock"]
-var FILL_NAMES = { black: "Black", theme: "Theme", wallpaper: "Wallpaper", dim: "Dimmed", logo: "Logo", clock: "Clock" }
+var FILLS = ["black", "theme", "logo", "wallpaper", "dim", "clock", "stats"]
+var FILL_NAMES = { black: "Black", theme: "Theme", wallpaper: "Wallpaper", dim: "Dimmed", logo: "Logo", clock: "Clock", stats: "Stats" }
+// Fills drawn once per monitor, on the edge clockEdge picks; the other
+// edges stay black.
+var SINGLE_FILLS = ["clock", "stats"]
+// The stats fill's panels, in the order the dashboard lays them out and
+// drops them when the strip runs out of room.
+var STATS_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "pressure", "fans"]
+var STATS_DEFAULT = ["gpu", "cpu", "memory", "network"]
+var PANEL_NAMES = { gpu: "GPU", igpu: "iGPU", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", pressure: "Pressure", fans: "Fans" }
+// Other names IPC accepts for a panel.
+var PANEL_ALIASES = { mem: "memory", ram: "memory", net: "network", disk: "disks", io: "disks", procs: "processes", "top processes": "processes", psi: "pressure", fan: "fans", integrated: "igpu" }
 // Where the clock fill goes: the largest reserved edge, or the larger of
 // the top and bottom edges.
 var CLOCK_EDGES = ["largest", "topBottom"]
@@ -49,10 +59,53 @@ function normalize(raw) {
     enabled: entry.enabled !== false,
     fill: FILLS.indexOf(entry.fill) !== -1 ? entry.fill : "black",
     clockEdge: CLOCK_EDGES.indexOf(entry.clockEdge) !== -1 ? entry.clockEdge : "largest",
-    dim: dimPercent(entry.dim)
+    dim: dimPercent(entry.dim),
+    panels: panelList(entry.panels)
   }
   for (var i = 0; i < EDGES.length; i++) result[EDGES[i]] = pixels(entry[EDGES[i]])
   return result
+}
+
+// The stats panels an entry shows: known names, once each, in
+// STATS_PANELS order. Anything but a list (a missing key) is the default;
+// an empty list is a dashboard with nothing on it.
+function panelList(raw) {
+  if (!Array.isArray(raw)) return STATS_DEFAULT.slice()
+  return STATS_PANELS.filter(function(panel) { return raw.indexOf(panel) !== -1 })
+}
+
+// `list` with `panel` switched on or off: flipped, or set to `on` when it
+// is given.
+function togglePanel(list, panel, on) {
+  if (STATS_PANELS.indexOf(panel) === -1) return panelList(list)
+  var has = list.indexOf(panel) !== -1
+  if (on === undefined) on = !has
+  return panelList(on ? list.concat([panel]) : list.filter(function(name) { return name !== panel }))
+}
+
+// The panel a name stands for, by key, label or alias in any case; "" for
+// an unknown name.
+function panelFrom(text) {
+  text = String(text).trim().toLowerCase()
+  if (PANEL_ALIASES[text]) return PANEL_ALIASES[text]
+  for (var i = 0; i < STATS_PANELS.length; i++)
+    if (text === STATS_PANELS[i] || text === PANEL_NAMES[STATS_PANELS[i]].toLowerCase()) return STATS_PANELS[i]
+  return ""
+}
+
+// A comma list of panels from IPC, "all" or "none"; null when a name is
+// unknown.
+function panelsFrom(text) {
+  text = String(text).trim().toLowerCase()
+  if (text === "all") return STATS_PANELS.slice()
+  if (text === "none" || text === "") return []
+  var names = text.split(",").map(panelFrom)
+  if (names.indexOf("") !== -1) return null
+  return panelList(names)
+}
+
+function panelName(panel) {
+  return PANEL_NAMES[panel] || title(String(panel))
 }
 
 // What is actually on screen: a paused output reserves nothing.
@@ -65,6 +118,7 @@ function active(raw) {
 // Whether two normalized entries reserve, enable and fill the same.
 function same(a, b) {
   if (a.enabled !== b.enabled || a.fill !== b.fill || a.clockEdge !== b.clockEdge || a.dim !== b.dim) return false
+  if (String(a.panels) !== String(b.panels)) return false
   for (var i = 0; i < EDGES.length; i++) if (a[EDGES[i]] !== b[EDGES[i]]) return false
   return true
 }
@@ -132,10 +186,16 @@ function clockEdge(entry) {
   return (entry.clockEdge === "topBottom" && largestEdge(entry, ["top", "bottom"])) || largestEdge(entry, EDGES)
 }
 
-// What `side` of a normalized entry shows. There is one clock per monitor;
-// its other edges stay black.
+// What `side` of a normalized entry shows. There is one clock (or stats
+// dashboard) per monitor; its other edges stay black.
 function edgeFill(entry, side) {
-  return entry.fill === "clock" && side !== clockEdge(entry) ? "black" : entry.fill
+  return SINGLE_FILLS.indexOf(entry.fill) !== -1 && side !== clockEdge(entry) ? "black" : entry.fill
+}
+
+// What an edge shows beside a fullscreen window: black, except the stats
+// dashboard, which is most useful while a game runs.
+function fullscreenFill(fill) {
+  return fill === "stats" ? "stats" : "black"
 }
 
 // Blocky 3x5 digits in the style of clock-tui, one string per row.

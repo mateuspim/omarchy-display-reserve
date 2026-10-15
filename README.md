@@ -70,12 +70,17 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
   largest reserved edge, or with **Top or bottom** the larger of those two
   whenever either is reserved. The monitor's other edges stay black. The
   digits are always upright and as large as the edge allows: one line on a
-  wide edge, hours over minutes on a tall one. Right-click a fill to give
-  it to every monitor, with this monitor's dim amount and clock edge.
+  wide edge, hours over minutes on a tall one. **Stats** turns the same one
+  edge into a live system dashboard in the style of btop (see below).
+  Right-click a fill to give it to every monitor, with this monitor's dim
+  amount, clock edge and stats panels.
   Every fill except Black keeps something lit in the
   same place all day, which can burn into an OLED panel. The clock and the
-  logo move a few pixels every 5 minutes to spread the wear. While the
-  monitor shows a fullscreen window, every edge goes black whatever the fill.
+  logo move a few pixels every 5 minutes to spread the wear, and so does the
+  stats dashboard. While the monitor shows a fullscreen window, every edge
+  goes black, except the stats dashboard, which stays up beside a game.
+- **Panels** (with the Stats fill): which panels the dashboard shows. Click
+  one to show or hide it; right-click to do the same on every monitor.
 - **Ruler**: draws a scale from the middle of every edge of the monitor to
   its middle, over everything: a tick every 10 px, a longer one every 50
   and the distance from that edge every 100. The tick marked N is the first
@@ -113,7 +118,7 @@ next to the edges, since a ruler on the screen measures something else.
 | `u`, Ctrl+Z | Undo a Clear, a zeroed edge, a preset or a profile change |
 | Space, `p` | Pause or resume the monitor |
 | `f` | Next fill |
-| `c` | Clock on the largest edge / top or bottom |
+| `c` | Clock or stats on the largest edge / top or bottom |
 | `a` | Move the reachable area of an aspect preset |
 | `r` | Show or hide the ruler |
 | `i` | Black when idle: off, 30 s, 1 min, 5 min |
@@ -139,7 +144,9 @@ The shell answers IPC calls on the target `pym.display-reserve`, through
 | `status` | Every monitor's settings, as JSON |
 | `toggle <monitor>` | Pause or resume |
 | `pause <monitor>`, `resume <monitor>` | Pause, resume |
-| `fill <monitor> <fill>` | Set the fill: `black`, `theme`, `logo`, `wallpaper`, `dim` or `clock` |
+| `fill <monitor> <fill>` | Set the fill: `black`, `theme`, `logo`, `wallpaper`, `dim`, `clock` or `stats` |
+| `panels <monitor> <list>` | The stats panels, as a comma list such as `gpu,cpu,memory`, or `all` or `none` |
+| `panel <monitor> <panel> <on\|off\|"">` | Show or hide one stats panel; `""` switches it over |
 | `nextFill <monitor>` | Next fill, as `f` in the panel |
 | `dim <monitor> <percent>` | How dark the dimmed fill is, 10 to 90 |
 | `edge <monitor> <side> <pixels>` | Reserve `pixels` on `top`, `bottom`, `left` or `right` |
@@ -156,6 +163,8 @@ For example, from a terminal:
 
 ```bash
 omarchy-shell pym.display-reserve fill DP-4 clock
+omarchy-shell pym.display-reserve fill DP-4 stats
+omarchy-shell pym.display-reserve panels DP-4 gpu,cpu,processes
 omarchy-shell pym.display-reserve aspect DP-4 16:9 bottom
 omarchy-shell pym.display-reserve profile Gaming
 ```
@@ -214,8 +223,10 @@ A monitor with no description, or one that shares its description with
 another connected monitor, is keyed by its connector name (`DP-4`) instead.
 Each entry also has `enabled`, which is `false` while the monitor is paused,
 and can have `fill`: `"black"` (the default), `"theme"`, `"wallpaper"`,
-`"dim"`, `"logo"` or `"clock"`, `clockEdge`: `"largest"` (the default)
-or `"topBottom"`, and `dim`: the dimmed fill's percent (60 by default).
+`"dim"`, `"logo"`, `"clock"` or `"stats"`, `clockEdge`: `"largest"` (the
+default) or `"topBottom"`, `dim`: the dimmed fill's percent (60 by
+default), and `panels`: the stats panels, `["gpu", "cpu", "memory",
+"network"]` by default.
 Clear keeps the fill. Black when idle is one setting for every monitor,
 stored beside `outputs` as `"idleBlack"`: seconds, left out while it is
 off. Profiles are stored beside them as `"profiles"`, each a copy of
@@ -226,6 +237,57 @@ new set of monitors from a restart.
 
 The file is watched, so hand edits apply right away. An edit made within
 200 ms of a change in the panel is overwritten by that change.
+
+## The stats fill
+
+<p align="center">
+  <img src="docs/stats.png" width="540"
+       alt="The top 660 pixels of a portrait monitor showing four btop-style boxes: GPU at 95% load with a load graph and VRAM, temperature, power, clock and fan meters; CPU at 29% with a bar per thread; memory at 46% used; and network download and upload graphs">
+</p>
+
+The Stats fill shows live system numbers on one edge, as rounded boxes
+with history graphs and meters:
+
+| Panel | Shows | From |
+| --- | --- | --- |
+| GPU | The discrete GPU: load, video memory, temperature, power against its limit, clock, fan, video encode/decode while busy | `nvidia-smi` for NVIDIA, sysfs for AMD and Intel |
+| iGPU | The integrated GPU beside it, read the same way | sysfs |
+| CPU | Load with a bar per thread, temperature, clock, load average | `/proc/stat`, the CPU's hwmon sensor, cpufreq |
+| Memory | Used, available, cached, swap | `/proc/meminfo` |
+| Network | Download and upload graphs, totals, on the interface of the default route | `/proc/net/dev`, `/proc/net/route` |
+| Disks | Read and write per disk, NVMe temperatures | `/proc/diskstats`, NVMe hwmon |
+| Processes | The busiest programs by CPU, processes of one name added up, and the apps using the most video memory | `/proc/<pid>/stat`, `nvidia-smi` |
+| Pressure | How much of the last 10 s tasks stalled waiting for CPU, memory or I/O | `/proc/pressure` |
+| Fans | Every fan sensor, and the GPU's fan | hwmon, `nvidia-smi` |
+
+GPU, CPU, Memory and Network are on by default. The panels tile the edge
+in the grid that gives them the most room, and the text shrinks for a
+crowded one; panels that still do not fit are left off from the end of
+the list above.
+
+The GPU panel shows the discrete GPU (NVIDIA first), and the iGPU panel the
+integrated one beside it; on a machine with only one GPU, that one is the
+GPU panel's. AMD GPUs report everything nvidia-smi does except video
+encode/decode; an AMD GPU with less than 4 GiB of VRAM counts as
+integrated, which is the memory an APU sets aside. Intel GPUs report no
+load, so it is worked out from how long the GPU sat idle, and only the
+clock besides: their temperature and power are the CPU's. A GPU the
+kernel has put to sleep, such as a laptop's discrete one, shows as asleep
+and is not read, since reading it would wake it.
+
+The colors come from the theme's `colors.toml`, the way Omarchy's btop
+themes are built: each box has its own hue, and graphs and meters run
+from cool to hot (CPU cyan, blue, magenta; temperature green, yellow,
+red). Omarchy reads that file at startup and sends theme switches to the
+shell over IPC, so the plugin reads it again whenever the shell's theme
+colors change, and the dashboard follows a theme switch at once.
+
+The numbers come from `stats.sh`, which prints them once a second using
+shell builtins only, so it starts no process per sample, and from one
+`nvidia-smi` that keeps running and prints a line a second. Process
+lists come every 3 seconds and only while the Processes panel is shown.
+Nothing runs unless a monitor shows the Stats fill (or the panel shows
+it in its preview), and everything stops while the session is idle.
 
 ## Known limitations
 

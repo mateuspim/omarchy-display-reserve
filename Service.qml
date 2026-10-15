@@ -30,15 +30,23 @@ Scope {
       // Fitted here as well as in the panel: hand edits and mode changes
       // never go through the panel's limits.
       readonly property var edge: Model.fit(Reserve.ReserveState.appliedEdges(modelData.name), modelData.width, modelData.height)
-      // A fullscreen window (a video, a game) gets plain black beside it,
-      // whatever the fill, rather than a bright logo or wallpaper.
+      // A fullscreen window (a video, a game) gets plain black beside it
+      // rather than a bright logo or wallpaper; only the stats dashboard
+      // stays, as a game is when it is most useful.
       readonly property bool fullscreen: Hyprland.monitorFor(modelData)?.activeWorkspace?.hasFullscreen ?? false
-      function fillFor(side) { return fullscreen || root.idle ? "black" : Model.edgeFill(edge, side) }
+      function fillFor(side) {
+        // Read in this order: the edge first wakes the state singleton,
+        // which then reads as a binding loop at startup.
+        var beside = fullscreen
+        if (root.idle) return "black"
+        var shown = Model.edgeFill(edge, side)
+        return beside ? Model.fullscreenFill(shown) : shown
+      }
 
-      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.fillFor("top"); dim: output.edge.dim }
-      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.fillFor("bottom"); dim: output.edge.dim }
-      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.fillFor("left"); dim: output.edge.dim }
-      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.fillFor("right"); dim: output.edge.dim }
+      ReservedEdge { screen: output.modelData; side: "top"; pixels: output.edge.top; fill: output.fillFor("top"); dim: output.edge.dim; panels: output.edge.panels }
+      ReservedEdge { screen: output.modelData; side: "bottom"; pixels: output.edge.bottom; fill: output.fillFor("bottom"); dim: output.edge.dim; panels: output.edge.panels }
+      ReservedEdge { screen: output.modelData; side: "left"; pixels: output.edge.left; fill: output.fillFor("left"); dim: output.edge.dim; panels: output.edge.panels }
+      ReservedEdge { screen: output.modelData; side: "right"; pixels: output.edge.right; fill: output.fillFor("right"); dim: output.edge.dim; panels: output.edge.panels }
     }
   }
 
@@ -47,6 +55,8 @@ Scope {
   // inhibits idle, such as a video player, holds it off like it holds off
   // the screensaver.
   readonly property bool idle: idleMonitor.enabled && idleMonitor.isIdle
+  // The stats sampler pauses with it.
+  onIdleChanged: root.state.idle = idle
   IdleMonitor {
     id: idleMonitor
     enabled: root.state.idleBlack > 0
@@ -121,6 +131,15 @@ Scope {
     return "No profile named " + name + (names.length ? "; one of " + names.join(", ") : "; none saved yet")
   }
 
+  // Sets the stats panels and says which are on, and when the stats fill
+  // is not what the monitor shows.
+  function setPanels(name, list) {
+    root.state.setPanels(name, list)
+    var entry = root.state.edges(name)
+    var names = entry.panels.map(Model.panelName).join(", ") || "no panels"
+    return "Stats: " + names + (entry.fill === "stats" ? "" : "  ·  shown with the stats fill")
+  }
+
   function needsReserve(name) { return root.state.isReserved(name) ? "" : "No reserved edges" }
 
   // Sets a fill and says so even without reserved edges, where the summary
@@ -162,6 +181,21 @@ Scope {
       return root.each(output, function(name) {
         root.state.setDim(name, percent)
         return "Dim " + root.state.edges(name).dim + "%"
+      })
+    }
+    // The stats panels, as a comma list of names, "all" or "none".
+    function panels(output: string, panels: string): string {
+      var list = Model.panelsFrom(panels)
+      if (!list) return "Unknown panel in " + panels + "; one of " + Model.STATS_PANELS.join(", ")
+      return root.each(output, function(name) { return root.setPanels(name, list) })
+    }
+    // One stats panel "on", "off" or, with neither, switched over.
+    function panel(output: string, panel: string, state: string): string {
+      var key = Model.panelFrom(panel)
+      if (!key) return "Unknown panel " + panel + "; one of " + Model.STATS_PANELS.join(", ")
+      if (state && state !== "on" && state !== "off") return "Say on or off"
+      return root.each(output, function(name) {
+        return root.setPanels(name, Model.togglePanel(root.state.edges(name).panels, key, state ? state === "on" : undefined))
       })
     }
     function nextFill(output: string): string {
@@ -275,6 +309,7 @@ Scope {
     required property int pixels
     required property string fill
     required property int dim
+    required property var panels
     active: pixels > 0
 
     Scope {
@@ -306,6 +341,7 @@ Scope {
           side: reserved.side
           mode: reserved.fill
           dim: reserved.dim / 100
+          panels: reserved.panels
           size: reserved.pixels
           screenWidth: reserved.screen.width
           screenHeight: reserved.screen.height
