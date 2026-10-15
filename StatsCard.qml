@@ -22,6 +22,13 @@ Item {
   required property int unit
   property string fontFamily: Style.font.family
   readonly property bool wide: width > height * Stats.WIDE_CARD
+  // Omarchy's icon beside a view that asks for it (System), as fastfetch
+  // shows the distro's: as tall as the body, when that leaves the rows
+  // room enough.
+  readonly property real bodyHeight: height - Math.round(unit * 1.6) - unit
+  readonly property real logoSize: Math.min(bodyHeight, width * 0.3)
+  readonly property bool showsLogo: shown.logo === true && Reserve.ReserveState.iconArt !== null
+    && logoSize >= unit * 4 && width - 3 * unit - logoSize >= unit * 20
   readonly property int line: Math.max(1, Math.round(unit / 12))
 
   Rectangle {
@@ -79,11 +86,38 @@ Item {
     }
   }
 
+  Canvas {
+    id: logo
+    visible: card.showsLogo
+    x: card.unit
+    y: Math.round(card.unit * 1.6) + (card.bodyHeight - height) / 2
+    width: card.logoSize
+    height: card.logoSize
+    // Not `art`: that is the cover's id.
+    readonly property var blocks: Reserve.ReserveState.iconArt
+    readonly property color tint: card.shown.color
+    onBlocksChanged: requestPaint()
+    onTintChanged: requestPaint()
+    onWidthChanged: requestPaint()
+    onVisibleChanged: requestPaint()
+    onPaint: {
+      var ctx = getContext("2d")
+      ctx.reset()
+      if (!visible || !blocks || !blocks.columns) return
+      var cell = Math.floor(width / Math.max(blocks.columns, blocks.rows))
+      if (cell < 1) return
+      var left = Math.floor((width - cell * blocks.columns) / 2), top = Math.floor((height - cell * blocks.rows) / 2)
+      ctx.fillStyle = tint
+      for (var i = 0; i < blocks.cells.length; i++) ctx.fillRect(left + blocks.cells[i].x * cell, top + blocks.cells[i].y * cell, cell, cell)
+    }
+  }
+
   GridLayout {
     id: body
     anchors.fill: parent
     anchors.margins: card.unit
     anchors.topMargin: Math.round(card.unit * 1.6)
+    anchors.leftMargin: card.showsLogo ? card.unit * 2 + card.logoSize : card.unit
     columns: card.wide ? 2 : 1
     columnSpacing: card.unit * 1.2
     rowSpacing: Math.round(card.unit * 0.5)
@@ -278,7 +312,8 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       radius: Math.round(card.unit * 0.4)
       color: card.theme.meter
-      visible: width >= card.unit * 3
+      // Only beside room for the title: a narrow card is all text.
+      visible: width >= card.unit * 3 && parent.width - width - card.unit >= card.unit * 14
       Text {
         anchors.centerIn: parent
         visible: art.status !== Image.Ready
@@ -389,7 +424,8 @@ Item {
     }
     Rectangle {
       id: meter
-      visible: statRow.hasMeter
+      // A meter squeezed to a dot says nothing.
+      visible: statRow.hasMeter && width >= card.unit * 2
       anchors.verticalCenter: parent.verticalCenter
       x: statRow.labelFills ? rowLabel.width + card.unit * 0.6 : rowLabel.width
       width: !statRow.hasMeter ? 0 : statRow.labelFills ? statRow.meterWidth : Math.max(0, value.x - x - card.unit * 0.6)
@@ -408,6 +444,9 @@ Item {
       id: value
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
+      // Never over the label: past the row, it elides.
+      width: Math.min(implicitWidth, parent.width - card.unit * 3)
+      elide: Text.ElideRight
       text: statRow.text
       color: card.theme.foreground
       font.family: card.fontFamily

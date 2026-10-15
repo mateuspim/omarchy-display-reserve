@@ -381,7 +381,9 @@ const tests = {
     }
   },
   "the disks view fits its rows to the room"() {
-    assert.equal(Stats.view("disks", full, palette, 2).rows.length, 2)
+    // Under the I/O graph in a stacked card, beside it in a wide one.
+    assert.equal(Stats.view("disks", full, palette, 4).rows.length, 2)
+    assert.equal(Stats.view("disks", full, palette, 2, true).rows.length, 2)
   },
   "NVMe temperatures carry over frames that do not read them"() {
     let state = Stats.step(Stats.empty(), frame(10, [0]), [])
@@ -601,17 +603,46 @@ Object.assign(tests, {
     assert.equal(view.rows.find(row => row.label === "GPU").text, "54°C")
     assert.deepEqual(plain(view.graphs[0].values), [67.375, 67.375])
     // Rows past the card's room are left out: beside the headline in a
-    // wide card, under it in a stacked one, which takes three rows' room.
+    // wide card, under it in a stacked one, where the value and graph take
+    // about three rows' room.
     assert.equal(Stats.view("temps", full, palette, 6, true).rows.length, 6)
-    assert.equal(Stats.view("temps", full, palette, 6, false).rows.length, 3)
+    assert.equal(Stats.view("temps", full, palette, 6, false).rows.length, 2)
   },
   "the system view leads with the uptime"() {
     const view = Stats.view("system", full, palette)
     assert.equal(view.value, "9h 50m")
     assert.equal(view.caption, "up")
     assert.equal(view.info, "odin")
+    assert.equal(view.logo, true)
     assert.equal(view.rows.find(row => row.label === "Kernel").text, "7.2.5-3-omarchy")
     assert.equal(view.rows.find(row => row.label === "Threads").text, "1234")
+  },
+  "the system view reads like fastfetch, most telling first"() {
+    const info = "@sysinfo\nuser\tpym\nos\tOmarchy\nomarchy\t4.0.0.alpha\nsys_vendor\tASUS\nproduct_name\tSystem Product Name\n" +
+      "board_vendor\tASUSTeK COMPUTER INC.\nboard_name\tTUF GAMING B650M-E WIFI\ncpu\tAMD Ryzen 9 9900X 12-Core Processor\n" +
+      "packages\t1176\nflatpaks\t3\nshell\tbash\ndesktop\tHyprland\ntheme\tnord\n"
+    let state = Stats.step(Stats.empty(), frame(10, [0], info), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
+    // Read every minute only, they stand between reads.
+    state = Stats.step(state, frame(11, [0]), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
+    const view = Stats.view("system", state, palette)
+    assert.equal(view.info, "pym@odin")
+    assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [
+      ["OS", "Omarchy 4.0.0.alpha"],
+      ["Host", "TUF GAMING B650M-E WIFI"],
+      ["Kernel", "7.2.5-3-omarchy"],
+      ["CPU", "Ryzen 9 9900X"],
+      ["GPU", "RTX 4080"],
+      ["iGPU", "Radeon Graphics"],
+      ["Memory", "26.3 / 60.5 GiB"],
+      ["Packages", "1176 pacman, 3 flatpak"],
+      ["Shell", "bash"],
+      ["Desktop", "Hyprland"],
+      ["Theme", "nord"],
+      ["Load", "0.52  0.61  0.70"],
+      ["Threads", "1234"]
+    ])
+    // A small card keeps the first rows, under the uptime.
+    assert.deepEqual(plain(Stats.view("system", state, palette, 6, false).rows.map(row => row.label)), ["OS", "Host", "Kernel"])
   },
   "the battery view shows a laptop battery and peripherals"() {
     // Without a laptop battery the first peripheral leads, with its history.
@@ -832,9 +863,33 @@ Object.assign(tests, {
   "a stacked GPU card keeps only the rows that fit under its headline"() {
     const rows = Stats.view("gpu", full, palette).rows.length
     assert.ok(rows >= 5)
-    assert.equal(Stats.view("gpu", full, palette, 7, false).rows.length, 4)
+    assert.equal(Stats.view("gpu", full, palette, 7, false).rows.length, 3)
     assert.equal(Stats.view("gpu", full, palette, 7, true).rows.length, Math.min(rows, 7))
-    assert.equal(Stats.view("gpu", full, palette, 2, false).rows.length, 1)
+    // No room under the headline: no row, rather than half of one.
+    assert.equal(Stats.view("gpu", full, palette, 2, false).rows.length, 0)
+  },
+  "a stacked card keeps only the rows that fit under its headline"() {
+    // The value (about 1.8 rows), each graph (1), the core bars (1.4) and
+    // the gap (0.3) come off the room first.
+    assert.equal(Stats.view("cpu", full, palette, 6, false).rows.length, 1)
+    assert.equal(Stats.view("cpu", full, palette, 6, true).rows.length, 3)
+    assert.equal(Stats.view("memory", full, palette, 6, false).rows.length, 2)
+    assert.equal(Stats.view("network", full, palette, 5, false).rows.length, 2)
+    assert.equal(Stats.view("pressure", full, palette, 3, false).rows.length, 1)
+    // Without a room, every row.
+    assert.equal(Stats.view("memory", full, palette).rows.length, 4)
+  },
+  "the processes view counts an empty list's line"() {
+    const many = Array.from({ length: 12 }, (_, i) => ({ pid: i + 1, name: "p" + i, cpu: 50 - i, count: 1 }))
+    const state = Object.assign(Stats.empty(), { processes: many, gpuApps: [], nvidia: full.nvidia })
+    // Two titles and "Nothing busy" leave five rows of programs.
+    assert.equal(Stats.view("processes", state, palette, 8).lists[0].items.length, 5)
+  },
+  "a narrow disks card leaves the temperatures to their panel"() {
+    const wide = Stats.view("disks", full, palette, 6, false, 30)
+    assert.ok(wide.rows.some(row => /°C/.test(row.text)))
+    const narrow = Stats.view("disks", full, palette, 6, false, 20)
+    assert.ok(!narrow.rows.some(row => /°C/.test(row.text)))
   },
 })
 

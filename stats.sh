@@ -128,6 +128,29 @@ while :; do
     { read -r value < "${key#*:}"; } 2>/dev/null && printf '%s\t%s\n' "${key%%:*}" "$value"
   done
 
+  # What fastfetch shows that seldom changes, every minute.
+  if (( n % 60 == 0 )); then
+    printf '@sysinfo\n'
+    printf 'user\t%s\nshell\t%s\ndesktop\t%s\n' "${USER:-}" "${SHELL##*/}" "${XDG_CURRENT_DESKTOP:-}"
+    os=""
+    { while IFS='=' read -r key value; do [[ $key == PRETTY_NAME ]] && os=${value//\"/}; done < /etc/os-release; } 2>/dev/null
+    printf 'os\t%s\n' "$os"
+    omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
+    value=""; { read -r value < "$omarchy_path/version"; } 2>/dev/null; printf 'omarchy\t%s\n' "$value"
+    value=""; { read -r value < "$HOME/.local/state/omarchy/current/theme.name"; } 2>/dev/null; printf 'theme\t%s\n' "$value"
+    for key in sys_vendor product_name board_vendor board_name; do
+      value=""; { read -r value < "/sys/devices/virtual/dmi/id/$key"; } 2>/dev/null; printf '%s\t%s\n' "$key" "$value"
+    done
+    { while IFS=: read -r key value; do
+        [[ $key == "model name"* ]] && { printf 'cpu\t%s\n' "${value# }"; break; }
+      done < /proc/cpuinfo; } 2>/dev/null
+    # Installed packages: a directory each in pacman's database.
+    packages=(/var/lib/pacman/local/*/)
+    [[ -d ${packages[0]} ]] && printf 'packages\t%s\n' "${#packages[@]}"
+    flatpaks=(/var/lib/flatpak/app/*/)
+    [[ -d ${flatpaks[0]} ]] && printf 'flatpaks\t%s\n' "${#flatpaks[@]}"
+  fi
+
   # Batteries, the laptop's and peripherals', and power adapters.
   printf '@power\n'
   for supply in /sys/class/power_supply/*; do

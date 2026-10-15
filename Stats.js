@@ -192,6 +192,42 @@ function parseSensors(hwmon, nvme) {
   return result
 }
 
+// stats.sh's @sysinfo lines (key, value): what fastfetch shows that seldom
+// changes, read every minute.
+function parseSysinfo(lines) {
+  var result = {}
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split("\t")
+    if (f.length >= 2 && f[1] !== "") result[f[0]] = f[1]
+  }
+  return result
+}
+
+// Firmware's stand-ins for a name it was not given.
+var PLACEHOLDER = /^(|system product name|to be filled by o\.?e\.?m\.?|default string|not applicable|none|0123456789)$/i
+
+// The machine's name: the product's, or a desktop board's when the product
+// has a stand-in.
+function hostName(info) {
+  var product = String(info.product_name || "").trim()
+  if (!PLACEHOLDER.test(product)) return product
+  return String(info.board_name || "").trim()
+}
+
+// A CPU's model without the maker's marks and filler: "AMD Ryzen 9 9900X
+// 12-Core Processor" is "Ryzen 9 9900X".
+function shortCpu(model) {
+  return String(model || "")
+    .replace(/\((R|TM|tm)\)/g, "")
+    .replace(/^(AMD|Intel)\s+/, "")
+    .replace(/\s+\d+-Core Processor.*$/, "")
+    .replace(/\s+(CPU\s+)?@.*$/, "")
+    .replace(/\s+(Processor|CPU)$/, "")
+    .replace(/\s+w(ith|\/)\s+Radeon.*$/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 // stats.sh's @system lines (key, value): host name, kernel and seconds
 // since boot.
 function parseSystem(lines) {
@@ -436,6 +472,8 @@ function empty() {
     // stats.sh's @slowhwmon lines, which come every few frames only.
     slowHwmon: [],
     system: null,
+    // stats.sh's @sysinfo (parseSysinfo), which comes every minute only.
+    sysinfo: null,
     threads: null,
     power: [],
     // The track playing, from the shell's MPRIS players; see step.
@@ -554,6 +592,7 @@ function ingest(state, frame) {
   next.nvmeTemps = sensors.nvme
   if (sensors.cpuTemp !== null) history.temp = pushHistory(history.temp, sensors.cpuTemp)
   next.system = frame.system ? parseSystem(frame.system) : null
+  next.sysinfo = frame.sysinfo ? parseSysinfo(frame.sysinfo) : state.sysinfo
   var tasks = next.cpu.loadavg.length && frame.loadavg[0].split(" ")[3]
   next.threads = tasks ? Number(tasks.split("/")[1]) : null
   next.power = parsePower(frame.power || [])
@@ -994,16 +1033,35 @@ function graphMax(values, floor) {
 // content with a message. `room` is how many rows the card has space for,
 // for panels whose lists can grow to fill it, and `wide` whether its rows
 // sit beside the headline rather than under it.
-function view(panel, state, palette, room, wide) {
+function view(panel, state, palette, room, wide, span) {
   var g = palette.gradients
   var result = {
     title: TITLES[panel] || panel, icon: ICONS[panel] || "", color: palette.boxes[panel] || palette.accent,
     info: "", value: "", valueColor: palette.foreground, caption: "",
-    graphs: [], bars: [], rows: [], lists: [], empty: ""
+    graphs: [], bars: [], rows: [], lists: [], empty: "", logo: false
   }
   var build = VIEWS[panel]
-  if (build) build(result, state, palette, g, room, wide)
+  if (build) build(result, state, palette, g, room, wide, span)
+  if (room !== undefined) result.rows = result.rows.slice(0, rowsThatFit(result, room, wide))
   return result
+}
+
+// Rows' room each part of a stacked card's headline takes: the big value,
+// a graph at its smallest, the per-core bars, and the gap below them. A
+// row is a line of text and its spacing.
+var VALUE_ROWS = 1.8
+var GRAPH_ROWS = 1
+var BARS_ROWS = 1.4
+var GAP_ROWS = 0.3
+
+// How many of a view's rows fit `room` rows: all of it beside the headline
+// in a wide card, what the headline leaves in a stacked one. Rows that would be cut in half are left
+// out, and whatever room is over goes to the graphs.
+function rowsThatFit(v, room, wide) {
+  if (wide) return Math.max(0, room)
+  var headline = (v.value ? VALUE_ROWS : 0) + v.graphs.length * GRAPH_ROWS + (v.bars.length ? BARS_ROWS : 0)
+  if (headline > 0) headline += GAP_ROWS
+  return Math.max(0, Math.floor(room - headline + 1e-9))
 }
 
 // The rows of a GPU panel for one GPU, whichever its vendor: load with
@@ -1026,9 +1084,10 @@ function gpuView(v, gpu, history, g, room, wide) {
   if (gpu.fan !== null) v.rows.push(row("Fan", formatPercent(gpu.fan), gpu.fan / 100, gradientAt(g.cpu, gpu.fan / 100)))
   if (gpu.encoder) v.rows.push(row("Encode", formatPercent(gpu.encoder), gpu.encoder / 100, gradientAt(g.cpu, gpu.encoder / 100)))
   if (gpu.decoder) v.rows.push(row("Decode", formatPercent(gpu.decoder), gpu.decoder / 100, gradientAt(g.cpu, gpu.decoder / 100)))
-  // A stacked card's headline takes about three rows' room.
-  if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, wide ? room : room - 3))
 }
+
+// Units of width under which a disk's row leaves out its temperature.
+var DISK_TEMP_SPAN = 26
 
 // Watts, with a decimal below 10: an iGPU draws fractions of one.
 function watts(value) {
@@ -1085,16 +1144,16 @@ var VIEWS = {
     v.rows.push(row("Sent", formatBytes(n.txTotal), null))
   },
 
-  disks: function(v, state, palette, g, room) {
+  disks: function(v, state, palette, g, room, wide, span) {
     if (!state.disks.length) { v.empty = "No disks"; return }
     v.info = state.disks.length === 1 ? "1 disk" : state.disks.length + " disks"
     v.graphs.push({ values: state.history.disk, max: graphMax(state.history.disk, 1048576), stops: g.process, label: "I/O" })
     v.rows = state.disks.map(function(disk) {
       var text = "R " + formatShort(disk.read) + "  W " + formatShort(disk.write)
-      if (disk.temp !== null) text += "  " + formatTemp(disk.temp)
+      // A narrow card has no room for it; the Temperatures panel has it.
+      if (disk.temp !== null && !(span < DISK_TEMP_SPAN)) text += "  " + formatTemp(disk.temp)
       return row(disk.name, text, null, disk.temp !== null ? gradientAt(g.temp, disk.temp / 100) : "")
     })
-    if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, room))
   },
 
   processes: function(v, state, palette, g, room) {
@@ -1104,8 +1163,9 @@ var VIEWS = {
     var apps = Math.min(state.gpuApps.length, 3)
     var programs = 5
     if (room !== undefined) {
+      // An empty list still takes a line, for "Nothing busy".
       if (vram) apps = Math.min(apps, Math.max(1, room - 3))
-      programs = Math.max(1, room - (vram ? 2 + apps : 1))
+      programs = Math.max(1, room - (vram ? 2 + Math.max(1, apps) : 1))
     }
     v.lists.push({ title: "CPU", items: state.processes.slice(0, programs).map(function(p) {
       return { name: p.count > 1 ? p.name + " ×" + p.count : p.name, text: formatPercent(p.cpu), fraction: Math.min(1, p.cpu / 100), color: gradientAt(g.process, Math.min(1, p.cpu / 100)) }
@@ -1146,8 +1206,6 @@ var VIEWS = {
       v.rows.push(temp(disk ? disk.name : controller, state.nvmeTemps[controller]))
     })
     dimms.forEach(function(t) { v.rows.push(temp(t.name, t.temp)) })
-    // A stacked card's headline takes about three rows' room.
-    if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, wide || state.cpu.temp === null ? room : room - 3))
     if (state.cpu.temp !== null) {
       v.value = formatTemp(state.cpu.temp)
       v.valueColor = gradientAt(g.temp, state.cpu.temp / 100)
@@ -1211,10 +1269,28 @@ var VIEWS = {
   system: function(v, state, palette, g) {
     var system = state.system
     if (!system) { v.empty = "Waiting for data"; return }
-    v.info = system.hostname
+    var info = state.sysinfo || {}
+    v.info = info.user ? info.user + "@" + system.hostname : system.hostname
+    v.logo = true
     if (system.uptime !== null) { v.value = formatUptime(system.uptime); v.caption = "up" }
     v.valueColor = palette.accent
-    if (system.kernel) v.rows.push(row("Kernel", system.kernel, null))
+    // In fastfetch's order, the most telling first: a small card keeps those.
+    function add(label, text) { if (text) v.rows.push(row(label, text, null)) }
+    add("OS", [info.os, info.omarchy].filter(Boolean).join(" "))
+    add("Host", hostName(info))
+    add("Kernel", system.kernel)
+    add("CPU", shortCpu(info.cpu))
+    var roles = gpuRoles(state)
+    if (roles.main) add("GPU", roles.main.name)
+    if (roles.integrated) add("iGPU", roles.integrated.name)
+    if (state.memory && state.memory.total) add("Memory", formatPair(state.memory.used, state.memory.total))
+    var packages = []
+    if (Number(info.packages) > 0) packages.push(info.packages + " pacman")
+    if (Number(info.flatpaks) > 0) packages.push(info.flatpaks + " flatpak")
+    add("Packages", packages.join(", "))
+    add("Shell", info.shell)
+    add("Desktop", info.desktop)
+    add("Theme", info.theme)
     if (state.cpu.loadavg.length) v.rows.push(row("Load", state.cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
     if (state.threads !== null) v.rows.push(row("Threads", String(state.threads), null))
   },

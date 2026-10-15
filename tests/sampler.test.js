@@ -48,6 +48,12 @@ const tests = {
     for (const i of [1, 2, 3, 4]) assert.equal(parsed[i].slowhwmon, undefined)
     assert.ok(Array.isArray(parsed[5].slowhwmon))
   },
+  "system facts come every sixtieth frame, from the first"() {
+    const parsed = frames(run(0.05, 0, 2))
+    const info = Object.fromEntries(parsed[0].sysinfo.map(line => line.split("\t")))
+    assert.ok(info.os && info.cpu, JSON.stringify(info))
+    assert.equal(parsed[1].sysinfo, undefined)
+  },
   "STATS_NVIDIA=0 keeps nvidia-smi from running for the GPU apps"() {
     const [frame] = frames(runWith({ STATS_NVIDIA: "0" }, 0.1, 1, 1))
     assert.ok(frame.procs.length > 10)

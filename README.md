@@ -264,9 +264,14 @@ with history graphs and meters:
 | Fans | The GPU's fan with its history, and every fan sensor | hwmon, `nvidia-smi` |
 | Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse or Bluetooth headphones | `/sys/class/power_supply`, the shell's UPower devices |
 | Now playing | The track playing, with its cover and progress | the shell's MPRIS players |
-| System | Uptime, host name, kernel, load average and threads | `/proc` |
+| System | Like fastfetch: Omarchy's icon beside the uptime, OS and Omarchy version, host, kernel, CPU, GPUs, memory, packages, shell, desktop, theme, load and threads | `/proc`, `/sys`, `/etc/os-release`, pacman's database |
 
-GPU, CPU, Memory and Network are on by default. The panels tile the edge
+GPU, CPU, Memory and Network are on by default. Each card shows what fits
+its size: a small one keeps its headline and the first rows, never half
+of one, and a bigger one adds rows (a GPU's fan and encoder, more
+temperatures, processes and system facts). Meters too narrow to read
+are left out, and a narrow Disks card leaves the temperatures to the
+Temperatures panel. The panels tile the edge
 in the grid that gives them the most room, and the text shrinks for a
 crowded one; panels that still do not fit are left off from the end of
 the list above.
