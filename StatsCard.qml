@@ -11,9 +11,11 @@ import "Stats.js" as Stats
 // right; a narrow one stacks them.
 Item {
   id: card
-  required property var view
+  // Blank until set: a delegate's own bindings can run before these are
+  // given, and would read undefined.
+  property var view: Stats.view("", Stats.empty(), Stats.palette({}, {}))
   // Not `palette`: that would hide Item.palette.
-  required property var theme
+  property var theme: Stats.palette({}, {})
   required property int unit
   property string fontFamily: Style.font.family
   readonly property bool wide: width > height * Stats.WIDE_CARD
