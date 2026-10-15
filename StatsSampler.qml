@@ -128,13 +128,18 @@ QtObject {
 
   // UPower's devices for Stats.upowerBatteries: it knows Bluetooth
   // headsets, which the kernel does not list. Read once a frame.
+  // An index loop: the list is array-like, and map on it gives no array.
   function peripherals() {
-    return UPower.devices.values.map(function(device) {
-      return {
+    var list = UPower.devices.values
+    var result = []
+    for (var i = 0; i < list.length; i++) {
+      var device = list[i]
+      result.push({
         nativePath: device.nativePath, model: device.model, type: UPowerDeviceType.toString(device.type),
         powerSupply: device.powerSupply, percentage: device.percentage, state: UPowerDeviceState.toString(device.state)
-      }
-    })
+      })
+    }
+    return result
   }
 
   // A resting GPU's single reading, now and then: one that finds it busy

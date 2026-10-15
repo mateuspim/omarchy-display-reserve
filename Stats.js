@@ -240,15 +240,20 @@ function parsePower(lines) {
 // in parsePower's shape. UPower knows batteries the kernel does not list,
 // such as Bluetooth headsets'. Power supplies (a laptop's battery) and
 // devices without a name are left out.
+// `devices` can be array-like, as Quickshell's lists are; the result is an
+// array.
 function upowerBatteries(devices) {
-  return (devices || []).filter(function(d) {
-    return d && !d.powerSupply && d.nativePath && d.type !== "Unknown" && d.type !== "LinePower"
-  }).map(function(d) {
-    return {
-      id: d.nativePath, name: d.model || d.type, device: true, status: d.state === "Unknown" ? "" : d.state || "",
+  var result = []
+  var count = devices ? devices.length || 0 : 0
+  for (var i = 0; i < count; i++) {
+    var d = devices[i]
+    if (!d || d.powerSupply || !d.nativePath || d.type === "Unknown" || d.type === "LinePower") continue
+    result.push({
+      id: String(d.nativePath), name: String(d.model || d.type), device: true, status: d.state === "Unknown" ? "" : String(d.state || ""),
       capacity: Math.round(Number(d.percentage || 0) * 100), level: "", power: null, energy: null, full: null
-    }
-  })
+    })
+  }
+  return result
 }
 
 // The battery that leads the battery panel: the laptop's, or else the
@@ -713,7 +718,9 @@ function step(state, text, gpuLine, media, batteries) {
   // kernel's (which come first for the same device).
   if (batteries) {
     var known = next.power.map(function(b) { return b.id })
-    next.power = next.power.concat(batteries.filter(function(b) { return known.indexOf(b.id) === -1 }))
+    var power = next.power.slice()
+    for (var b = 0; b < batteries.length; b++) if (known.indexOf(batteries[b].id) === -1) power.push(batteries[b])
+    next.power = power
   }
   // The battery panel's headline: the laptop's, or else a peripheral's.
   var lead = leadBattery(next.power)
@@ -1167,7 +1174,7 @@ var VIEWS = {
       v.valueColor = gradientAt(g.temp, 1 - (cap || 0) / 100)
       if (laptop.status === "Discharging" && laptop.power > 0 && laptop.energy !== null) v.caption = hours(laptop.energy / laptop.power) + " left"
       else if (laptop.status === "Charging" && laptop.power > 0 && laptop.full !== null) v.caption = hours((laptop.full - laptop.energy) / laptop.power) + " to full"
-      else v.caption = laptop.status.toLowerCase()
+      else v.caption = String(laptop.status || "").toLowerCase()
       v.graphs.push({ values: state.history.battery, max: 100, stops: g.used, label: "" })
       if (laptop.power !== null) v.rows.push(row("Power", laptop.power.toFixed(1) + " W", null))
       if (laptop.energy !== null && laptop.full) v.rows.push(row("Energy", laptop.energy.toFixed(1) + " / " + laptop.full.toFixed(1) + " Wh", null))

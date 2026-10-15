@@ -806,6 +806,11 @@ Object.assign(tests, {
       ["/org/bluez/hci0/dev_08_F0_B6_67_89_F3", "EDIFIER W830NB", 70, true]
     ])
     assert.deepEqual(plain(Stats.upowerBatteries(null)), [])
+    // Quickshell's lists are array-like, not arrays; a real array comes out.
+    const listLike = { length: 2, 0: devices[0], 1: devices[1] }
+    const fromList = Stats.upowerBatteries(listLike)
+    assert.ok(Array.isArray(fromList))
+    assert.equal(fromList.length, 2)
   },
   "step adds UPower's peripherals to the batteries, once each"() {
     const extra = Stats.upowerBatteries([
