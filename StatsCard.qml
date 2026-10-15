@@ -12,7 +12,8 @@ import "Stats.js" as Stats
 Item {
   id: card
   required property var view
-  required property var palette
+  // Not `palette`: that would hide Item.palette.
+  required property var theme
   required property int unit
   property string fontFamily: Style.font.family
   readonly property bool wide: width > height * Stats.WIDE_CARD
@@ -47,7 +48,7 @@ Item {
       }
       Text {
         text: card.view.title
-        color: card.palette.foreground
+        color: card.theme.foreground
         font.family: card.fontFamily
         font.pixelSize: Math.round(card.unit * 0.9)
         font.bold: true
@@ -67,7 +68,7 @@ Item {
       width: Math.min(implicitWidth, card.width / 2)
       text: card.view.info
       elide: Text.ElideRight
-      color: card.palette.subtle
+      color: card.theme.subtle
       font.family: card.fontFamily
       font.pixelSize: Math.round(card.unit * 0.8)
     }
@@ -115,7 +116,7 @@ Item {
           Layout.alignment: Qt.AlignBottom
           Layout.bottomMargin: Math.round(card.unit * 0.3)
           text: card.view.caption
-          color: card.palette.subtle
+          color: card.theme.subtle
           font.family: card.fontFamily
           font.pixelSize: Math.round(card.unit * 0.8)
         }
@@ -128,7 +129,7 @@ Item {
         model: card.view.graphs.length
         Item {
           required property int index
-          readonly property var modelData: card.view.graphs[index] || ({ values: [], max: 1, stops: card.palette.gradients.cpu, label: "" })
+          readonly property var modelData: card.view.graphs[index] || ({ values: [], max: 1, stops: card.theme.gradients.cpu, label: "" })
           Layout.fillWidth: true
           Layout.fillHeight: true
           Layout.minimumHeight: card.unit * 1.5
@@ -138,7 +139,7 @@ Item {
             maximum: parent.modelData.max
             stops: parent.modelData.stops
             duration: Reserve.ReserveState.stats.interval * 1000
-            guideColor: card.palette.line
+            guideColor: card.theme.line
             lineWidth: Math.max(1.5, card.unit / 9)
           }
           Text {
@@ -167,11 +168,11 @@ Item {
           model: card.view.bars.length
           Rectangle {
             required property int index
-            readonly property var modelData: card.view.bars[index] || ({ fraction: 0, color: card.palette.meter })
-            width: (cores.width - cores.spacing * (card.view.bars.length - 1)) / card.view.bars.length
+            readonly property var modelData: card.view.bars[index] || ({ fraction: 0, color: card.theme.meter })
+            width: Math.max(1, (cores.width - cores.spacing * (card.view.bars.length - 1)) / card.view.bars.length)
             height: cores.height
             radius: Math.min(width / 2, card.unit / 6)
-            color: card.palette.meter
+            color: card.theme.meter
             // The fraction eases, not the size: an eased size would keep
             // a stale track size when the card is laid out again.
             property real shown: modelData.fraction
@@ -243,7 +244,7 @@ Item {
           Text {
             visible: list.modelData.items.length === 0
             text: "Nothing busy"
-            color: card.palette.subtle
+            color: card.theme.subtle
             font.family: card.fontFamily
             font.pixelSize: Math.round(card.unit * 0.85)
           }
@@ -269,7 +270,7 @@ Item {
       height: width
       anchors.verticalCenter: parent.verticalCenter
       radius: Math.round(card.unit * 0.4)
-      color: card.palette.meter
+      color: card.theme.meter
       visible: width >= card.unit * 3
       Text {
         anchors.centerIn: parent
@@ -301,7 +302,7 @@ Item {
         width: parent.width
         text: media.track ? media.track.title : ""
         elide: Text.ElideRight
-        color: card.palette.foreground
+        color: card.theme.foreground
         font.family: card.fontFamily
         font.pixelSize: Math.round(card.unit * 1.3)
         font.bold: true
@@ -320,7 +321,7 @@ Item {
         visible: text !== ""
         text: media.track ? media.track.album : ""
         elide: Text.ElideRight
-        color: card.palette.subtle
+        color: card.theme.subtle
         font.family: card.fontFamily
         font.pixelSize: Math.round(card.unit * 0.85)
       }
@@ -340,7 +341,7 @@ Item {
     anchors.centerIn: parent
     visible: card.view.empty !== ""
     text: card.view.empty
-    color: card.palette.subtle
+    color: card.theme.subtle
     font.family: card.fontFamily
     font.pixelSize: card.unit
   }
@@ -370,7 +371,7 @@ Item {
         : Math.max(0, Math.min(statRow.labelWidth, parent.width - value.width - card.unit * 0.6))
       text: statRow.label
       elide: Text.ElideRight
-      color: card.palette.subtle
+      color: card.theme.subtle
       font.family: card.fontFamily
       font.pixelSize: Math.round(card.unit * 0.9)
     }
@@ -382,7 +383,7 @@ Item {
       width: !statRow.hasMeter ? 0 : statRow.labelFills ? statRow.meterWidth : Math.max(0, value.x - x - card.unit * 0.6)
       height: Math.max(3, Math.round(card.unit * 0.42))
       radius: height / 2
-      color: card.palette.meter
+      color: card.theme.meter
       property real shown: statRow.fraction || 0
       Behavior on shown { NumberAnimation { duration: 800; easing.type: Easing.InOutQuad } }
       Rectangle {
@@ -397,7 +398,7 @@ Item {
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       text: statRow.text
-      color: card.palette.foreground
+      color: card.theme.foreground
       font.family: card.fontFamily
       font.pixelSize: Math.round(card.unit * 0.9)
       font.bold: true

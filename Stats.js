@@ -51,7 +51,7 @@ function parseCpu(lines) {
   var result = { total: { busy: 0, all: 0 }, cores: [] }
   for (var i = 0; i < lines.length; i++) {
     if (/^cpu\s/.test(lines[i])) result.total = ticks(lines[i])
-    else if (/^cpu\d/.test(lines[i])) result.cores.push(ticks(lines[i]))
+    else if (/^cpu\d/.test(lines[i])) result.cores.push(Object.assign({ id: lines[i].split(" ")[0] }, ticks(lines[i])))
   }
   return result
 }
@@ -61,11 +61,15 @@ function share(a, b) {
   return all > 0 ? Math.max(0, Math.min(100, (b.busy - a.busy) / all * 100)) : 0
 }
 
-// Percent busy between two parseCpu samples, in total and per core.
+// Percent busy between two parseCpu samples, in total and per core. Cores
+// match by name: one taken offline drops out of the list, and the next
+// must not be measured against its ticks.
 function cpuLoad(before, after) {
+  var was = {}
+  before.cores.forEach(function(core) { was[core.id] = core })
   return {
     total: share(before.total, after.total),
-    cores: after.cores.map(function(core, i) { return before.cores[i] ? share(before.cores[i], core) : 0 })
+    cores: after.cores.map(function(core) { return was[core.id] ? share(was[core.id], core) : 0 })
   }
 }
 
@@ -359,6 +363,11 @@ function empty() {
     // main GPU whose history `history.gpu` holds.
     nvidia: null,
     nvidiaMissing: false,
+    nvidiaAge: 0,
+    // Each AMD or Intel card's kind as last seen awake: asleep, a card
+    // reports no VRAM to tell.
+    drmKinds: {},
+    igpuKey: "",
     drm: [],
     gpuKey: "",
     gpuApps: [],
@@ -408,6 +417,9 @@ function ingest(state, frame) {
   }
   for (var card in cards) if (cards[card].idle_ms !== undefined) counters.drmIdle[card] = cards[card].idle_ms
   var sensors = parseSensors(frame.hwmon || [], frame.nvme || [])
+  // stats.sh reads NVMe temperatures every few frames only; between them
+  // the last ones stand.
+  if (!frame.nvme) sensors.nvme = state.nvmeTemps || {}
 
   var load = before ? cpuLoad(before.cpu, counters.cpu) : null
   next.cpu = {
@@ -458,8 +470,9 @@ function ingest(state, frame) {
   if (total !== null) history.disk = pushHistory(history.disk, total)
 
   next.pressure = parsePressure(frame.psi || [])
-  var worst = Math.max(next.pressure.cpu || 0, next.pressure.memory || 0, next.pressure.io || 0)
-  if (frame.psi) history.pressure = pushHistory(history.pressure, worst)
+  var p = next.pressure
+  if (p.cpu !== null || p.memory !== null || p.io !== null)
+    history.pressure = pushHistory(history.pressure, Math.max(p.cpu || 0, p.memory || 0, p.io || 0))
 
   next.fans = sensors.fans
   next.temps = sensors.temps
@@ -471,7 +484,8 @@ function ingest(state, frame) {
   next.power = parsePower(frame.power || [])
   var laptop = next.power.filter(function(battery) { return !battery.device && battery.capacity !== null })[0]
   if (laptop) history.battery = pushHistory(history.battery, laptop.capacity)
-  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds)
+  next.drmKinds = Object.assign({}, state.drmKinds)
+  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds)
 
   if (frame.procs) {
     var procs = parseProcs(frame.procs)
@@ -488,17 +502,26 @@ function ingest(state, frame) {
   return next
 }
 
-// `state` updated with one line of nvidia-smi. With several NVIDIA GPUs
-// the one with the lowest index is shown.
-function ingestGpu(state, line) {
-  var gpu = parseGpu(line)
+// `state` updated with nvidia-smi's lines since the last frame (one, or a
+// list: it prints a line per GPU). With several NVIDIA GPUs the one with
+// the lowest index is shown. Without a line, `state` as it was.
+function ingestGpu(state, lines) {
+  var gpu = null
+  ;[].concat(lines || []).forEach(function(line) {
+    var parsed = parseGpu(line)
+    if (parsed && (!gpu || parsed.index < gpu.index)) gpu = parsed
+  })
   if (!gpu) return state
-  if (state.nvidia && gpu.index > state.nvidia.index) return state
   var next = Object.assign({}, state)
   next.nvidia = gpu
   next.nvidiaMissing = false
+  next.nvidiaAge = 0
   return next
 }
+
+// Frames without an nvidia-smi line after which its reading is dropped:
+// nvidia-smi stopped, rather than a line arriving late.
+var NVIDIA_STALE = 5
 
 // The AMD and Intel lines of stats.sh's @drm section (card, driver, key,
 // value) by card: { card2: { driver: "amdgpu", busy: 99, ... } }.
@@ -522,12 +545,16 @@ var DISCRETE_VRAM = 4 * 1073741824
 // `seconds` before: Intel has no load reading, so load is the share of
 // that time the GPU was not idle. A card the kernel has put to sleep is
 // left asleep, with no readings: reading it would wake it.
-function drmGpus(cards, idleBefore, seconds) {
+// `kinds` holds each card's kind as last seen awake, and is kept current:
+// a sleeping card reports no VRAM, and keeps the kind it had.
+function drmGpus(cards, idleBefore, seconds, kinds) {
+  kinds = kinds || {}
   return Object.keys(cards).sort().map(function(id) {
     var c = cards[id]
     var amd = c.driver === "amdgpu"
     var memTotal = c.vram_total !== undefined ? c.vram_total : null
-    var discrete = memTotal !== null && memTotal >= DISCRETE_VRAM
+    if (memTotal !== null) kinds[id] = memTotal >= DISCRETE_VRAM ? "discrete" : "integrated"
+    var discrete = kinds[id] === "discrete"
     var gpu = {
       id: id,
       vendor: amd ? "AMD" : "Intel",
@@ -576,7 +603,9 @@ function gpuRoles(state) {
 // line repeats the last reading.
 function step(state, text, gpuLine, media) {
   var next = ingest(state, parseFrame(text))
-  if (gpuLine) next = ingestGpu(next, gpuLine)
+  var updated = ingestGpu(next, gpuLine)
+  if (updated !== next) next = updated
+  else if (next.nvidia && ++next.nvidiaAge > NVIDIA_STALE) { next.nvidia = null; next.nvidiaAge = 0 }
   if (media !== undefined) next.media = media
   var roles = gpuRoles(next)
   var history = next.history
@@ -585,6 +614,8 @@ function step(state, text, gpuLine, media) {
   if (key !== next.gpuKey) { history.gpu = []; history.fan = []; next.gpuKey = key }
   if (roles.main && roles.main.load !== null) history.gpu = pushHistory(history.gpu, roles.main.load)
   if (roles.main && roles.main.fan !== null) history.fan = pushHistory(history.fan, roles.main.fan)
+  var igpuKey = roles.integrated ? roles.integrated.id : ""
+  if (igpuKey !== next.igpuKey) { history.igpu = []; next.igpuKey = igpuKey }
   if (roles.integrated && roles.integrated.load !== null) history.igpu = pushHistory(history.igpu, roles.integrated.load)
   return next
 }
@@ -759,6 +790,8 @@ function roomy(card, unit) {
 // a crowded grid. When nothing makes room, the smallest text shows what
 // fits. Returns layout's result with its `unit`.
 function fit(panels, width, height) {
+  // Not laid out yet: nothing to draw.
+  if (!(width > 0 && height > 0)) return { unit: 9, cards: [], dropped: panels.slice() }
   for (var unit = unitFor(width, height); unit >= 9; unit--) {
     var grid = layout(panels, width, height, unit)
     if (grid.dropped.length) continue
@@ -916,7 +949,7 @@ var VIEWS = {
     v.rows.push(row("Sent", formatBytes(n.txTotal), null))
   },
 
-  disks: function(v, state, palette, g) {
+  disks: function(v, state, palette, g, room) {
     if (!state.disks.length) { v.empty = "No disks"; return }
     v.info = state.disks.length === 1 ? "1 disk" : state.disks.length + " disks"
     v.graphs.push({ values: state.history.disk, max: graphMax(state.history.disk, 1048576), stops: g.process, label: "I/O" })
@@ -925,6 +958,7 @@ var VIEWS = {
       if (disk.temp !== null) text += "  " + formatTemp(disk.temp)
       return row(disk.name, text, null, disk.temp !== null ? gradientAt(g.temp, disk.temp / 100) : "")
     })
+    if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, room))
   },
 
   processes: function(v, state, palette, g, room) {
@@ -952,6 +986,7 @@ var VIEWS = {
   pressure: function(v, state, palette, g) {
     var p = state.pressure
     if (!p) { v.empty = "Waiting for data"; return }
+    if (p.cpu === null && p.memory === null && p.io === null) { v.empty = "Not available on this kernel"; return }
     v.info = "stalled, 10 s"
     v.graphs.push({ values: state.history.pressure, max: graphMax(state.history.pressure, 5), stops: g.temp, label: "" })
     ;[["CPU", p.cpu], ["Memory", p.memory], ["I/O", p.io]].forEach(function(pair) {

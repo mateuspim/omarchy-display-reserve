@@ -36,7 +36,7 @@ Item {
         width: Math.round(modelData.width)
         height: Math.round(modelData.height)
         unit: root.unit
-        palette: root.sampler.palette
+        theme: root.sampler.palette
         // Rows that fit under the title, a row and its gap each, for
         // panels whose lists grow to fill the card.
         readonly property int room: Math.floor((height - Math.round(root.unit * 1.6) - root.unit)

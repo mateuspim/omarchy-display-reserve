@@ -99,13 +99,18 @@ const tests = {
   "parseCpu reads busy and total ticks per line"() {
     const cpu = Stats.parseCpu(["cpu  100 0 50 800 50 0 0 0 0 0", "cpu0 10 0 0 90 0 0 0 0 0 0"])
     // Idle is idle plus iowait; guest time is already counted in user.
-    assert.deepEqual(plain(cpu), { total: { busy: 150, all: 1000 }, cores: [{ busy: 10, all: 100 }] })
+    assert.deepEqual(plain(cpu), { total: { busy: 150, all: 1000 }, cores: [{ id: "cpu0", busy: 10, all: 100 }] })
   },
   "cpuLoad is the busy share of the ticks between two samples"() {
-    const a = { total: { busy: 100, all: 1000 }, cores: [{ busy: 0, all: 100 }, { busy: 50, all: 100 }] }
-    const b = { total: { busy: 175, all: 1100 }, cores: [{ busy: 50, all: 150 }, { busy: 50, all: 200 }] }
+    const a = { total: { busy: 100, all: 1000 }, cores: [{ id: "cpu0", busy: 0, all: 100 }, { id: "cpu1", busy: 50, all: 100 }] }
+    const b = { total: { busy: 175, all: 1100 }, cores: [{ id: "cpu0", busy: 50, all: 150 }, { id: "cpu1", busy: 50, all: 200 }] }
     assert.deepEqual(plain(Stats.cpuLoad(a, b)), { total: 75, cores: [100, 0] })
     assert.deepEqual(plain(Stats.cpuLoad(a, a)), { total: 0, cores: [0, 0] })
+  },
+  "cpuLoad matches cores by name when one goes offline"() {
+    const a = { total: { busy: 0, all: 0 }, cores: [{ id: "cpu0", busy: 0, all: 100 }, { id: "cpu1", busy: 100, all: 200 }, { id: "cpu2", busy: 0, all: 100 }] }
+    const b = { total: { busy: 0, all: 0 }, cores: [{ id: "cpu0", busy: 10, all: 200 }, { id: "cpu2", busy: 0, all: 200 }] }
+    assert.deepEqual(plain(Stats.cpuLoad(a, b).cores), [10, 0])
   },
   "parseMeminfo reports used as total less available, in bytes"() {
     const memory = Stats.parseMeminfo(Stats.parseFrame(frame(1, [0])).meminfo)
@@ -274,12 +279,41 @@ const tests = {
     assert.deepEqual(plain(state.processes), [{ pid: 1, name: "game", cpu: 100, count: 1 }])
     assert.deepEqual(plain(state.gpuApps), [{ pid: 1, name: "game", memory: 512 * 1048576 }])
   },
-  "ingestGpu keeps the NVIDIA GPU with the lowest index"() {
-    let state = Stats.ingestGpu(Stats.empty(), "1, NVIDIA GeForce RTX 3060, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9")
-    state = Stats.ingestGpu(state, "0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0")
-    state = Stats.ingestGpu(state, "1, NVIDIA GeForce RTX 3060, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9")
-    state = Stats.ingestGpu(state, "garbage")
+  "ingestGpu keeps the NVIDIA GPU with the lowest index of a frame's lines"() {
+    const lines = ["1, NVIDIA GeForce RTX 3060, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9", "0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0", "garbage"]
+    let state = Stats.ingestGpu(Stats.empty(), lines)
     assert.equal(state.nvidia.name, "RTX 4080")
+    // Every frame brings both GPUs' lines; the lowest index keeps updating.
+    state = Stats.ingestGpu(state, ["1, NVIDIA GeForce RTX 3060, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9", "0, NVIDIA GeForce RTX 4080, 70, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
+    assert.equal(state.nvidia.load, 70)
+  },
+  "an NVIDIA reading that stops coming is dropped after a few frames"() {
+    let state = Stats.step(Stats.empty(), frame(10, [0]), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
+    for (let t = 11; t <= 13; t++) state = Stats.step(state, frame(t, [0]), [])
+    // A frame or two without a line is timing; the reading stays.
+    assert.equal(state.nvidia.load, 55)
+    for (let t = 14; t <= 16; t++) state = Stats.step(state, frame(t, [0]), [])
+    assert.equal(state.nvidia, null)
+  },
+  "a sleeping discrete GPU keeps the kind it had awake"() {
+    const awake = "@drm\ncard1\tamdgpu\tstatus\tactive\ncard1\tamdgpu\tvram_total\t17163091968\ncard1\tamdgpu\tbusy\t5\n"
+    const asleep = "@drm\ncard1\tamdgpu\tstatus\tsuspended\n"
+    let state = Stats.step(Stats.empty(), frame(10, [0], awake), [])
+    state = Stats.step(state, frame(11, [0], asleep), [])
+    const card = state.drm.find(gpu => gpu.id === "card1")
+    assert.equal(card.asleep, true)
+    assert.equal(card.kind, "discrete")
+    assert.equal(card.name, "Radeon")
+    // So the GPU panel keeps it, asleep, rather than swapping to the iGPU.
+    assert.equal(Stats.gpuRoles(state).main.id, "card1")
+  },
+  "the iGPU history starts over when another GPU takes the panel"() {
+    let state = Stats.step(Stats.empty(), frame(10, [0]), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
+    assert.deepEqual(plain(state.history.igpu), [99])
+    const intel = "@drm\ncard0\ti915\tstatus\tactive\ncard0\ti915\tidle_ms\t100\n"
+    state = Stats.step(state, frame(11, [0], intel), [])
+    assert.equal(Stats.gpuRoles(state).integrated.id, "card0")
+    assert.deepEqual(plain(state.history.igpu), [])
   },
   "parseDrm reads AMD and Intel cards from stats.sh"() {
     const cards = Stats.parseDrm([
@@ -333,6 +367,27 @@ const tests = {
     roles = Stats.gpuRoles(state)
     assert.equal(roles.main.name, "Radeon Graphics")
     assert.equal(roles.integrated, null)
+  },
+  "the pressure view says so on a kernel without pressure stall information"() {
+    const state = Stats.step(Stats.empty(), frame(10, [0]).replace(/@psi\n(.*\n)*?@hwmon/, "@psi\n@hwmon"), [])
+    assert.equal(Stats.view("pressure", state, palette).empty, "Not available on this kernel")
+    assert.deepEqual(plain(state.history.pressure), [])
+  },
+  "fit draws nothing on a strip with no size yet"() {
+    for (const [w, h] of [[0, 0], [NaN, 100], [100, -5]]) {
+      const grid = Stats.fit(["gpu", "cpu"], w, h)
+      assert.deepEqual(plain(grid.cards), [], w + "x" + h)
+      assert.deepEqual(plain(grid.dropped), ["gpu", "cpu"])
+    }
+  },
+  "the disks view fits its rows to the room"() {
+    assert.equal(Stats.view("disks", full, palette, 2).rows.length, 2)
+  },
+  "NVMe temperatures carry over frames that do not read them"() {
+    let state = Stats.step(Stats.empty(), frame(10, [0]), [])
+    state = Stats.step(state, frame(11, [0]).replace(/@nvme\n(.*\n)*?@freq/, "@freq"), [])
+    assert.equal(state.nvmeTemps.nvme0, 34.85)
+    assert.equal(state.disks.find(disk => disk.name === "nvme0n1").temp, 34.85)
   },
   "step applies a frame and the GPU line that came with it in one update"() {
     const gpuLine = "0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"

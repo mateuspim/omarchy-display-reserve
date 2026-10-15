@@ -23,7 +23,8 @@ dump() {
 
 # Only the CPU's and memory modules' temperature chips are read: reading
 # another device's sensors can wake it from a low-power state.
-temp_chip='^(k10temp|zenpower|coretemp|k8temp|cpu_thermal|acpitz|spd5118|jc42)$'
+# ACPI thermal zones are left out: reading one runs firmware code.
+temp_chip='^(k10temp|zenpower|coretemp|k8temp|cpu_thermal|spd5118|jc42)$'
 nvidia=$(type -P nvidia-smi)
 
 # A pipe nobody writes to, for sleeping with read -t instead of forking
@@ -32,7 +33,10 @@ exec {sleeper}<> <(:)
 
 n=0
 while :; do
-  printf '@time %s\n' "$EPOCHREALTIME"
+  # Seconds since boot: unlike the wall clock, it never jumps back or
+  # ahead, so the rates hold across a clock change.
+  read -r uptime _ < /proc/uptime
+  printf '@time %s\n' "$uptime"
 
   printf '@stat\n'
   while IFS= read -r line; do
@@ -61,7 +65,11 @@ while :; do
 
   printf '@hwmon\n'
   for dir in /sys/class/hwmon/hwmon*; do
-    read -r chip < "$dir/name" 2>/dev/null || continue
+    # A device asleep is left alone: reading its sensors would wake it.
+    status=""
+    { read -r status < "$dir/device/power/runtime_status"; } 2>/dev/null
+    [[ $status == suspended ]] && continue
+    { read -r chip < "$dir/name"; } 2>/dev/null || continue
     inputs=("$dir"/fan*_input)
     [[ $chip =~ $temp_chip ]] && inputs+=("$dir"/temp*_input)
     for input in "${inputs[@]}"; do
@@ -70,19 +78,23 @@ while :; do
       sensor=${sensor%_input}
       label="" value=""
       [[ -r $dir/${sensor}_label ]] && read -r label < "$dir/${sensor}_label"
-      read -r value < "$input" 2>/dev/null
+      { read -r value < "$input"; } 2>/dev/null
       printf '%s\t%s\t%s\t%s\n' "$chip" "$sensor" "$label" "$value"
     done
   done
 
-  printf '@nvme\n'
-  for input in /sys/class/nvme/nvme*/hwmon*/temp1_input; do
-    [[ -e $input ]] || continue
-    controller=${input#/sys/class/nvme/}
-    value=""
-    read -r value < "$input" 2>/dev/null
-    printf '%s\t%s\n' "${controller%%/*}" "$value"
-  done
+  # Every fifth frame: each read sends the drive a command, which wakes a
+  # laptop's SSD from its deepest power state.
+  if (( n % 5 == 0 )); then
+    printf '@nvme\n'
+    for input in /sys/class/nvme/nvme*/hwmon*/temp1_input; do
+      [[ -e $input ]] || continue
+      controller=${input#/sys/class/nvme/}
+      value=""
+      { read -r value < "$input"; } 2>/dev/null
+      printf '%s\t%s\n' "${controller%%/*}" "$value"
+    done
+  fi
 
   printf '@freq\n'
   for input in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq; do
@@ -92,7 +104,7 @@ while :; do
   printf '@system\n'
   for key in hostname:/proc/sys/kernel/hostname kernel:/proc/sys/kernel/osrelease uptime:/proc/uptime; do
     value=""
-    read -r value < "${key#*:}" 2>/dev/null && printf '%s\t%s\n' "${key%%:*}" "$value"
+    { read -r value < "${key#*:}"; } 2>/dev/null && printf '%s\t%s\n' "${key%%:*}" "$value"
   done
 
   # Batteries, the laptop's and peripherals', and power adapters.
@@ -102,7 +114,7 @@ while :; do
     for key in type scope status capacity capacity_level model_name power_now current_now voltage_now energy_now energy_full charge_now charge_full; do
       [[ -r $supply/$key ]] || continue
       value=""
-      read -r value < "$supply/$key" 2>/dev/null && printf '%s\t%s\t%s\n' "${supply##*/}" "$key" "$value"
+      { read -r value < "$supply/$key"; } 2>/dev/null && printf '%s\t%s\t%s\n' "${supply##*/}" "$key" "$value"
     done
   done
 
@@ -114,7 +126,7 @@ while :; do
     [[ $id == *-* ]] && continue
     dev=$card/device
     driver=""
-    while IFS='=' read -r key value; do [[ $key == DRIVER ]] && driver=$value; done < "$dev/uevent" 2>/dev/null
+    { while IFS='=' read -r key value; do [[ $key == DRIVER ]] && driver=$value; done < "$dev/uevent"; } 2>/dev/null
     [[ $driver == amdgpu || $driver == i915 || $driver == xe ]] || continue
     status=""
     [[ -r $dev/power/runtime_status ]] && read -r status < "$dev/power/runtime_status"
@@ -148,7 +160,8 @@ while :; do
     done
     if [[ -n $nvidia ]]; then
       printf '@gpuapps\n'
-      "$nvidia" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null
+      # A hung driver must not stall every panel.
+      timeout 2 "$nvidia" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits 2>/dev/null
     fi
   fi
 

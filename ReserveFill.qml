@@ -138,7 +138,8 @@ Rectangle {
 
   Loader {
     anchors.fill: parent
-    active: fill.mode === "stats"
+    // Not before the strip has a size: there is nothing to lay out.
+    active: fill.mode === "stats" && fill.width > 0 && fill.height > 0
     sourceComponent: Component {
       Reserve.StatsFill {
         panels: fill.panels

@@ -41,8 +41,8 @@ QtObject {
     stdout: SplitParser {
       splitMarker: "@end\n"
       onRead: function(frame) {
-        root.data = Stats.step(root.data, frame, root.gpuLine, root.media ? root.track() : null)
-        root.gpuLine = ""
+        root.data = Stats.step(root.data, frame, root.gpuLines, root.media ? root.track() : null)
+        root.gpuLines = []
       }
     }
     onExited: if (root.running && !root.restarting) samplerRetry.restart()
@@ -65,16 +65,33 @@ QtObject {
   // nvidia-smi's own loop: one process, a line per second, instead of a
   // new process each time. Its line waits for the next stats.sh frame, so
   // the dashboard changes once a second, all at once.
-  property string gpuLine: ""
+  // nvidia-smi prints a line per GPU each time; all of them wait.
+  property var gpuLines: []
+  // Runs of nvidia-smi that ended without printing a line: it is there but
+  // cannot reach the driver. After a few, the GPU counts as missing.
+  property int gpuFailures: 0
+  property bool gpuPrinted: false
   property Process gpuProcess: Process {
     command: ["nvidia-smi",
       "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,clocks.gr,fan.speed,utilization.encoder,utilization.decoder",
       "--format=csv,noheader,nounits", "-lms", String(Math.round(root.interval * 1000))]
     running: root.running && root.gpu && root.hasNvidia && root.gpuEpoch >= 0
     stdout: SplitParser {
-      onRead: function(line) { root.gpuLine = line }
+      onRead: function(line) {
+        root.gpuLines = root.gpuLines.concat([line])
+        root.gpuPrinted = true
+        root.gpuFailures = 0
+      }
     }
-    onExited: if (root.running && root.gpu) gpuRetry.restart()
+    onRunningChanged: if (running) root.gpuPrinted = false
+    onExited: {
+      if (!root.gpuPrinted && ++root.gpuFailures >= 3) {
+        root.hasNvidia = false
+        root.data = Object.assign({}, root.data, { nvidiaMissing: true })
+        return
+      }
+      if (root.running && root.gpu) gpuRetry.restart()
+    }
   }
 
   // The track of the player that is playing, or else of the first one;
