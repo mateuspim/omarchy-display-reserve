@@ -365,7 +365,8 @@ QtObject {
   property Reserve.StatsSampler stats: Reserve.StatsSampler {
     running: root.statsPanels.length > 0 && !root.idle
     processes: root.statsPanels.indexOf("processes") !== -1
-    gpu: ["gpu", "processes", "fans"].some(function(panel) { return root.statsPanels.indexOf(panel) !== -1 })
+    gpu: ["gpu", "processes", "fans", "temps"].some(function(panel) { return root.statsPanels.indexOf(panel) !== -1 })
+    media: root.statsPanels.indexOf("media") !== -1
   }
 
   // The Omarchy logo's SVG source, for the logo fill to recolor.

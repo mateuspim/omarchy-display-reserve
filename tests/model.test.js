@@ -22,7 +22,9 @@ const tests = {
     assert.deepEqual([...Model.panelList("gpu")], [...Model.STATS_DEFAULT])
     assert.deepEqual([...Model.panelList(undefined)], ["gpu", "cpu", "memory", "network"])
     assert.deepEqual([...Model.normalize({ panels: ["fans", "cpu"] }).panels], ["cpu", "fans"])
-    assert.equal(Model.STATS_PANELS.length, 9)
+    assert.deepEqual([...Model.STATS_PANELS], ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "pressure", "fans", "battery", "media", "system"])
+    assert.equal(Model.panelFrom("Now playing"), "media")
+    assert.equal(Model.panelFrom("temperatures"), "temps")
     assert.equal(Model.STATS_PANELS[1], "igpu")
     assert.equal(Model.panelFrom("iGPU"), "igpu")
     assert.equal(Model.panelFrom("integrated"), "igpu")
@@ -43,6 +45,13 @@ const tests = {
     assert.equal(Model.panelFrom("procs"), "processes")
     assert.equal(Model.panelFrom("mem"), "memory")
     assert.equal(Model.panelFrom("rainbow"), "")
+  },
+  "rowCells stretches a short last row across the grid"() {
+    // Seven fills four to a row: four, then three.
+    assert.deepEqual([0, 3, 4, 6].map(i => Model.rowCells(7, 4, i)), [4, 4, 3, 3])
+    // A full grid keeps every row whole.
+    assert.equal(Model.rowCells(9, 3, 8), 3)
+    assert.equal(Model.rowCells(1, 4, 0), 1)
   },
   "the panel list counts in same and isDefault"() {
     assert.ok(!Model.same(Model.normalize({ panels: ["gpu"] }), Model.normalize({})))

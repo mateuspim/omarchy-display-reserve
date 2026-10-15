@@ -57,12 +57,24 @@ k10temp	temp1	Tctl	67375
 k10temp	temp3	Tccd1	65500
 asus	fan1	CPU fan	1210
 amdgpu	temp1	edge	41000
+spd5118	temp1		58000
+spd5118	temp1		56250
 @nvme
 nvme0	34850
 nvme1	42850
 @freq
 5399595
 4800000
+@system
+hostname	odin
+kernel	7.2.5-3-omarchy
+uptime	35458.33
+@power
+hidpp_battery_0	type	Battery
+hidpp_battery_0	scope	Device
+hidpp_battery_0	status	Unknown
+hidpp_battery_0	capacity	64
+hidpp_battery_0	model_name	G502 X LIGHTSPEED
 @drm
 card2	amdgpu	status	active
 card2	amdgpu	busy	99
@@ -74,7 +86,7 @@ card2	amdgpu	freq	2200000000
 ${extra}@end
 `
 
-const ALL_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "pressure", "fans"]
+const ALL_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "pressure", "fans", "battery", "media", "system"]
 
 const tests = {
   "parseFrame splits a frame into its sections"() {
@@ -133,6 +145,46 @@ const tests = {
     assert.equal(Stats.parseSensors(["coretemp\ttemp2\tCore 0\t50000", "coretemp\ttemp1\tPackage id 0\t55000"], []).cpuTemp, 55)
     assert.equal(Stats.parseSensors(["cpu_thermal\ttemp1\t\t48000"], []).cpuTemp, 48)
     assert.equal(Stats.parseSensors([], []).cpuTemp, null)
+  },
+  "parseSensors names the CPU dies and memory modules for the temperatures panel"() {
+    const sections = Stats.parseFrame(frame(0, [0]))
+    const sensors = Stats.parseSensors(sections.hwmon, sections.nvme)
+    assert.deepEqual(plain(sensors.temps), [
+      { name: "CPU", temp: 67.375 }, { name: "CCD 1", temp: 65.5 },
+      { name: "DIMM 1", temp: 58 }, { name: "DIMM 2", temp: 56.25 }
+    ])
+    // Intel's per-core sensors stay out; its package is the CPU.
+    const intel = Stats.parseSensors(["coretemp\ttemp1\tPackage id 0\t55000", "coretemp\ttemp2\tCore 0\t50000"], [])
+    assert.deepEqual(plain(intel.temps), [{ name: "CPU", temp: 55 }])
+  },
+  "parseSystem reads the host, kernel and uptime"() {
+    const system = Stats.parseSystem(Stats.parseFrame(frame(0, [0])).system)
+    assert.deepEqual(plain(system), { hostname: "odin", kernel: "7.2.5-3-omarchy", uptime: 35458.33 })
+  },
+  "parsePower reads batteries, in watts and watt-hours"() {
+    const supplies = Stats.parsePower([
+      "BAT0\ttype\tBattery", "BAT0\tstatus\tDischarging", "BAT0\tcapacity\t81",
+      "BAT0\tpower_now\t12500000", "BAT0\tenergy_now\t40000000", "BAT0\tenergy_full\t50000000",
+      "AC\ttype\tMains", "AC\tonline\t0",
+      "BAT1\ttype\tBattery", "BAT1\tstatus\tCharging", "BAT1\tcapacity\t50",
+      "BAT1\tcurrent_now\t2000000", "BAT1\tvoltage_now\t12000000", "BAT1\tcharge_now\t2000000", "BAT1\tcharge_full\t4000000",
+      "hidpp_battery_0\ttype\tBattery", "hidpp_battery_0\tscope\tDevice", "hidpp_battery_0\tcapacity_level\tLow", "hidpp_battery_0\tmodel_name\tMX Keys"
+    ])
+    assert.deepEqual(plain(supplies.map(s => s.id)), ["BAT0", "BAT1", "hidpp_battery_0"])
+    assert.deepEqual(plain(supplies[0]), { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 })
+    // Charge and current, as some batteries report, times the voltage.
+    assert.equal(supplies[1].power, 24)
+    assert.equal(supplies[1].energy, 24)
+    assert.equal(supplies[1].full, 48)
+    assert.deepEqual(plain(supplies[2]), { id: "hidpp_battery_0", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null })
+  },
+  "formatDuration and formatUptime"() {
+    assert.equal(Stats.formatDuration(83), "1:23")
+    assert.equal(Stats.formatDuration(3723), "1:02:03")
+    assert.equal(Stats.formatDuration(null), "—")
+    assert.equal(Stats.formatUptime(35458.33), "9h 50m")
+    assert.equal(Stats.formatUptime(200000), "2d 7h")
+    assert.equal(Stats.formatUptime(300), "5m")
   },
   "averageFrequency is in MHz"() {
     assert.equal(Stats.averageFrequency(["5399595", "4800000"]), 5099.7975)
@@ -420,14 +472,15 @@ const tests = {
 const palette = Stats.palette({ foreground: "#d8dee9", accent: "#81a1c1", red: "#bf616a", yellow: "#ebcb8b", green: "#a3be8c", cyan: "#88c0d0", blue: "#81a1c1", magenta: "#b48ead" })
 let full = Stats.ingest(Stats.empty(), Stats.parseFrame(frame(10, [100, 0, 0, 900, 0, 0, 0, 0, 0, 0], "@procs\n1 (game) S 1 2 3 4 5 6 7 8 9 10 100 0 0 0\n")))
 full = Stats.step(full, frame(11, [150, 0, 0, 950, 0, 0, 0, 0, 0, 0], "@procs\n1 (game) S 1 2 3 4 5 6 7 8 9 10 150 0 0 0\n@gpuapps\n1, /opt/game, 512\n"),
-  "0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 12")
+  "0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 12",
+  { identity: "Spotify", title: "Song", artist: "Band", album: "Record", art: "", playing: true, position: 10, length: 200 })
 ALL_PANELS.forEach(panel => {
   tests["view of " + panel + " has a title, a box color and content"] = () => {
     const view = Stats.view(panel, full, palette)
     assert.ok(view.title && view.icon, panel)
     assert.match(view.color, /^#[0-9a-f]{6}$/)
     assert.equal(view.empty, "", panel + " should have data")
-    assert.ok(view.rows.length + view.lists.length + view.bars.length + view.graphs.length > 0, panel)
+    assert.ok(view.rows.length + view.lists.length + view.bars.length + view.graphs.length + (view.media ? 1 : 0) > 0, panel)
     for (const row of view.rows) assert.ok(row.fraction === null || (row.fraction >= 0 && row.fraction <= 1), JSON.stringify(row))
     const empty = Stats.view(panel, Stats.empty(), palette)
     assert.equal(empty.title, view.title)
@@ -484,6 +537,48 @@ Object.assign(tests, {
     assert.deepEqual(plain(view.lists.map(list => list.title)), ["CPU", "VRAM"])
     assert.equal(view.lists[0].items[0].name, "game")
     assert.equal(view.lists[0].items[0].text, "50%")
+  },
+  "the temperatures view gathers every sensor, hottest colored hottest"() {
+    const view = Stats.view("temps", full, palette)
+    assert.equal(view.value, "67°C")
+    assert.equal(view.caption, "CPU")
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU", "CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2"])
+    assert.equal(view.rows.find(row => row.label === "GPU").text, "54°C")
+    assert.deepEqual(plain(view.graphs[0].values), [67.375, 67.375])
+    // Rows past the card's room are left out.
+    assert.equal(Stats.view("temps", full, palette, 4).rows.length, 4)
+  },
+  "the system view leads with the uptime"() {
+    const view = Stats.view("system", full, palette)
+    assert.equal(view.value, "9h 50m")
+    assert.equal(view.caption, "up")
+    assert.equal(view.info, "odin")
+    assert.equal(view.rows.find(row => row.label === "Kernel").text, "7.2.5-3-omarchy")
+    assert.equal(view.rows.find(row => row.label === "Threads").text, "1234")
+  },
+  "the battery view shows a laptop battery and peripherals"() {
+    const mouseOnly = Stats.view("battery", full, palette)
+    assert.equal(mouseOnly.value, "")
+    assert.deepEqual(plain(mouseOnly.rows.map(row => [row.label, row.text])), [["G502 X LIGHTSPEED", "64%"]])
+    const laptop = Object.assign(Stats.empty(), { time: 1, history: Object.assign(Stats.empty().history, { battery: [81] }), power: [
+      { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 },
+      { id: "hid", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null }
+    ] })
+    const view = Stats.view("battery", laptop, palette)
+    assert.equal(view.value, "81%")
+    assert.equal(view.caption, "3h 12m left")
+    assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["MX Keys", "Low"]])
+    assert.equal(Stats.view("battery", Object.assign(Stats.empty(), { time: 1 }), palette).empty, "No batteries")
+  },
+  "the media view shows the track, with its progress"() {
+    const media = { identity: "Spotify", title: "Song", artist: "Band", album: "Record", art: "file:///a.png", playing: true, position: 83, length: 225 }
+    const state = Stats.step(Stats.empty(), frame(10, [0]), "", media)
+    const view = Stats.view("media", state, palette)
+    assert.equal(view.info, "Spotify")
+    assert.equal(view.media.title, "Song")
+    assert.equal(view.media.time, "1:23 / 3:45")
+    assert.ok(Math.abs(view.media.progress - 83 / 225) < 1e-9)
+    assert.equal(Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", null), palette).empty, "Nothing playing")
   },
   "the fans view adds the GPU fan"() {
     const view = Stats.view("fans", full, palette)

@@ -143,12 +143,25 @@ function parsePressure(lines) {
 
 var CPU_CHIPS = ["k10temp", "zenpower", "coretemp", "k8temp", "cpu_thermal", "acpitz"]
 var CPU_LABELS = ["Tctl", "Tdie", "Package id 0"]
+// Temperature sensors on memory modules: DDR5 and DDR4.
+var MEMORY_CHIPS = ["spd5118", "jc42"]
+
+// The temperatures panel's name for a CPU sensor: the CPU itself, or one
+// of its dies; null for per-core sensors, too many to list.
+function cpuSensorName(label) {
+  if (!label || CPU_LABELS.indexOf(label) !== -1) return "CPU"
+  var die = /^Tccd(\d+)$/.exec(label)
+  if (die) return "CCD " + die[1]
+  return /^Core /.test(label) ? null : label
+}
 
 // From stats.sh's hwmon lines (chip, sensor, label, value) and nvme lines
-// (controller, value): the CPU temperature, every fan and the temperature
-// of each NVMe controller. Temperatures in °C.
+// (controller, value): the CPU temperature, every fan, the temperature of
+// each NVMe controller, and `temps`, the CPU's and memory modules' sensors
+// by name. Temperatures in °C.
 function parseSensors(hwmon, nvme) {
-  var result = { cpuTemp: null, fans: [], nvme: {} }
+  var result = { cpuTemp: null, fans: [], nvme: {}, temps: [] }
+  var dimms = [], named = {}
   var fallback = null, rank = Infinity
   for (var i = 0; i < hwmon.length; i++) {
     var f = hwmon[i].split("\t")
@@ -156,16 +169,64 @@ function parseSensors(hwmon, nvme) {
     var value = Number(f[3])
     if (/^fan/.test(f[1])) {
       result.fans.push({ name: f[2] || f[0] + " " + f[1], rpm: value })
+    } else if (/^temp/.test(f[1]) && MEMORY_CHIPS.indexOf(f[0]) !== -1) {
+      dimms.push({ name: "DIMM " + (dimms.length + 1), temp: value / 1000 })
     } else if (/^temp/.test(f[1]) && CPU_CHIPS.indexOf(f[0]) !== -1) {
+      var sensorName = cpuSensorName(f[2])
+      if (sensorName && !named[sensorName]) { named[sensorName] = true; result.temps.push({ name: sensorName, temp: value / 1000 }) }
       var labelRank = CPU_LABELS.indexOf(f[2])
       if (labelRank !== -1 && labelRank < rank) { rank = labelRank; result.cpuTemp = value / 1000 }
       if (fallback === null) fallback = value / 1000
     }
   }
   if (result.cpuTemp === null) result.cpuTemp = fallback
+  result.temps = result.temps.concat(dimms)
   for (var j = 0; j < nvme.length; j++) {
     var g = nvme[j].split("\t")
     if (g.length === 2 && g[1] !== "") result.nvme[g[0]] = Number(g[1]) / 1000
+  }
+  return result
+}
+
+// stats.sh's @system lines (key, value): host name, kernel and seconds
+// since boot.
+function parseSystem(lines) {
+  var result = { hostname: "", kernel: "", uptime: null }
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split("\t")
+    if (f[0] === "uptime") result.uptime = Number(String(f[1]).split(" ")[0])
+    else if (f[0] in result) result[f[0]] = f[1] || ""
+  }
+  return result
+}
+
+// Batteries from stats.sh's @power lines (supply, key, value), in watts and
+// watt-hours. Some batteries report charge and current instead of energy
+// and power; times the voltage, they are the same. `device` marks a
+// peripheral's battery, such as a wireless mouse's.
+function parsePower(lines) {
+  var supplies = {}
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split("\t")
+    if (f.length < 3) continue
+    ;(supplies[f[0]] || (supplies[f[0]] = {}))[f[1]] = f[2]
+  }
+  function number(value, scale) { return value === undefined || value === "" ? null : Number(value) / scale }
+  var result = []
+  for (var id in supplies) {
+    var s = supplies[id]
+    if (s.type !== "Battery") continue
+    var volts = number(s.voltage_now, 1e6)
+    var power = number(s.power_now, 1e6)
+    if (power === null && volts !== null && s.current_now !== undefined) power = Number(s.current_now) / 1e6 * volts
+    var energy = number(s.energy_now, 1e6)
+    if (energy === null && volts !== null && s.charge_now !== undefined) energy = Number(s.charge_now) / 1e6 * volts
+    var full = number(s.energy_full, 1e6)
+    if (full === null && volts !== null && s.charge_full !== undefined) full = Number(s.charge_full) / 1e6 * volts
+    result.push({
+      id: id, name: s.model_name || id, device: s.scope === "Device", status: s.status || "",
+      capacity: number(s.capacity, 1), level: s.capacity_level || "", power: power, energy: energy, full: full
+    })
   }
   return result
 }
@@ -301,7 +362,14 @@ function empty() {
     drm: [],
     gpuKey: "",
     gpuApps: [],
-    history: { cpu: [], gpu: [], igpu: [], fan: [], memory: [], rx: [], tx: [], disk: [], pressure: [] }
+    temps: [],
+    nvmeTemps: {},
+    system: null,
+    threads: null,
+    power: [],
+    // The track playing, from the shell's MPRIS players; see step.
+    media: null,
+    history: { cpu: [], gpu: [], igpu: [], fan: [], memory: [], rx: [], tx: [], disk: [], pressure: [], temp: [], battery: [] }
   }
 }
 
@@ -394,6 +462,15 @@ function ingest(state, frame) {
   if (frame.psi) history.pressure = pushHistory(history.pressure, worst)
 
   next.fans = sensors.fans
+  next.temps = sensors.temps
+  next.nvmeTemps = sensors.nvme
+  if (sensors.cpuTemp !== null) history.temp = pushHistory(history.temp, sensors.cpuTemp)
+  next.system = frame.system ? parseSystem(frame.system) : null
+  var tasks = next.cpu.loadavg.length && frame.loadavg[0].split(" ")[3]
+  next.threads = tasks ? Number(tasks.split("/")[1]) : null
+  next.power = parsePower(frame.power || [])
+  var laptop = next.power.filter(function(battery) { return !battery.device && battery.capacity !== null })[0]
+  if (laptop) history.battery = pushHistory(history.battery, laptop.capacity)
   next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds)
 
   if (frame.procs) {
@@ -491,13 +568,16 @@ function gpuRoles(state) {
 }
 
 // One update of the dashboard: a stats.sh frame (its text) with the
-// latest nvidia-smi line since the frame before, or "" when none came.
+// latest nvidia-smi line since the frame before, or "" when none came, and
+// `media`, the track playing ({ identity, title, artist, album, art,
+// playing, position, length } or null), when the media panel is shown.
 // Everything on screen changes at once, a sample a second, and the GPU's
 // history advances with the frames like the others: a frame without a new
 // line repeats the last reading.
-function step(state, text, gpuLine) {
+function step(state, text, gpuLine, media) {
   var next = ingest(state, parseFrame(text))
   if (gpuLine) next = ingestGpu(next, gpuLine)
+  if (media !== undefined) next.media = media
   var roles = gpuRoles(next)
   var history = next.history
   var key = roles.main ? roles.main.id : ""
@@ -550,7 +630,7 @@ function palette(colors, fallback) {
     subtle: mix(foreground, background, 0.35),
     // The dashboard sits on black, so its tracks are mixed from black too.
     meter: mix("#000000", foreground, 0.13),
-    boxes: { gpu: cyan, igpu: mix(cyan, green, 0.5), cpu: magenta, memory: green, network: red, disks: yellow, processes: blue, pressure: orange, fans: accent },
+    boxes: { gpu: cyan, igpu: mix(cyan, green, 0.5), temps: mix(yellow, red, 0.5), battery: green, media: mix(magenta, blue, 0.5), system: accent, cpu: magenta, memory: green, network: red, disks: yellow, processes: blue, pressure: orange, fans: accent },
     gradients: {
       cpu: [cyan, blue, magenta],
       temp: [green, yellow, red],
@@ -618,6 +698,22 @@ function formatShort(bytes) {
   if (bytes === null || bytes === undefined) return "—"
   var s = scaled(bytes)
   return number(s.value, s.unit) + (s.unit ? UNITS[s.unit].charAt(0) : "")
+}
+
+// A track position: "1:23", or "1:02:03" past an hour.
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined || !isFinite(seconds)) return "—"
+  seconds = Math.max(0, Math.floor(seconds))
+  var h = Math.floor(seconds / 3600), m = Math.floor(seconds / 60) % 60, s = seconds % 60
+  return (h ? h + ":" + ("0" + m).slice(-2) : String(m)) + ":" + ("0" + s).slice(-2)
+}
+
+// A long stretch in its two largest units: "2d 7h", "9h 50m", "5m".
+function formatUptime(seconds) {
+  var minutes = Math.floor(seconds / 60), hours = Math.floor(minutes / 60), days = Math.floor(hours / 24)
+  if (days) return days + "d " + hours % 24 + "h"
+  if (hours) return hours + "h " + minutes % 60 + "m"
+  return minutes + "m"
 }
 
 function formatPercent(value) {
@@ -712,10 +808,10 @@ function layout(panels, width, height, unit) {
 // --- views -------------------------------------------------------------------
 
 var ICONS = {
-  gpu: "\u{f08ae}", igpu: "\u{f08ae}", cpu: "\u{f061a}", memory: "\u{f035b}", network: "\u{f0200}",
+  gpu: "\u{f08ae}", igpu: "\u{f08ae}", temps: "\u{f050f}", battery: "\u{f0079}", media: "\u{f075a}", system: "\u{f02fd}", cpu: "\u{f061a}", memory: "\u{f035b}", network: "\u{f0200}",
   disks: "\u{f02ca}", processes: "\u{f0279}", pressure: "\u{f029a}", fans: "\u{f0210}"
 }
-var TITLES = { gpu: "GPU", igpu: "iGPU", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", pressure: "Pressure", fans: "Fans" }
+var TITLES = { gpu: "GPU", igpu: "iGPU", temps: "Temperatures", battery: "Battery", media: "Now playing", system: "System", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", pressure: "Pressure", fans: "Fans" }
 
 function row(label, text, fraction, color) {
   return { label: label, text: text, fraction: fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, fraction)), color: color || "" }
@@ -864,6 +960,80 @@ var VIEWS = {
       var fraction = Math.sqrt(pair[1] / 100)
       v.rows.push(row(pair[0], pair[1].toFixed(1) + "%", fraction, gradientAt(g.temp, fraction)))
     })
+  },
+
+  temps: function(v, state, palette, g, room) {
+    function temp(name, value) { return row(name, formatTemp(value), value / 100, gradientAt(g.temp, value / 100)) }
+    var roles = gpuRoles(state)
+    var cpu = state.temps.filter(function(t) { return !/^DIMM /.test(t.name) })
+    var dimms = state.temps.filter(function(t) { return /^DIMM /.test(t.name) })
+    v.rows = cpu.map(function(t) { return temp(t.name, t.temp) })
+    if (roles.main && roles.main.temp !== null) v.rows.push(temp("GPU", roles.main.temp))
+    if (roles.integrated && roles.integrated.temp !== null) v.rows.push(temp("iGPU", roles.integrated.temp))
+    Object.keys(state.nvmeTemps).sort().forEach(function(controller) {
+      var disk = state.disks.filter(function(d) { return d.name.indexOf(controller + "n") === 0 })[0]
+      v.rows.push(temp(disk ? disk.name : controller, state.nvmeTemps[controller]))
+    })
+    dimms.forEach(function(t) { v.rows.push(temp(t.name, t.temp)) })
+    if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, room))
+    if (state.cpu.temp !== null) {
+      v.value = formatTemp(state.cpu.temp)
+      v.valueColor = gradientAt(g.temp, state.cpu.temp / 100)
+      v.caption = "CPU"
+      v.graphs.push({ values: state.history.temp, max: 100, stops: g.temp, label: "" })
+    }
+    if (!v.rows.length) v.empty = "No temperature sensors"
+  },
+
+  battery: function(v, state, palette, g) {
+    var laptop = state.power.filter(function(b) { return !b.device })[0]
+    var devices = state.power.filter(function(b) { return b.device })
+    // A peripheral may report only a level; it reads as about this full.
+    var LEVELS = { Critical: 0.05, Low: 0.2, Normal: 0.6, High: 0.85, Full: 1 }
+    function hours(h) { return Math.floor(h) + "h " + Math.floor(h * 60) % 60 + "m" }
+    if (laptop) {
+      var cap = laptop.capacity
+      v.value = formatPercent(cap)
+      v.valueColor = gradientAt(g.temp, 1 - (cap || 0) / 100)
+      if (laptop.status === "Discharging" && laptop.power > 0 && laptop.energy !== null) v.caption = hours(laptop.energy / laptop.power) + " left"
+      else if (laptop.status === "Charging" && laptop.power > 0 && laptop.full !== null) v.caption = hours((laptop.full - laptop.energy) / laptop.power) + " to full"
+      else v.caption = laptop.status.toLowerCase()
+      v.graphs.push({ values: state.history.battery, max: 100, stops: g.used, label: "" })
+      if (laptop.power !== null) v.rows.push(row("Power", laptop.power.toFixed(1) + " W", null))
+      if (laptop.energy !== null && laptop.full) v.rows.push(row("Energy", laptop.energy.toFixed(1) + " / " + laptop.full.toFixed(1) + " Wh", null))
+    }
+    devices.forEach(function(d) {
+      var fraction = d.capacity !== null ? d.capacity / 100 : LEVELS[d.level]
+      v.rows.push(row(d.name, d.capacity !== null ? formatPercent(d.capacity) : d.level || "—",
+        fraction === undefined ? null : fraction, gradientAt(g.temp, 1 - (fraction || 0))))
+    })
+    if (!laptop && !devices.length) v.empty = "No batteries"
+  },
+
+  media: function(v, state, palette, g) {
+    var m = state.media
+    if (!m) { v.empty = "Nothing playing"; return }
+    v.info = m.identity || ""
+    v.media = {
+      title: m.title || "Unknown title",
+      artist: m.artist || "",
+      album: m.album || "",
+      art: m.art || "",
+      playing: !!m.playing,
+      progress: m.length > 0 ? Math.max(0, Math.min(1, m.position / m.length)) : null,
+      time: m.length > 0 ? formatDuration(m.position) + " / " + formatDuration(m.length) : formatDuration(m.position)
+    }
+  },
+
+  system: function(v, state, palette, g) {
+    var system = state.system
+    if (!system) { v.empty = "Waiting for data"; return }
+    v.info = system.hostname
+    if (system.uptime !== null) { v.value = formatUptime(system.uptime); v.caption = "up" }
+    v.valueColor = palette.accent
+    if (system.kernel) v.rows.push(row("Kernel", system.kernel, null))
+    if (state.cpu.loadavg.length) v.rows.push(row("Load", state.cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
+    if (state.threads !== null) v.rows.push(row("Threads", String(state.threads), null))
   },
 
   fans: function(v, state, palette, g) {

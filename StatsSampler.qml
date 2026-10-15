@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import qs.Commons
 import "Model.js" as Model
 import "Stats.js" as Stats
@@ -17,6 +18,8 @@ QtObject {
   // /proc, and whether one reads nvidia-smi.
   property bool processes: false
   property bool gpu: false
+  // Whether a panel shows the track playing, from the MPRIS players.
+  property bool media: false
   property var data: Stats.empty()
 
   // Seconds between frames, and frames between process lists.
@@ -38,7 +41,7 @@ QtObject {
     stdout: SplitParser {
       splitMarker: "@end\n"
       onRead: function(frame) {
-        root.data = Stats.step(root.data, frame, root.gpuLine)
+        root.data = Stats.step(root.data, frame, root.gpuLine, root.media ? root.track() : null)
         root.gpuLine = ""
       }
     }
@@ -72,6 +75,22 @@ QtObject {
       onRead: function(line) { root.gpuLine = line }
     }
     onExited: if (root.running && root.gpu) gpuRetry.restart()
+  }
+
+  // The track of the player that is playing, or else of the first one;
+  // null without players. Read once a frame, so its position moves on.
+  function track() {
+    var players = Mpris.players.values
+    var player = null
+    for (var i = 0; i < players.length && !player; i++) if (players[i].isPlaying) player = players[i]
+    if (!player) player = players[0]
+    if (!player) return null
+    return {
+      identity: player.identity, title: player.trackTitle, artist: player.trackArtist, album: player.trackAlbum,
+      art: player.trackArtUrl, playing: player.isPlaying,
+      position: player.positionSupported ? player.position : null,
+      length: player.lengthSupported ? player.length : null
+    }
   }
 
   property Timer restartTimer: Timer {

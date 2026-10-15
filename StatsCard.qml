@@ -253,6 +253,89 @@ Item {
     }
   }
 
+  // Now playing: the cover beside the title, artist, album and a progress
+  // bar with the time.
+  Item {
+    id: media
+    readonly property var track: card.view.media || null
+    visible: track !== null && card.view.empty === ""
+    anchors.fill: parent
+    anchors.margins: card.unit
+    anchors.topMargin: Math.round(card.unit * 1.6)
+
+    Rectangle {
+      id: cover
+      width: Math.min(parent.height, parent.width * 0.4)
+      height: width
+      anchors.verticalCenter: parent.verticalCenter
+      radius: Math.round(card.unit * 0.4)
+      color: card.palette.meter
+      visible: width >= card.unit * 3
+      Text {
+        anchors.centerIn: parent
+        visible: art.status !== Image.Ready
+        text: card.view.icon
+        color: card.view.color
+        font.family: card.fontFamily
+        font.pixelSize: Math.round(parent.width * 0.4)
+      }
+      Image {
+        id: art
+        anchors.fill: parent
+        source: media.track ? media.track.art : ""
+        sourceSize.width: Math.ceil(width)
+        sourceSize.height: Math.ceil(height)
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        smooth: true
+      }
+    }
+
+    Column {
+      anchors.left: cover.visible ? cover.right : parent.left
+      anchors.leftMargin: cover.visible ? card.unit : 0
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      spacing: Math.round(card.unit * 0.35)
+      Text {
+        width: parent.width
+        text: media.track ? media.track.title : ""
+        elide: Text.ElideRight
+        color: card.palette.foreground
+        font.family: card.fontFamily
+        font.pixelSize: Math.round(card.unit * 1.3)
+        font.bold: true
+      }
+      Text {
+        width: parent.width
+        visible: text !== ""
+        text: media.track ? media.track.artist : ""
+        elide: Text.ElideRight
+        color: card.view.color
+        font.family: card.fontFamily
+        font.pixelSize: card.unit
+      }
+      Text {
+        width: parent.width
+        visible: text !== ""
+        text: media.track ? media.track.album : ""
+        elide: Text.ElideRight
+        color: card.palette.subtle
+        font.family: card.fontFamily
+        font.pixelSize: Math.round(card.unit * 0.85)
+      }
+      Item { width: 1; height: Math.round(card.unit * 0.3) }
+      StatRow {
+        width: parent.width
+        label: media.track && media.track.playing ? "\u{f040a}" : "\u{f03e4}"
+        labelWidth: card.unit * 1.6
+        text: media.track ? media.track.time : ""
+        fraction: media.track ? media.track.progress : null
+        barColor: card.view.color
+      }
+    }
+  }
+
   Text {
     anchors.centerIn: parent
     visible: card.view.empty !== ""

@@ -28,7 +28,9 @@ const tests = {
       assert.ok(Array.isArray(frame[section]) && frame[section].length > 0, section)
     // Sensors, cpufreq and pressure can be missing, as in a CI VM; their
     // sections are there, empty.
-    for (const section of ["model", "psi", "hwmon", "nvme", "freq", "drm"])
+    for (const section of ["model", "psi", "hwmon", "nvme", "freq", "drm", "power"])
+      assert.ok(Array.isArray(frame[section]), section)
+    for (const section of ["system"])
       assert.ok(Array.isArray(frame[section]), section)
     assert.equal(frame.procs, undefined)
   },

@@ -21,9 +21,9 @@ dump() {
   while IFS= read -r line || [[ -n $line ]]; do printf '%s\n' "$line"; done < "$1"
 } 2>/dev/null
 
-# Only CPU temperature chips are read for temperatures: reading another
-# device's sensors can wake it from a low-power state.
-cpu_chip='^(k10temp|zenpower|coretemp|k8temp|cpu_thermal|acpitz)$'
+# Only the CPU's and memory modules' temperature chips are read: reading
+# another device's sensors can wake it from a low-power state.
+temp_chip='^(k10temp|zenpower|coretemp|k8temp|cpu_thermal|acpitz|spd5118|jc42)$'
 nvidia=$(type -P nvidia-smi)
 
 # A pipe nobody writes to, for sleeping with read -t instead of forking
@@ -63,7 +63,7 @@ while :; do
   for dir in /sys/class/hwmon/hwmon*; do
     read -r chip < "$dir/name" 2>/dev/null || continue
     inputs=("$dir"/fan*_input)
-    [[ $chip =~ $cpu_chip ]] && inputs+=("$dir"/temp*_input)
+    [[ $chip =~ $temp_chip ]] && inputs+=("$dir"/temp*_input)
     for input in "${inputs[@]}"; do
       [[ -e $input ]] || continue
       sensor=${input##*/}
@@ -87,6 +87,23 @@ while :; do
   printf '@freq\n'
   for input in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq; do
     [[ -r $input ]] && read -r value < "$input" && printf '%s\n' "$value"
+  done
+
+  printf '@system\n'
+  for key in hostname:/proc/sys/kernel/hostname kernel:/proc/sys/kernel/osrelease uptime:/proc/uptime; do
+    value=""
+    read -r value < "${key#*:}" 2>/dev/null && printf '%s\t%s\n' "${key%%:*}" "$value"
+  done
+
+  # Batteries, the laptop's and peripherals', and power adapters.
+  printf '@power\n'
+  for supply in /sys/class/power_supply/*; do
+    [[ -d $supply ]] || continue
+    for key in type scope status capacity capacity_level model_name power_now current_now voltage_now energy_now energy_full charge_now charge_full; do
+      [[ -r $supply/$key ]] || continue
+      value=""
+      read -r value < "$supply/$key" 2>/dev/null && printf '%s\t%s\t%s\n' "${supply##*/}" "$key" "$value"
+    done
   done
 
   # AMD and Intel GPUs, by card; NVIDIA's come from nvidia-smi. A card the

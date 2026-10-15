@@ -448,10 +448,12 @@ Panel {
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
-          Grid {
+          // A Flow, not a Grid: a Grid would widen every row to the
+          // stretched last one.
+          Flow {
             id: fillGrid
             width: parent.width
-            columns: 4
+            property int columns: 4
             spacing: Style.spacing.md
             Repeater {
               model: [
@@ -465,7 +467,10 @@ Panel {
               ]
               Button {
                 required property var modelData
-                width: (fillGrid.width - fillGrid.spacing * (fillGrid.columns - 1)) / fillGrid.columns
+                required property int index
+                // A short last row stretches across: no empty cell.
+                readonly property int cells: Model.rowCells(Model.FILLS.length, fillGrid.columns, index)
+                width: Math.floor((fillGrid.width - fillGrid.spacing * (cells - 1)) / cells)
                 text: Model.fillName(modelData.fill)
                 iconText: modelData.icon
                 // Four to a row: "Wallpaper" needs the room.
@@ -560,16 +565,18 @@ Panel {
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
-            Grid {
+            Flow {
               id: panelGrid
               width: parent.width
-              columns: 3
+              property int columns: 3
               spacing: Style.spacing.md
               Repeater {
                 model: Model.STATS_PANELS
                 Button {
                   required property string modelData
-                  width: (panelGrid.width - panelGrid.spacing * (panelGrid.columns - 1)) / panelGrid.columns
+                  required property int index
+                  readonly property int cells: Model.rowCells(Model.STATS_PANELS.length, panelGrid.columns, index)
+                  width: Math.floor((panelGrid.width - panelGrid.spacing * (cells - 1)) / cells)
                   text: Model.panelName(modelData)
                   iconText: Stats.ICONS[modelData]
                   horizontalPadding: Style.spacing.sm

@@ -11,11 +11,12 @@ var FILL_NAMES = { black: "Black", theme: "Theme", wallpaper: "Wallpaper", dim: 
 var SINGLE_FILLS = ["clock", "stats"]
 // The stats fill's panels, in the order the dashboard lays them out and
 // drops them when the strip runs out of room.
-var STATS_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "pressure", "fans"]
+var STATS_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "pressure", "fans", "battery", "media", "system"]
 var STATS_DEFAULT = ["gpu", "cpu", "memory", "network"]
-var PANEL_NAMES = { gpu: "GPU", igpu: "iGPU", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", pressure: "Pressure", fans: "Fans" }
+var PANEL_NAMES = { gpu: "GPU", igpu: "iGPU", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", temps: "Temps", pressure: "Pressure", fans: "Fans", battery: "Battery", media: "Now playing", system: "System" }
 // Other names IPC accepts for a panel.
-var PANEL_ALIASES = { mem: "memory", ram: "memory", net: "network", disk: "disks", io: "disks", procs: "processes", "top processes": "processes", psi: "pressure", fan: "fans", integrated: "igpu" }
+var PANEL_ALIASES = { mem: "memory", ram: "memory", net: "network", disk: "disks", io: "disks", procs: "processes", "top processes": "processes", psi: "pressure", fan: "fans", integrated: "igpu",
+  temperatures: "temps", temp: "temps", sensors: "temps", bat: "battery", music: "media", mpris: "media", nowplaying: "media", uptime: "system" }
 // Where the clock fill goes: the largest reserved edge, or the larger of
 // the top and bottom edges.
 var CLOCK_EDGES = ["largest", "topBottom"]
@@ -102,6 +103,13 @@ function panelsFrom(text) {
   var names = text.split(",").map(panelFrom)
   if (names.indexOf("") !== -1) return null
   return panelList(names)
+}
+
+// How many cells share the row of cell `index` in a grid of `count` cells,
+// `columns` to a row: the last row's few stretch across, leaving no gap.
+function rowCells(count, columns, index) {
+  var lastRow = Math.floor((count - 1) / columns) * columns
+  return index >= lastRow ? count - lastRow : columns
 }
 
 function panelName(panel) {

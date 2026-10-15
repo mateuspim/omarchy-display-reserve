@@ -257,8 +257,12 @@ with history graphs and meters:
 | Network | Download and upload graphs, totals, on the interface of the default route | `/proc/net/dev`, `/proc/net/route` |
 | Disks | Read and write per disk, NVMe temperatures | `/proc/diskstats`, NVMe hwmon |
 | Processes | The busiest programs by CPU, processes of one name added up, and the apps using the most video memory | `/proc/<pid>/stat`, `nvidia-smi` |
+| Temperatures | The CPU and its dies, the GPUs, NVMe drives and memory modules | hwmon, sysfs, `nvidia-smi` |
 | Pressure | How much of the last 10 s tasks stalled waiting for CPU, memory or I/O | `/proc/pressure` |
-| Fans | Every fan sensor, and the GPU's fan | hwmon, `nvidia-smi` |
+| Fans | The GPU's fan with its history, and every fan sensor | hwmon, `nvidia-smi` |
+| Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse | `/sys/class/power_supply` |
+| Now playing | The track playing, with its cover and progress | the shell's MPRIS players |
+| System | Uptime, host name, kernel, load average and threads | `/proc` |
 
 GPU, CPU, Memory and Network are on by default. The panels tile the edge
 in the grid that gives them the most room, and the text shrinks for a
