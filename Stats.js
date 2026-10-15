@@ -235,6 +235,22 @@ function parsePower(lines) {
   return result
 }
 
+// Peripherals' batteries from UPower's devices ({ nativePath, model, type,
+// powerSupply, percentage 0 to 1, state }, with type and state by name),
+// in parsePower's shape. UPower knows batteries the kernel does not list,
+// such as Bluetooth headsets'. Power supplies (a laptop's battery) and
+// devices without a name are left out.
+function upowerBatteries(devices) {
+  return (devices || []).filter(function(d) {
+    return d && !d.powerSupply && d.nativePath && d.type !== "Unknown" && d.type !== "LinePower"
+  }).map(function(d) {
+    return {
+      id: d.nativePath, name: d.model || d.type, device: true, status: d.state === "Unknown" ? "" : d.state || "",
+      capacity: Math.round(Number(d.percentage || 0) * 100), level: "", power: null, energy: null, full: null
+    }
+  })
+}
+
 // The battery that leads the battery panel: the laptop's, or else the
 // first peripheral's that reports a charge; null without either.
 function leadBattery(power) {
@@ -536,9 +552,6 @@ function ingest(state, frame) {
   var tasks = next.cpu.loadavg.length && frame.loadavg[0].split(" ")[3]
   next.threads = tasks ? Number(tasks.split("/")[1]) : null
   next.power = parsePower(frame.power || [])
-  // The battery panel's headline: the laptop's, or else a peripheral's.
-  var lead = leadBattery(next.power)
-  if (lead && lead.capacity !== null) history.battery = pushHistory(history.battery, lead.capacity)
   next.drmKinds = Object.assign({}, state.drmKinds)
   next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds, state.drm)
 
@@ -689,12 +702,22 @@ function gpuRoles(state) {
 // One update of the dashboard: a stats.sh frame (its text) with the
 // latest nvidia-smi line since the frame before, or "" when none came, and
 // `media`, the track playing ({ identity, title, artist, album, art,
-// playing, position, length } or null), when the media panel is shown.
+// playing, position, length } or null), when the media panel is shown,
+// and `batteries`, UPower's (upowerBatteries), when the battery panel is.
 // Everything on screen changes at once, a sample a second, and the GPU's
 // history advances with the frames like the others: a frame without a new
 // line repeats the last reading.
-function step(state, text, gpuLine, media) {
+function step(state, text, gpuLine, media, batteries) {
   var next = ingest(state, parseFrame(text))
+  // UPower's peripherals, when the battery panel is shown, after the
+  // kernel's (which come first for the same device).
+  if (batteries) {
+    var known = next.power.map(function(b) { return b.id })
+    next.power = next.power.concat(batteries.filter(function(b) { return known.indexOf(b.id) === -1 }))
+  }
+  // The battery panel's headline: the laptop's, or else a peripheral's.
+  var lead = leadBattery(next.power)
+  if (lead && lead.capacity !== null) next.history.battery = pushHistory(next.history.battery, lead.capacity)
   var updated = ingestGpu(next, gpuLine)
   if (updated !== next) {
     next = updated

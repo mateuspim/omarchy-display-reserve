@@ -618,7 +618,8 @@ Object.assign(tests, {
     const mouseOnly = Stats.view("battery", full, palette)
     assert.equal(mouseOnly.value, "64%")
     assert.equal(mouseOnly.caption, "G502 X LIGHTSPEED")
-    assert.deepEqual(plain(mouseOnly.graphs[0].values), [64, 64])
+    // The history moves with step; the fixture's first frame is ingest's.
+    assert.deepEqual(plain(mouseOnly.graphs[0].values), [64])
     // It is not listed again below.
     assert.deepEqual(plain(mouseOnly.rows), [])
     const twoMice = Object.assign({}, full, { power: full.power.concat([
@@ -791,6 +792,37 @@ Object.assign(tests, {
     assert.equal(Stats.progress(900, 1000, 1000), 0)
     assert.equal(Stats.progress(5000, 1000, 1000), 1)
     assert.equal(Stats.progress(1000, 1000, 0), 1)
+  },
+  "upowerBatteries takes the peripherals UPower knows, such as Bluetooth headsets"() {
+    const devices = [
+      { nativePath: "hidpp_battery_0", model: "Logitech G502 X LS", type: "Mouse", powerSupply: false, percentage: 0.63, state: "Discharging" },
+      { nativePath: "/org/bluez/hci0/dev_08_F0_B6_67_89_F3", model: "EDIFIER W830NB", type: "Headset", powerSupply: false, percentage: 0.7, state: "Unknown" },
+      { nativePath: "BAT0", model: "5B10W51867", type: "Battery", powerSupply: true, percentage: 0.81, state: "Discharging" },
+      { nativePath: "", model: "", type: "Unknown", powerSupply: false, percentage: 0, state: "Unknown" }
+    ]
+    const batteries = plain(Stats.upowerBatteries(devices))
+    assert.deepEqual(batteries.map(b => [b.id, b.name, b.capacity, b.device]), [
+      ["hidpp_battery_0", "Logitech G502 X LS", 63, true],
+      ["/org/bluez/hci0/dev_08_F0_B6_67_89_F3", "EDIFIER W830NB", 70, true]
+    ])
+    assert.deepEqual(plain(Stats.upowerBatteries(null)), [])
+  },
+  "step adds UPower's peripherals to the batteries, once each"() {
+    const extra = Stats.upowerBatteries([
+      { nativePath: "hidpp_battery_0", model: "Logitech G502 X LS", type: "Mouse", powerSupply: false, percentage: 0.64, state: "Discharging" },
+      { nativePath: "/org/bluez/hci0/dev_1", model: "EDIFIER W830NB", type: "Headset", powerSupply: false, percentage: 0.7, state: "Unknown" }
+    ])
+    const state = Stats.step(Stats.empty(), frame(10, [0]), [], undefined, extra)
+    assert.deepEqual(plain(state.power.map(b => b.name)), ["G502 X LIGHTSPEED", "EDIFIER W830NB"])
+    const view = Stats.view("battery", state, palette)
+    assert.equal(view.caption, "G502 X LIGHTSPEED")
+    assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["EDIFIER W830NB", "70%"]])
+    // A headset alone leads, with its history.
+    const alone = Stats.step(Stats.empty(), frame(10, [0]).replace(/@power[\s\S]*?@drm/, "@power\n@drm"), [], undefined, extra.slice(1))
+    assert.equal(Stats.view("battery", alone, palette).value, "70%")
+    assert.deepEqual(plain(alone.history.battery), [70])
+    // Without the list (the panel is not shown), the kernel's batteries only.
+    assert.equal(Stats.step(Stats.empty(), frame(10, [0]), []).power.length, 1)
   },
 })
 

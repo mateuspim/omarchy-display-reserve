@@ -380,6 +380,7 @@ QtObject {
     processes: root.statsPanels.indexOf("processes") !== -1
     gpu: ["gpu", "igpu", "processes", "fans", "temps"].some(function(panel) { return root.statsPanels.indexOf(panel) !== -1 })
     media: root.statsPanels.indexOf("media") !== -1
+    batteries: root.statsPanels.indexOf("battery") !== -1
     pace: root.statsPace
   }
 

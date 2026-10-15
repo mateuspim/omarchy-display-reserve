@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
+import Quickshell.Services.UPower
 import qs.Commons
 import "Model.js" as Model
 import "Stats.js" as Stats
@@ -20,6 +21,8 @@ QtObject {
   property bool gpu: false
   // Whether a panel shows the track playing, from the MPRIS players.
   property bool media: false
+  // Whether a panel shows batteries, which adds UPower's peripherals.
+  property bool batteries: false
   property var data: Stats.empty()
 
   // The clock the graphs and meters move by (StatsGraph, StatsEase), in
@@ -67,7 +70,7 @@ QtObject {
     stdout: SplitParser {
       splitMarker: "@end\n"
       onRead: function(frame) {
-        root.data = Stats.step(root.data, frame, root.gpuLines, root.media ? root.track() : null)
+        root.data = Stats.step(root.data, frame, root.gpuLines, root.media ? root.track() : null, root.batteries ? root.peripherals() : null)
         root.gpuLines = []
       }
     }
@@ -121,6 +124,17 @@ QtObject {
       }
       if (root.running && root.gpu) gpuRetry.restart()
     }
+  }
+
+  // UPower's devices for Stats.upowerBatteries: it knows Bluetooth
+  // headsets, which the kernel does not list. Read once a frame.
+  function peripherals() {
+    return UPower.devices.values.map(function(device) {
+      return {
+        nativePath: device.nativePath, model: device.model, type: UPowerDeviceType.toString(device.type),
+        powerSupply: device.powerSupply, percentage: device.percentage, state: UPowerDeviceState.toString(device.state)
+      }
+    })
   }
 
   // A resting GPU's single reading, now and then: one that finds it busy
