@@ -135,8 +135,37 @@ while :; do
     os=""
     { while IFS='=' read -r key value; do [[ $key == PRETTY_NAME ]] && os=${value//\"/}; done < /etc/os-release; } 2>/dev/null
     printf 'os\t%s\n' "$os"
+    # Omarchy's version and update channel, found as omarchy-version and
+    # omarchy-version-channel find them: the installed package's version
+    # (a checkout elsewhere is "dev"), and the mirror and package repo.
     omarchy_path=${OMARCHY_PATH:-/usr/share/omarchy}
-    value=""; { read -r value < "$omarchy_path/version"; } 2>/dev/null; printf 'omarchy\t%s\n' "$value"
+    value=""
+    if [[ ${omarchy_path%/} != /usr/share/omarchy ]]; then
+      value=dev
+    else
+      for dir in /var/lib/pacman/local/omarchy-dev-[0-9]*/ /var/lib/pacman/local/omarchy-[0-9]*/; do
+        [[ -d $dir ]] || continue
+        dir=${dir%/}; dir=${dir##*/}; dir=${dir#omarchy-dev-}; value=${dir#omarchy-}
+        break
+      done
+    fi
+    printf 'omarchy\t%s\n' "$value"
+    # The first of stable, rc and edge whose URL file $1 names, as
+    # omarchy-version-channel looks for them; into $found.
+    channel() {
+      local text="" line
+      { while IFS= read -r line; do text+="$line"$'\n'; done < "$1"; } 2>/dev/null
+      found=unknown
+      if [[ $text == *"$2"* ]]; then found=stable
+      elif [[ $text == *"$3"* ]]; then found=rc
+      elif [[ $text == *"$4"* ]]; then found=edge
+      fi
+    }
+    channel /etc/pacman.d/mirrorlist https://stable-mirror.omarchy.org/ https://rc-mirror.omarchy.org/ https://mirror.omarchy.org/
+    mirror=$found
+    channel /etc/pacman.conf https://pkgs.omarchy.org/stable/ https://pkgs.omarchy.org/rc/ https://pkgs.omarchy.org/edge/
+    repo=$found
+    [[ $mirror == "$repo" ]] && printf 'channel\t%s\n' "$mirror" || printf 'channel\t%s / %s\n' "$mirror" "$repo"
     value=""; { read -r value < "$HOME/.local/state/omarchy/current/theme.name"; } 2>/dev/null; printf 'theme\t%s\n' "$value"
     for key in sys_vendor product_name board_vendor board_name; do
       value=""; { read -r value < "/sys/devices/virtual/dmi/id/$key"; } 2>/dev/null; printf '%s\t%s\n' "$key" "$value"

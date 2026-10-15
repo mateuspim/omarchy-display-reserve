@@ -618,16 +618,17 @@ Object.assign(tests, {
     assert.equal(view.rows.find(row => row.label === "Threads").text, "1234")
   },
   "the system view reads like fastfetch, most telling first"() {
-    const info = "@sysinfo\nuser\tpym\nos\tOmarchy\nomarchy\t4.0.0.alpha\nsys_vendor\tASUS\nproduct_name\tSystem Product Name\n" +
+    const info = "@sysinfo\nuser\tpym\nos\tOmarchy\nomarchy\t4.0.4-1\nchannel\tstable\nsys_vendor\tASUS\nproduct_name\tSystem Product Name\n" +
       "board_vendor\tASUSTeK COMPUTER INC.\nboard_name\tTUF GAMING B650M-E WIFI\ncpu\tAMD Ryzen 9 9900X 12-Core Processor\n" +
-      "packages\t1176\nflatpaks\t3\nshell\tbash\ndesktop\tHyprland\ntheme\tnord\n"
+      "packages\t1176\nflatpaks\t3\nshell\tbash\ndesktop\tHyprland\ntheme\tcozy-ui\n"
     let state = Stats.step(Stats.empty(), frame(10, [0], info), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
     // Read every minute only, they stand between reads.
     state = Stats.step(state, frame(11, [0]), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
     const view = Stats.view("system", state, palette)
     assert.equal(view.info, "pym@odin")
     assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [
-      ["OS", "Omarchy 4.0.0.alpha"],
+      ["OS", "Omarchy 4.0.4-1"],
+      ["Channel", "stable"],
       ["Host", "TUF GAMING B650M-E WIFI"],
       ["Kernel", "7.2.5-3-omarchy"],
       ["CPU", "Ryzen 9 9900X"],
@@ -637,12 +638,13 @@ Object.assign(tests, {
       ["Packages", "1176 pacman, 3 flatpak"],
       ["Shell", "bash"],
       ["Desktop", "Hyprland"],
-      ["Theme", "nord"],
+      // Named as omarchy-theme-current names it.
+      ["Theme", "Cozy Ui"],
       ["Load", "0.52  0.61  0.70"],
       ["Threads", "1234"]
     ])
     // A small card keeps the first rows, under the uptime.
-    assert.deepEqual(plain(Stats.view("system", state, palette, 6, false).rows.map(row => row.label)), ["OS", "Host", "Kernel"])
+    assert.deepEqual(plain(Stats.view("system", state, palette, 6, false).rows.map(row => row.label)), ["OS", "Channel", "Host"])
   },
   "the battery view shows a laptop battery and peripherals"() {
     // Without a laptop battery the first peripheral leads, with its history.

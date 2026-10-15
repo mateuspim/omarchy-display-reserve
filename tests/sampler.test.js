@@ -52,6 +52,11 @@ const tests = {
     const parsed = frames(run(0.05, 0, 2))
     const info = Object.fromEntries(parsed[0].sysinfo.map(line => line.split("\t")))
     assert.ok(info.os && info.cpu, JSON.stringify(info))
+    // Omarchy's version is its package's, as omarchy-version gives it.
+    const pkg = execFileSync("bash", ["-c", "pacman -Q omarchy 2>/dev/null | cut -d' ' -f2 || true"], { encoding: "utf8" }).trim()
+    if (pkg) assert.equal(info.omarchy, pkg)
+    const channel = execFileSync("bash", ["-c", "command -v omarchy-version-channel >/dev/null && omarchy-version-channel || true"], { encoding: "utf8" }).trim()
+    if (channel) assert.equal(info.channel, channel)
     assert.equal(parsed[1].sysinfo, undefined)
   },
   "STATS_NVIDIA=0 keeps nvidia-smi from running for the GPU apps"() {

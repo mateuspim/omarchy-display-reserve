@@ -214,6 +214,11 @@ function hostName(info) {
   return String(info.board_name || "").trim()
 }
 
+// A theme's name as omarchy-theme-current gives it: "cozy-ui" is "Cozy Ui".
+function themeName(name) {
+  return String(name || "").replace(/(^|-)([a-z])/g, function(match, dash, letter) { return dash + letter.toUpperCase() }).replace(/-/g, " ")
+}
+
 // A CPU's model without the maker's marks and filler: "AMD Ryzen 9 9900X
 // 12-Core Processor" is "Ryzen 9 9900X".
 function shortCpu(model) {
@@ -1278,6 +1283,7 @@ var VIEWS = {
     // In fastfetch's order, the most telling first: a small card keeps those.
     function add(label, text) { if (text) v.rows.push(row(label, text, null)) }
     add("OS", [info.os, info.omarchy].filter(Boolean).join(" "))
+    add("Channel", info.channel && info.channel !== "unknown" ? info.channel : "")
     add("Host", hostName(info))
     add("Kernel", system.kernel)
     add("CPU", shortCpu(info.cpu))
@@ -1291,7 +1297,7 @@ var VIEWS = {
     add("Packages", packages.join(", "))
     add("Shell", info.shell)
     add("Desktop", info.desktop)
-    add("Theme", info.theme)
+    add("Theme", themeName(info.theme))
     if (state.cpu.loadavg.length) v.rows.push(row("Load", state.cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
     if (state.threads !== null) v.rows.push(row("Threads", String(state.threads), null))
   },

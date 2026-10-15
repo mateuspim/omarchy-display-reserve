@@ -264,7 +264,7 @@ with history graphs and meters:
 | Fans | The GPU's fan with its history, and every fan sensor | hwmon, `nvidia-smi` |
 | Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse or Bluetooth headphones | `/sys/class/power_supply`, the shell's UPower devices |
 | Now playing | The track playing, with its cover and progress | the shell's MPRIS players |
-| System | Like fastfetch: Omarchy's icon beside the uptime, OS and Omarchy version, host, kernel, CPU, GPUs, memory, packages, shell, desktop, theme, load and threads | `/proc`, `/sys`, `/etc/os-release`, pacman's database |
+| System | Like fastfetch: Omarchy's icon beside the uptime, OS, Omarchy version and update channel, host, kernel, CPU, GPUs, memory, packages, shell, desktop, theme, load and threads | `/proc`, `/sys`, `/etc/os-release`, pacman's database |
 
 GPU, CPU, Memory and Network are on by default. Each card shows what fits
 its size: a small one keeps its headline and the first rows, never half
