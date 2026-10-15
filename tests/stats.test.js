@@ -600,8 +600,10 @@ Object.assign(tests, {
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU", "CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2"])
     assert.equal(view.rows.find(row => row.label === "GPU").text, "54°C")
     assert.deepEqual(plain(view.graphs[0].values), [67.375, 67.375])
-    // Rows past the card's room are left out.
-    assert.equal(Stats.view("temps", full, palette, 4).rows.length, 4)
+    // Rows past the card's room are left out: beside the headline in a
+    // wide card, under it in a stacked one, which takes three rows' room.
+    assert.equal(Stats.view("temps", full, palette, 6, true).rows.length, 6)
+    assert.equal(Stats.view("temps", full, palette, 6, false).rows.length, 3)
   },
   "the system view leads with the uptime"() {
     const view = Stats.view("system", full, palette)
@@ -612,8 +614,11 @@ Object.assign(tests, {
     assert.equal(view.rows.find(row => row.label === "Threads").text, "1234")
   },
   "the battery view shows a laptop battery and peripherals"() {
+    // Without a laptop battery the first peripheral leads, with its history.
     const mouseOnly = Stats.view("battery", full, palette)
-    assert.equal(mouseOnly.value, "")
+    assert.equal(mouseOnly.value, "64%")
+    assert.equal(mouseOnly.caption, "G502 X LIGHTSPEED")
+    assert.deepEqual(plain(mouseOnly.graphs[0].values), [64, 64])
     assert.deepEqual(plain(mouseOnly.rows.map(row => [row.label, row.text])), [["G502 X LIGHTSPEED", "64%"]])
     const laptop = Object.assign(Stats.empty(), { time: 1, history: Object.assign(Stats.empty().history, { battery: [81] }), power: [
       { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 },
@@ -625,6 +630,17 @@ Object.assign(tests, {
     assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["MX Keys", "Low"]])
     assert.equal(Stats.view("battery", Object.assign(Stats.empty(), { time: 1 }), palette).empty, "No batteries")
   },
+  "pickPlayer prefers a playing player with a track, then any with one"() {
+    const players = [
+      { identity: "Brave", isPlaying: true, trackTitle: "" },
+      { identity: "mpv", isPlaying: false, trackTitle: "Film" },
+      { identity: "Spotify", isPlaying: true, trackTitle: "Song" }
+    ]
+    assert.equal(Stats.pickPlayer(players).identity, "Spotify")
+    assert.equal(Stats.pickPlayer(players.slice(0, 2)).identity, "mpv")
+    assert.equal(Stats.pickPlayer(players.slice(0, 1)).identity, "Brave")
+    assert.equal(Stats.pickPlayer([]), null)
+  },
   "the media view shows the track, with its progress"() {
     const media = { identity: "Spotify", title: "Song", artist: "Band", album: "Record", art: "file:///a.png", playing: true, position: 83, length: 225 }
     const state = Stats.step(Stats.empty(), frame(10, [0]), "", media)
@@ -634,6 +650,11 @@ Object.assign(tests, {
     assert.equal(view.media.time, "1:23 / 3:45")
     assert.ok(Math.abs(view.media.progress - 83 / 225) < 1e-9)
     assert.equal(Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", null), palette).empty, "Nothing playing")
+    // A player that tells nothing of its track is named instead.
+    const bare = Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { identity: "Brave", title: "", artist: "", album: "", art: "", playing: false, position: null, length: null }), palette)
+    assert.equal(bare.media.title, "Brave")
+    assert.equal(bare.info, "")
+    assert.equal(bare.media.time, "")
   },
   "the fans view adds the GPU fan"() {
     const view = Stats.view("fans", full, palette)

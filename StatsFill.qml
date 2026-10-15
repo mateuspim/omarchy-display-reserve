@@ -41,7 +41,7 @@ Item {
         // panels whose lists grow to fill the card.
         readonly property int room: Math.floor((height - Math.round(root.unit * 1.6) - root.unit)
           / (Math.round(root.unit * 1.25) + Math.round(root.unit * 0.35)))
-        view: Stats.view(modelData.panel, root.sampler.data, root.sampler.palette, room)
+        view: Stats.view(modelData.panel, root.sampler.data, root.sampler.palette, room, width > height * Stats.WIDE_CARD)
       }
     }
   }

@@ -94,13 +94,10 @@ QtObject {
     }
   }
 
-  // The track of the player that is playing, or else of the first one;
-  // null without players. Read once a frame, so its position moves on.
+  // The track of the player Stats.pickPlayer picks; null without players.
+  // Read once a frame, so its position moves on.
   function track() {
-    var players = Mpris.players.values
-    var player = null
-    for (var i = 0; i < players.length && !player; i++) if (players[i].isPlaying) player = players[i]
-    if (!player) player = players[0]
+    var player = Stats.pickPlayer(Mpris.players.values)
     if (!player) return null
     return {
       identity: player.identity, title: player.trackTitle, artist: player.trackArtist, album: player.trackAlbum,

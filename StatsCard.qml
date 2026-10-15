@@ -367,8 +367,11 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       // Never into the value: a long value takes the room of the meter,
       // then of the label, which elides.
+      // A long label ("G502 X LIGHTSPEED") takes up to half the row from
+      // the meter.
       width: statRow.labelFills ? parent.width - value.width - meter.width - card.unit * 1.2
-        : Math.max(0, Math.min(statRow.labelWidth, parent.width - value.width - card.unit * 0.6))
+        : Math.max(0, Math.min(Math.max(statRow.labelWidth, Math.min(implicitWidth + card.unit * 0.6, parent.width * 0.5)),
+            parent.width - value.width - card.unit * 0.6))
       text: statRow.label
       elide: Text.ElideRight
       color: card.theme.subtle

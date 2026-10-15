@@ -235,6 +235,24 @@ function parsePower(lines) {
   return result
 }
 
+// The battery that leads the battery panel: the laptop's, or else the
+// first peripheral's that reports a charge; null without either.
+function leadBattery(power) {
+  return power.filter(function(b) { return !b.device })[0]
+    || power.filter(function(b) { return b.capacity !== null })[0] || null
+}
+
+// The MPRIS player the media panel follows, from Quickshell's players: one
+// playing a track it names, else any naming its track, else one playing,
+// else the first; null without players.
+function pickPlayer(players) {
+  function first(test) { for (var i = 0; i < players.length; i++) if (test(players[i])) return players[i]; return null }
+  return first(function(p) { return p.isPlaying && p.trackTitle })
+    || first(function(p) { return p.trackTitle })
+    || first(function(p) { return p.isPlaying })
+    || players[0] || null
+}
+
 // The mean of cpufreq's scaling_cur_freq values (kHz), in MHz.
 function averageFrequency(lines) {
   var values = lines.map(Number).filter(function(n) { return n > 0 })
@@ -482,8 +500,9 @@ function ingest(state, frame) {
   var tasks = next.cpu.loadavg.length && frame.loadavg[0].split(" ")[3]
   next.threads = tasks ? Number(tasks.split("/")[1]) : null
   next.power = parsePower(frame.power || [])
-  var laptop = next.power.filter(function(battery) { return !battery.device && battery.capacity !== null })[0]
-  if (laptop) history.battery = pushHistory(history.battery, laptop.capacity)
+  // The battery panel's headline: the laptop's, or else a peripheral's.
+  var lead = leadBattery(next.power)
+  if (lead && lead.capacity !== null) history.battery = pushHistory(history.battery, lead.capacity)
   next.drmKinds = Object.assign({}, state.drmKinds)
   next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds)
 
@@ -859,8 +878,9 @@ function graphMax(values, floor) {
 // color, an optional big value with a caption, graphs, per-core bars,
 // label/value rows with meters and ranked lists. `empty` replaces the
 // content with a message. `room` is how many rows the card has space for,
-// for panels whose lists can grow to fill it.
-function view(panel, state, palette, room) {
+// for panels whose lists can grow to fill it, and `wide` whether its rows
+// sit beside the headline rather than under it.
+function view(panel, state, palette, room, wide) {
   var g = palette.gradients
   var result = {
     title: TITLES[panel] || panel, icon: ICONS[panel] || "", color: palette.boxes[panel] || palette.accent,
@@ -868,7 +888,7 @@ function view(panel, state, palette, room) {
     graphs: [], bars: [], rows: [], lists: [], empty: ""
   }
   var build = VIEWS[panel]
-  if (build) build(result, state, palette, g, room)
+  if (build) build(result, state, palette, g, room, wide)
   return result
 }
 
@@ -997,7 +1017,7 @@ var VIEWS = {
     })
   },
 
-  temps: function(v, state, palette, g, room) {
+  temps: function(v, state, palette, g, room, wide) {
     function temp(name, value) { return row(name, formatTemp(value), value / 100, gradientAt(g.temp, value / 100)) }
     var roles = gpuRoles(state)
     var cpu = state.temps.filter(function(t) { return !/^DIMM /.test(t.name) })
@@ -1010,7 +1030,8 @@ var VIEWS = {
       v.rows.push(temp(disk ? disk.name : controller, state.nvmeTemps[controller]))
     })
     dimms.forEach(function(t) { v.rows.push(temp(t.name, t.temp)) })
-    if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, room))
+    // A stacked card's headline takes about three rows' room.
+    if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, wide || state.cpu.temp === null ? room : room - 3))
     if (state.cpu.temp !== null) {
       v.value = formatTemp(state.cpu.temp)
       v.valueColor = gradientAt(g.temp, state.cpu.temp / 100)
@@ -1026,6 +1047,13 @@ var VIEWS = {
     // A peripheral may report only a level; it reads as about this full.
     var LEVELS = { Critical: 0.05, Low: 0.2, Normal: 0.6, High: 0.85, Full: 1 }
     function hours(h) { return Math.floor(h) + "h " + Math.floor(h * 60) % 60 + "m" }
+    var lead = leadBattery(state.power)
+    if (lead && !laptop) {
+      v.value = formatPercent(lead.capacity)
+      v.valueColor = gradientAt(g.temp, 1 - lead.capacity / 100)
+      v.caption = lead.name
+      v.graphs.push({ values: state.history.battery, max: 100, stops: g.used, label: "" })
+    }
     if (laptop) {
       var cap = laptop.capacity
       v.value = formatPercent(cap)
@@ -1048,15 +1076,17 @@ var VIEWS = {
   media: function(v, state, palette, g) {
     var m = state.media
     if (!m) { v.empty = "Nothing playing"; return }
-    v.info = m.identity || ""
+    // A player that names no track (a browser tab, say) is named instead.
+    v.info = m.title ? m.identity || "" : ""
     v.media = {
-      title: m.title || "Unknown title",
+      title: m.title || m.identity || "Unknown player",
       artist: m.artist || "",
       album: m.album || "",
       art: m.art || "",
       playing: !!m.playing,
       progress: m.length > 0 ? Math.max(0, Math.min(1, m.position / m.length)) : null,
-      time: m.length > 0 ? formatDuration(m.position) + " / " + formatDuration(m.length) : formatDuration(m.position)
+      time: m.length > 0 ? formatDuration(m.position) + " / " + formatDuration(m.length)
+        : m.position !== null && m.position !== undefined ? formatDuration(m.position) : ""
     }
   },
 
