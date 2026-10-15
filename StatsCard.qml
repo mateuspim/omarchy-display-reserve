@@ -167,6 +167,7 @@ Item {
         Repeater {
           model: card.view.bars.length
           Rectangle {
+            id: coreBar
             required property int index
             readonly property var modelData: card.view.bars[index] || ({ fraction: 0, color: card.theme.meter })
             width: Math.max(1, (cores.width - cores.spacing * (card.view.bars.length - 1)) / card.view.bars.length)
@@ -175,7 +176,9 @@ Item {
             color: card.theme.meter
             // The fraction eases, not the size: an eased size would keep
             // a stale track size when the card is laid out again.
-            Reserve.StatsEase { id: coreShown; target: parent.modelData.fraction }
+            // By id: a QtObject has no parent, so `parent` here would be
+            // the bar's.
+            Reserve.StatsEase { id: coreShown; target: coreBar.modelData.fraction }
             Rectangle {
               anchors.bottom: parent.bottom
               width: parent.width
