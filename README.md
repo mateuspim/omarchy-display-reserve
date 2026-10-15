@@ -262,7 +262,7 @@ with history graphs and meters:
 | Temperatures | The CPU and its dies, the GPUs, NVMe drives and memory modules | hwmon, sysfs, `nvidia-smi` |
 | Pressure | How much of the last 10 s tasks stalled waiting for CPU, memory or I/O | `/proc/pressure` |
 | Fans | The GPU's fan with its history, and every fan sensor | hwmon, `nvidia-smi` |
-| Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse | `/sys/class/power_supply` |
+| Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse or Bluetooth headphones | `/sys/class/power_supply`, the shell's UPower devices |
 | Now playing | The track playing, with its cover and progress | the shell's MPRIS players |
 | System | Uptime, host name, kernel, load average and threads | `/proc` |
 
@@ -299,6 +299,9 @@ shell builtins only, so it starts no process per sample, and from one
 lists come every 3 seconds and only while the Processes panel is shown.
 Nothing runs unless a monitor shows the Stats fill (or the panel shows
 it in its preview), and everything stops while the session is idle.
+Logitech Bolt receivers are not supported by the kernel's Logitech
+driver, so a mouse or keyboard on one reports no battery (Solaar reads it
+directly; the panel does not).
 NVMe temperatures and Dell laptops' fans, which are read through the
 firmware and stall the CPU for a moment, are read every 5 seconds.
 
