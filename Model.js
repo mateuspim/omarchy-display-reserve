@@ -410,6 +410,30 @@ function idleName(seconds) {
   return seconds % 60 === 0 ? seconds / 60 + " min" : seconds + " s"
 }
 
+// Frames a second the stats fill's graphs and meters move at, the panel's
+// choices: 0 follows each monitor's refresh rate, 1 drops the animation and
+// moves everything once a second, with each new sample. Any whole number
+// up to 240 from a hand edit works too.
+var STATS_PACES = [0, 60, 30, 15, 1]
+var STATS_PACE = 30
+
+function statsPace(value) {
+  var n = Number(value)
+  return value !== null && value !== "" && Math.floor(n) === n && n >= 0 && n <= 240 ? n : STATS_PACE
+}
+
+function nextPace(pace) {
+  var index = STATS_PACES.indexOf(statsPace(pace))
+  return STATS_PACES[(index + 1) % STATS_PACES.length]
+}
+
+function paceName(pace) {
+  pace = statsPace(pace)
+  if (pace === 0) return "Display rate"
+  if (pace === 1) return "No animation"
+  return pace + " fps"
+}
+
 // Aspect presets: the reachable area's width over height. `start` puts the
 // reachable area at the top or left, `end` at the bottom or right.
 var ASPECTS = ["21:9", "16:9", "4:3", "1:1"]

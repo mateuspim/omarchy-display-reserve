@@ -175,12 +175,11 @@ Item {
             color: card.theme.meter
             // The fraction eases, not the size: an eased size would keep
             // a stale track size when the card is laid out again.
-            property real shown: modelData.fraction
-            Behavior on shown { NumberAnimation { duration: 800; easing.type: Easing.InOutQuad } }
+            Reserve.StatsEase { id: coreShown; target: parent.modelData.fraction }
             Rectangle {
               anchors.bottom: parent.bottom
               width: parent.width
-              height: Math.max(parent.radius * 2, parent.height * parent.shown)
+              height: Math.max(parent.radius * 2, parent.height * coreShown.value)
               radius: parent.radius
               color: parent.modelData.color
             }
@@ -328,6 +327,8 @@ Item {
       Item { width: 1; height: Math.round(card.unit * 0.3) }
       StatRow {
         width: parent.width
+        // A player that gives no length shows no time.
+        visible: media.track !== null && (media.track.time !== "" || media.track.progress !== null)
         label: media.track && media.track.playing ? "\u{f040a}" : "\u{f03e4}"
         labelWidth: card.unit * 1.6
         text: media.track ? media.track.time : ""
@@ -387,10 +388,9 @@ Item {
       height: Math.max(3, Math.round(card.unit * 0.42))
       radius: height / 2
       color: card.theme.meter
-      property real shown: statRow.fraction || 0
-      Behavior on shown { NumberAnimation { duration: 800; easing.type: Easing.InOutQuad } }
+      Reserve.StatsEase { id: meterShown; target: statRow.fraction || 0 }
       Rectangle {
-        width: Math.max(parent.height, parent.width * parent.shown)
+        width: Math.max(parent.height, parent.width * meterShown.value)
         height: parent.height
         radius: parent.radius
         color: statRow.barColor

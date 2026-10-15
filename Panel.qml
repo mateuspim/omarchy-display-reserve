@@ -590,6 +590,19 @@ Panel {
                 }
               }
             }
+            // Session-wide: how smoothly every dashboard moves, against how
+            // often it redraws.
+            Button {
+              width: parent.width
+              text: "Animation  ·  " + Model.paceName(root.reserve.statsPace)
+              iconText: "󰔛"
+              selected: root.reserve.statsPace !== 1
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              tooltipText: "How often the graphs and meters move on every monitor, which is how often the dashboard redraws.\nClick to cycle: display rate, 60, 30, 15 fps, no animation"
+              onClicked: { root.reserve.setStatsPace(Model.nextPace(root.reserve.statsPace)); keySurface.forceActiveFocus() }
+            }
           }
         }
 

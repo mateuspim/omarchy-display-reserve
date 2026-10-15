@@ -358,6 +358,20 @@ function topProcesses(before, after, seconds, count) {
 
 // --- state -----------------------------------------------------------------
 
+// The paced animations' curve: slow at both ends, like Easing.InOutQuad,
+// for `t` from 0 to 1.
+function ease(t) {
+  t = Math.max(0, Math.min(1, t))
+  return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t)
+}
+
+// How far, from 0 to 1, an animation that began at `start` and lasts
+// `duration` has come at `now`, all in milliseconds.
+function progress(now, start, duration) {
+  if (!(duration > 0)) return 1
+  return Math.max(0, Math.min(1, (now - start) / duration))
+}
+
 function pushHistory(series, value, length) {
   var next = series.concat([value])
   var keep = length || HISTORY
@@ -382,6 +396,13 @@ function empty() {
     nvidia: null,
     nvidiaMissing: false,
     nvidiaAge: 0,
+    // What sysfs tells of the NVIDIA cards without waking them: whether
+    // one can power itself down (`managed`, runtime power management on,
+    // as on a laptop) and whether one is asleep; the frames in a row its
+    // readings showed it idle; and its name, for while it sleeps.
+    nvidiaPower: { managed: false, asleep: false },
+    nvidiaIdle: 0,
+    nvidiaName: "",
     // Each AMD or Intel card's kind as last seen awake: asleep, a card
     // reports no VRAM to tell.
     drmKinds: {},
@@ -391,6 +412,8 @@ function empty() {
     gpuApps: [],
     temps: [],
     nvmeTemps: {},
+    // stats.sh's @slowhwmon lines, which come every few frames only.
+    slowHwmon: [],
     system: null,
     threads: null,
     power: [],
@@ -427,6 +450,15 @@ function ingest(state, frame) {
   var fresh = state.counters !== null && seconds > 0 && seconds <= GAP
   var before = fresh ? state.counters : null
   var cards = parseDrm(frame.drm || [])
+  // NVIDIA's cards only say whether they sleep; nvidia-smi reads them.
+  var nvidiaPower = { managed: false, asleep: false }
+  for (var id in cards) {
+    if (cards[id].driver !== "nvidia") continue
+    if (cards[id].control === "auto") nvidiaPower.managed = true
+    if (cards[id].status === "suspended") nvidiaPower.asleep = true
+    delete cards[id]
+  }
+  next.nvidiaPower = nvidiaPower
   var counters = {
     cpu: parseCpu(frame.stat || []),
     net: parseNetDev(frame.net || []),
@@ -434,7 +466,11 @@ function ingest(state, frame) {
     drmIdle: {}
   }
   for (var card in cards) if (cards[card].idle_ms !== undefined) counters.drmIdle[card] = cards[card].idle_ms
-  var sensors = parseSensors(frame.hwmon || [], frame.nvme || [])
+  // Sensors stats.sh reads every few frames only (a Dell's fans, through
+  // firmware) keep their last lines between reads.
+  var slow = frame.slowhwmon || state.slowHwmon || []
+  next.slowHwmon = slow
+  var sensors = parseSensors((frame.hwmon || []).concat(slow), frame.nvme || [])
   // stats.sh reads NVMe temperatures every few frames only; between them
   // the last ones stand.
   if (!frame.nvme) sensors.nvme = state.nvmeTemps || {}
@@ -504,7 +540,7 @@ function ingest(state, frame) {
   var lead = leadBattery(next.power)
   if (lead && lead.capacity !== null) history.battery = pushHistory(history.battery, lead.capacity)
   next.drmKinds = Object.assign({}, state.drmKinds)
-  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds)
+  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds, state.drm)
 
   if (frame.procs) {
     var procs = parseProcs(frame.procs)
@@ -550,13 +586,14 @@ function parseDrm(lines) {
     var f = lines[i].split("\t")
     if (f.length < 4 || f[3] === "") continue
     var card = cards[f[0]] || (cards[f[0]] = { driver: f[1] })
-    card[f[2]] = f[2] === "status" ? f[3] : Number(f[3])
+    card[f[2]] = f[2] === "status" || f[2] === "control" ? f[3] : Number(f[3])
   }
   return cards
 }
 
-// AMD cards with this much VRAM or more are discrete; less is the share of
-// system memory an integrated GPU sets aside.
+// Intel cards with this much VRAM or more are discrete. AMD's tell: a
+// discrete card's memory has a vendor (`dedicated`), while an integrated
+// one's is a share of system memory, however large.
 var DISCRETE_VRAM = 4 * 1073741824
 
 // GPUs, in the shape parseGpu gives NVIDIA's, from parseDrm's cards.
@@ -566,13 +603,20 @@ var DISCRETE_VRAM = 4 * 1073741824
 // left asleep, with no readings: reading it would wake it.
 // `kinds` holds each card's kind as last seen awake, and is kept current:
 // a sleeping card reports no VRAM, and keeps the kind it had.
-function drmGpus(cards, idleBefore, seconds, kinds) {
+// A resting card (stats.sh leaves an idle one alone so it can sleep) keeps
+// its readings from `previous`, the GPUs before.
+function drmGpus(cards, idleBefore, seconds, kinds, previous) {
   kinds = kinds || {}
   return Object.keys(cards).sort().map(function(id) {
     var c = cards[id]
     var amd = c.driver === "amdgpu"
     var memTotal = c.vram_total !== undefined ? c.vram_total : null
-    if (memTotal !== null) kinds[id] = memTotal >= DISCRETE_VRAM ? "discrete" : "integrated"
+    if (amd ? c.status !== "suspended" && !c.rest : memTotal !== null)
+      kinds[id] = (amd ? c.dedicated === 1 : memTotal >= DISCRETE_VRAM) ? "discrete" : "integrated"
+    if (c.rest && c.status !== "suspended") {
+      var last = (previous || []).filter(function(gpu) { return gpu.id === id })[0]
+      if (last) return Object.assign({}, last, { asleep: false, resting: true })
+    }
     var discrete = kinds[id] === "discrete"
     var gpu = {
       id: id,
@@ -580,6 +624,7 @@ function drmGpus(cards, idleBefore, seconds, kinds) {
       name: amd ? (discrete ? "Radeon" : "Radeon Graphics") : (discrete ? "Intel Arc" : "Intel Graphics"),
       kind: discrete ? "discrete" : "integrated",
       asleep: c.status === "suspended",
+      resting: false,
       load: null, memUsed: null, memTotal: null, temp: null, power: null, powerLimit: null,
       clock: null, fan: null, encoder: null, decoder: null
     }
@@ -599,12 +644,40 @@ function drmGpus(cards, idleBefore, seconds, kinds) {
   })
 }
 
+// The NVIDIA GPU while it sleeps: its name, if it was seen awake, and no
+// readings.
+function asleepNvidia(state) {
+  return {
+    id: "nvidia" + (state.nvidia ? state.nvidia.index : 0), vendor: "NVIDIA", kind: "discrete", asleep: true, resting: false,
+    name: state.nvidiaName || "NVIDIA GPU",
+    load: null, memUsed: null, memTotal: null, temp: null, power: null, powerLimit: null,
+    clock: null, fan: null, encoder: null, decoder: null
+  }
+}
+
+// Frames in a row a dGPU that can power itself down must show no load
+// before it is left to rest: nvidia-smi stops, and stats.sh reads an AMD
+// card only now and then. Reading a GPU keeps it awake.
+var REST_AFTER = 5
+
+// How the sampler should read the NVIDIA GPU: "on", nvidia-smi's loop;
+// "check", a single reading now and then, while it rests; "off", not at
+// all, while it sleeps. Only a dGPU that can power itself down rests.
+function nvidiaPoll(state) {
+  var power = state.nvidiaPower || {}
+  if (!power.managed) return "on"
+  if (power.asleep) return "off"
+  return state.nvidiaIdle >= REST_AFTER ? "check" : "on"
+}
+
 // Which GPU each panel shows: `main`, for the GPU panel, is the first
 // discrete one (NVIDIA first), or else the only kind there is; `integrated`,
 // for the iGPU panel, an integrated GPU beside it, or null.
 function gpuRoles(state) {
   var all = []
-  if (state.nvidia) all.push(Object.assign({ id: "nvidia" + state.nvidia.index, vendor: "NVIDIA", kind: "discrete", asleep: false }, state.nvidia))
+  var power = state.nvidiaPower || {}
+  if (power.asleep) all.push(asleepNvidia(state))
+  else if (state.nvidia) all.push(Object.assign({ id: "nvidia" + state.nvidia.index, vendor: "NVIDIA", kind: "discrete", asleep: false }, state.nvidia))
   all = all.concat(state.drm || [])
   var main = null, integrated = null
   for (var i = 0; i < all.length; i++) if (all[i].kind === "discrete") { main = all[i]; break }
@@ -623,8 +696,19 @@ function gpuRoles(state) {
 function step(state, text, gpuLine, media) {
   var next = ingest(state, parseFrame(text))
   var updated = ingestGpu(next, gpuLine)
-  if (updated !== next) next = updated
-  else if (next.nvidia && ++next.nvidiaAge > NVIDIA_STALE) { next.nvidia = null; next.nvidiaAge = 0 }
+  if (updated !== next) {
+    next = updated
+    var reading = next.nvidia
+    next.nvidiaName = reading.name
+    next.nvidiaIdle = reading.load === 0 && !reading.encoder && !reading.decoder ? state.nvidiaIdle + 1 : 0
+    next.nvidia = Object.assign({}, reading, { resting: false })
+  } else if (next.nvidiaPower.asleep) {
+    next.nvidiaIdle = 0
+  } else if (next.nvidia && nvidiaPoll(next) !== "on") {
+    // Read only now and then, it keeps its last reading.
+    if (!next.nvidia.resting) next.nvidia = Object.assign({}, next.nvidia, { resting: true })
+    next.nvidiaAge = 0
+  } else if (next.nvidia && ++next.nvidiaAge > NVIDIA_STALE) { next.nvidia = null; next.nvidiaAge = 0 }
   if (media !== undefined) next.media = media
   var roles = gpuRoles(next)
   var history = next.history
@@ -899,7 +983,7 @@ function gpuView(v, gpu, history, g) {
   if (gpu.asleep) { v.empty = "Asleep"; return }
   v.value = formatPercent(gpu.load)
   v.valueColor = gradientAt(g.cpu, (gpu.load || 0) / 100)
-  v.caption = "load"
+  v.caption = gpu.resting ? "idle" : "load"
   v.graphs.push({ values: history, max: 100, stops: g.cpu, label: "" })
     if (gpu.memUsed !== null && gpu.memTotal) v.rows.push(row("VRAM", formatPair(gpu.memUsed, gpu.memTotal), gpu.memUsed / gpu.memTotal, gradientAt(g.used, gpu.memUsed / gpu.memTotal)))
   if (gpu.temp !== null) v.rows.push(row("Temp", formatTemp(gpu.temp), gpu.temp / 100, gradientAt(g.temp, gpu.temp / 100)))
@@ -1085,8 +1169,8 @@ var VIEWS = {
       art: m.art || "",
       playing: !!m.playing,
       progress: m.length > 0 ? Math.max(0, Math.min(1, m.position / m.length)) : null,
-      time: m.length > 0 ? formatDuration(m.position) + " / " + formatDuration(m.length)
-        : m.position !== null && m.position !== undefined ? formatDuration(m.position) : ""
+      // Without a length, a position (a browser's 0:00) tells nothing.
+      time: m.length > 0 ? formatDuration(m.position) + " / " + formatDuration(m.length) : ""
     }
   },
 

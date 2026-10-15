@@ -22,6 +22,31 @@ QtObject {
   property bool media: false
   property var data: Stats.empty()
 
+  // The clock the graphs and meters move by (StatsGraph, StatsEase), in
+  // milliseconds: it ticks `pace` times a second (Model.statsPace), or on
+  // every frame the monitors draw at 0. At 1 nothing moves between samples,
+  // and the clock stands still.
+  property int pace: Model.STATS_PACE
+  readonly property bool animated: pace !== 1
+  property real now: Date.now()
+  property FrameAnimation frameClock: FrameAnimation {
+    running: root.running && root.pace === 0
+    onTriggered: root.now = Date.now()
+  }
+  property Timer paceClock: Timer {
+    interval: Math.max(1, Math.round(1000 / Math.max(1, root.pace)))
+    repeat: true
+    running: root.running && root.pace > 1
+    onTriggered: root.now = Date.now()
+  }
+
+  // How to read the NVIDIA GPU (Stats.nvidiaPoll): nvidia-smi's loop, a
+  // single reading every `checkEvery` ms while it rests, or nothing while
+  // it sleeps. stats.sh leaves nvidia-smi out unless the loop runs.
+  readonly property string nvidiaMode: Stats.nvidiaPoll(data)
+  readonly property int checkEvery: 10000
+  onNvidiaModeChanged: if (sampler.running) { restarting = true; restartTimer.restart() }
+
   // Seconds between frames, and frames between process lists.
   readonly property real interval: 1
   readonly property int processEvery: 3
@@ -37,6 +62,7 @@ QtObject {
 
   property Process sampler: Process {
     command: ["bash", root.script, String(root.interval), root.processes ? String(root.processEvery) : "0"]
+    environment: ({ STATS_NVIDIA: root.nvidiaMode === "on" ? "1" : "0" })
     running: root.running && !root.restarting && root.samplerEpoch >= 0
     stdout: SplitParser {
       splitMarker: "@end\n"
@@ -71,11 +97,12 @@ QtObject {
   // cannot reach the driver. After a few, the GPU counts as missing.
   property int gpuFailures: 0
   property bool gpuPrinted: false
+  readonly property var gpuQuery: ["nvidia-smi",
+    "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,clocks.gr,fan.speed,utilization.encoder,utilization.decoder",
+    "--format=csv,noheader,nounits"]
   property Process gpuProcess: Process {
-    command: ["nvidia-smi",
-      "--query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,clocks.gr,fan.speed,utilization.encoder,utilization.decoder",
-      "--format=csv,noheader,nounits", "-lms", String(Math.round(root.interval * 1000))]
-    running: root.running && root.gpu && root.hasNvidia && root.gpuEpoch >= 0
+    command: root.gpuQuery.concat(["-lms", String(Math.round(root.interval * 1000))])
+    running: root.running && root.gpu && root.hasNvidia && root.nvidiaMode === "on" && root.gpuEpoch >= 0
     stdout: SplitParser {
       onRead: function(line) {
         root.gpuLines = root.gpuLines.concat([line])
@@ -85,6 +112,8 @@ QtObject {
     }
     onRunningChanged: if (running) root.gpuPrinted = false
     onExited: {
+      // Stopped on purpose, for the GPU to rest.
+      if (root.nvidiaMode !== "on") return
       if (!root.gpuPrinted && ++root.gpuFailures >= 3) {
         root.hasNvidia = false
         root.data = Object.assign({}, root.data, { nvidiaMissing: true })
@@ -92,6 +121,21 @@ QtObject {
       }
       if (root.running && root.gpu) gpuRetry.restart()
     }
+  }
+
+  // A resting GPU's single reading, now and then: one that finds it busy
+  // brings the loop back (Stats.nvidiaPoll).
+  property Process gpuCheck: Process {
+    command: root.gpuQuery
+    stdout: SplitParser {
+      onRead: function(line) { root.gpuLines = root.gpuLines.concat([line]) }
+    }
+  }
+  property Timer gpuCheckTimer: Timer {
+    interval: root.checkEvery
+    repeat: true
+    running: root.running && root.gpu && root.hasNvidia && root.nvidiaMode === "check"
+    onTriggered: if (!root.gpuCheck.running) root.gpuCheck.running = true
   }
 
   // The track of the player Stats.pickPlayer picks; null without players.

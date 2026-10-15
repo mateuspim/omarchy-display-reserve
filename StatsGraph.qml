@@ -1,4 +1,5 @@
 import QtQuick
+import "." as Reserve
 import "Stats.js" as Stats
 
 // A history graph in the style of btop: the newest sample on the right, a
@@ -11,7 +12,9 @@ import "Stats.js" as Stats
 // and slides left by that sample over `duration`, the time until the next
 // one, so the line moves steadily. The samples span the whole canvas, so
 // the oldest one leaves on the left as the newest comes in on the right,
-// with no gap on either side.
+// with no gap on either side. The slide follows the sampler's clock, at the
+// frame pace chosen for the dashboard; without animation the new sample
+// shows at once.
 Item {
   id: graph
   property var values: []
@@ -41,7 +44,10 @@ Item {
     id: canvas
     width: graph.width + graph.step
     height: graph.height
-    x: -graph.step
+    readonly property var clock: Reserve.ReserveState.stats
+    // When the slide to the newest sample began, on the clock.
+    property real slideStart: 0
+    x: clock.animated ? -graph.step * Stats.progress(clock.now, slideStart, graph.duration) : -graph.step
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
 
@@ -50,23 +56,12 @@ Item {
     // in the same frame.
     property bool scrollPending: false
 
-    NumberAnimation {
-      id: slide
-      target: canvas
-      property: "x"
-    }
-
     onPaint: {
       if (scrollPending) {
         // The new sample is past the right edge: start where the old
         // picture was, and slide it into view.
         scrollPending = false
-        slide.stop()
-        canvas.x = 0
-        slide.from = 0
-        slide.to = -graph.step
-        slide.duration = graph.duration
-        slide.start()
+        slideStart = clock.now
       }
       var ctx = getContext("2d")
       ctx.reset()

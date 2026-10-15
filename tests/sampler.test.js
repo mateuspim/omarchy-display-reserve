@@ -12,6 +12,7 @@ const script = new URL("../stats.sh", import.meta.url).pathname
 
 // stats.sh INTERVAL PROCESS_EVERY FRAMES
 const run = (...args) => execFileSync("bash", [script, ...args.map(String)], { encoding: "utf8", timeout: 10000 })
+const runWith = (env, ...args) => execFileSync("bash", [script, ...args.map(String)], { encoding: "utf8", timeout: 10000, env: { ...process.env, ...env } })
 const frames = text => text.split("@end\n").filter(frame => frame.trim()).map(Stats.parseFrame)
 
 const tests = {
@@ -39,6 +40,18 @@ const tests = {
     assert.ok(parsed[0].procs.length > 10)
     assert.equal(parsed[1].procs, undefined)
     assert.ok(parsed[2].procs.length > 10)
+  },
+  "slow sensors come every fifth frame, from the first"() {
+    const parsed = frames(run(0.05, 0, 6))
+    assert.ok(Array.isArray(parsed[0].slowhwmon))
+    assert.ok(Array.isArray(parsed[0].nvme))
+    for (const i of [1, 2, 3, 4]) assert.equal(parsed[i].slowhwmon, undefined)
+    assert.ok(Array.isArray(parsed[5].slowhwmon))
+  },
+  "STATS_NVIDIA=0 keeps nvidia-smi from running for the GPU apps"() {
+    const [frame] = frames(runWith({ STATS_NVIDIA: "0" }, 0.1, 1, 1))
+    assert.ok(frame.procs.length > 10)
+    assert.equal(frame.gpuapps, undefined)
   },
   "two frames make real loads and rates"() {
     const state = frames(run(0.3, 1, 2)).reduce(Stats.ingest, Stats.empty())

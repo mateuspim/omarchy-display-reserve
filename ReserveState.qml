@@ -24,6 +24,9 @@ QtObject {
   // Seconds without input before every edge goes black; 0 never does. One
   // setting for the whole session, since idle is.
   property int idleBlack: 0
+  // Frames a second the stats fill's graphs and meters move at
+  // (Model.statsPace); one setting for every monitor, like idleBlack.
+  property int statsPace: Model.STATS_PACE
   // Named snapshots of `outputs` (Model.snapshot), saved beside it.
   property var profiles: ({})
   // Profiles applied by themselves when exactly a set of monitors is
@@ -122,6 +125,13 @@ QtObject {
     var value = Model.idleSeconds(seconds)
     if (value === idleBlack) return
     idleBlack = value
+    saveTimer.restart()
+  }
+
+  function setStatsPace(pace) {
+    var value = Model.statsPace(pace)
+    if (value === statsPace) return
+    statsPace = value
     saveTimer.restart()
   }
 
@@ -259,6 +269,7 @@ QtObject {
     saveTimer.stop()
     var state = { outputs: outputs }
     if (idleBlack) state.idleBlack = idleBlack
+    if (statsPace !== Model.STATS_PACE) state.statsPace = statsPace
     if (Object.keys(profiles).length) state.profiles = profiles
     if (Object.keys(autoProfiles).length) state.autoProfiles = autoProfiles
     if (lastMonitors.length) state.monitors = lastMonitors
@@ -286,6 +297,7 @@ QtObject {
       var parsed = JSON.parse(text)
       outputs = parsed && parsed.outputs ? parsed.outputs : ({})
       idleBlack = Model.idleSeconds(parsed && parsed.idleBlack)
+      statsPace = Model.statsPace(parsed && parsed.statsPace)
       profiles = Model.profiles(parsed && parsed.profiles)
       autoProfiles = Model.autoProfiles(parsed && parsed.autoProfiles, profiles)
       lastMonitors = Model.keyList(parsed && parsed.monitors)
@@ -307,6 +319,7 @@ QtObject {
       root.written = []
       root.outputs = ({})
       root.idleBlack = 0
+      root.statsPace = Model.STATS_PACE
       root.profiles = ({})
       root.autoProfiles = ({})
       root.lastMonitors = []
@@ -367,6 +380,7 @@ QtObject {
     processes: root.statsPanels.indexOf("processes") !== -1
     gpu: ["gpu", "igpu", "processes", "fans", "temps"].some(function(panel) { return root.statsPanels.indexOf(panel) !== -1 })
     media: root.statsPanels.indexOf("media") !== -1
+    pace: root.statsPace
   }
 
   // The Omarchy logo's SVG source, for the logo fill to recolor.

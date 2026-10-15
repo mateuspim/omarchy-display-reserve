@@ -296,7 +296,7 @@ const tests = {
     assert.equal(state.nvidia, null)
   },
   "a sleeping discrete GPU keeps the kind it had awake"() {
-    const awake = "@drm\ncard1\tamdgpu\tstatus\tactive\ncard1\tamdgpu\tvram_total\t17163091968\ncard1\tamdgpu\tbusy\t5\n"
+    const awake = "@drm\ncard1\tamdgpu\tstatus\tactive\ncard1\tamdgpu\tdedicated\t1\ncard1\tamdgpu\tvram_total\t17163091968\ncard1\tamdgpu\tbusy\t5\n"
     const asleep = "@drm\ncard1\tamdgpu\tstatus\tsuspended\n"
     let state = Stats.step(Stats.empty(), frame(10, [0], awake), [])
     state = Stats.step(state, frame(11, [0], asleep), [])
@@ -329,13 +329,13 @@ const tests = {
     const sections = Stats.parseFrame(frame(0, [0]))
     const [amd] = plain(Stats.drmGpus(Stats.parseDrm(sections.drm), {}, 0))
     assert.deepEqual(amd, {
-      id: "card2", vendor: "AMD", name: "Radeon Graphics", kind: "integrated", asleep: false,
+      id: "card2", vendor: "AMD", name: "Radeon Graphics", kind: "integrated", asleep: false, resting: false,
       load: 99, memUsed: 1228115968, memTotal: 2147483648, temp: 60, power: 0.157, powerLimit: null,
       clock: 2200, fan: null, encoder: null, decoder: null
     })
-    // An AMD card with 4 GiB of VRAM or more is a discrete one, and its fan
+    // An AMD card with memory of its own (from a VRAM vendor) is a discrete one, and its fan
     // speed comes from its PWM duty.
-    const big = Stats.drmGpus({ card1: { driver: "amdgpu", status: "active", busy: 40, vram_total: 17163091968, pwm: 102, power_cap: 300000000 } }, {}, 0)[0]
+    const big = Stats.drmGpus({ card1: { driver: "amdgpu", status: "active", busy: 40, dedicated: 1, vram_total: 17163091968, pwm: 102, power_cap: 300000000 } }, {}, 0)[0]
     assert.equal(big.kind, "discrete")
     assert.equal(big.name, "Radeon")
     assert.equal(big.fan, 40)
@@ -693,6 +693,99 @@ Object.assign(tests, {
     view = Stats.view("processes", state, palette)
     assert.equal(view.lists[0].items.length, 5)
     assert.equal(view.lists[1].items.length, 3)
+  },
+  "an AMD card is discrete by its own memory, not by how much VRAM it has"() {
+    // A big APU (Strix Halo) carves out a lot of system memory, but has no
+    // VRAM vendor; a small discrete card has one.
+    const apu = Stats.drmGpus({ card1: { driver: "amdgpu", status: "active", busy: 3, vram_total: 96 * 1073741824 } }, {}, 0)[0]
+    assert.equal(apu.kind, "integrated")
+    const small = Stats.drmGpus({ card1: { driver: "amdgpu", status: "active", busy: 3, dedicated: 1, vram_total: 2147483648 } }, {}, 0)[0]
+    assert.equal(small.kind, "discrete")
+  },
+  "a resting AMD card keeps its last readings while stats.sh leaves it alone"() {
+    const awake = "@drm\ncard1\tamdgpu\tstatus\tactive\ncard1\tamdgpu\tdedicated\t1\ncard1\tamdgpu\tbusy\t0\ncard1\tamdgpu\ttemp\t45000\n"
+    const resting = "@drm\ncard1\tamdgpu\tstatus\tactive\ncard1\tamdgpu\trest\t1\n"
+    let state = Stats.step(Stats.empty(), frame(10, [0], awake), [])
+    state = Stats.step(state, frame(11, [0], resting), [])
+    const card = state.drm.find(gpu => gpu.id === "card1")
+    assert.equal(card.resting, true)
+    assert.equal(card.kind, "discrete")
+    assert.equal(card.temp, 45)
+    assert.equal(card.load, 0)
+    assert.equal(Stats.view("gpu", state, palette).caption, "idle")
+  },
+  "NVIDIA cards are left to the NVIDIA panel, not the AMD and Intel list"() {
+    const nvidia = "@drm\ncard1\tnvidia\tstatus\tactive\ncard1\tnvidia\tcontrol\ton\n"
+    const state = Stats.step(Stats.empty(), frame(10, [0], nvidia), [])
+    assert.equal(state.drm.some(gpu => gpu.id === "card1"), false)
+  },
+  "nvidia-smi runs all the time unless the dGPU can power itself down"() {
+    const unmanaged = "@drm\ncard1\tnvidia\tstatus\tactive\ncard1\tnvidia\tcontrol\ton\n"
+    let state = Stats.step(Stats.empty(), frame(10, [0], unmanaged), ["0, NVIDIA GeForce RTX 4080, 0, 7551, 16376, 54, 20.0, 320.00, 210, 30, 0, 0"])
+    for (let t = 11; t <= 20; t++) state = Stats.step(state, frame(t, [0], unmanaged), ["0, NVIDIA GeForce RTX 4080, 0, 7551, 16376, 54, 20.0, 320.00, 210, 30, 0, 0"])
+    assert.equal(Stats.nvidiaPoll(state), "on")
+    // Without any NVIDIA card in sysfs (no driver yet), it runs too.
+    assert.equal(Stats.nvidiaPoll(Stats.step(Stats.empty(), frame(10, [0]), [])), "on")
+  },
+  "a laptop dGPU that sits idle is checked only now and then, so it can sleep"() {
+    const managed = "@drm\ncard1\tnvidia\tstatus\tactive\ncard1\tnvidia\tcontrol\tauto\n"
+    const idle = ["0, NVIDIA GeForce RTX 4060 Laptop GPU, 0, 5, 8188, 41, 3.1, 80.00, 210, , 0, 0"]
+    let state = Stats.step(Stats.empty(), frame(10, [0], managed), idle)
+    assert.equal(Stats.nvidiaPoll(state), "on")
+    for (let t = 11; t < 10 + Stats.REST_AFTER; t++) state = Stats.step(state, frame(t, [0], managed), idle)
+    assert.equal(Stats.nvidiaPoll(state), "check")
+    // Its last reading stays, marked resting, rather than going stale.
+    for (let t = 20; t <= 40; t++) state = Stats.step(state, frame(t, [0], managed), [])
+    assert.equal(state.nvidia.resting, true)
+    assert.equal(Stats.view("gpu", state, palette).caption, "idle")
+    // A check that finds it busy brings the loop back.
+    state = Stats.step(state, frame(41, [0], managed), ["0, NVIDIA GeForce RTX 4060 Laptop GPU, 35, 900, 8188, 55, 40.0, 80.00, 2100, , 0, 0"])
+    assert.equal(Stats.nvidiaPoll(state), "on")
+    assert.equal(state.nvidia.resting, false)
+  },
+  "a sleeping laptop dGPU is never woken, and its panel says it is asleep"() {
+    const managed = "@drm\ncard1\tnvidia\tstatus\tactive\ncard1\tnvidia\tcontrol\tauto\n"
+    const asleep = "@drm\ncard1\tnvidia\tstatus\tsuspended\ncard1\tnvidia\tcontrol\tauto\n"
+    let state = Stats.step(Stats.empty(), frame(10, [0], managed), ["0, NVIDIA GeForce RTX 4060 Laptop GPU, 0, 5, 8188, 41, 3.1, 80.00, 210, , 0, 0"])
+    state = Stats.step(state, frame(11, [0], asleep), [])
+    assert.equal(Stats.nvidiaPoll(state), "off")
+    const main = Stats.gpuRoles(state).main
+    assert.equal(main.vendor, "NVIDIA")
+    assert.equal(main.asleep, true)
+    assert.equal(main.name, "RTX 4060 Laptop GPU")
+    assert.equal(Stats.view("gpu", state, palette).empty, "Asleep")
+    // Asleep from the start, with no name yet.
+    const cold = Stats.step(Stats.empty(), frame(10, [0], asleep), [])
+    assert.equal(Stats.nvidiaPoll(cold), "off")
+    assert.equal(Stats.gpuRoles(cold).main.vendor, "NVIDIA")
+    // Woken by something else, it is read again.
+    state = Stats.step(state, frame(12, [0], managed), [])
+    assert.equal(Stats.nvidiaPoll(state), "on")
+  },
+  "sensors read only now and then keep their last values between reads"() {
+    const slow = "@slowhwmon\ndell_smm\tfan1\tProcessor Fan\t2400\n"
+    let state = Stats.step(Stats.empty(), frame(10, [0], slow), [])
+    state = Stats.step(state, frame(11, [0]), [])
+    assert.deepEqual(plain(state.fans.map(fan => fan.name)), ["CPU fan", "Processor Fan"])
+    assert.equal(state.fans[1].rpm, 2400)
+  },
+  "the media view hides the time when the player gives no length"() {
+    const brave = { identity: "Brave", title: "", artist: "", album: "", art: "", playing: false, position: 0, length: null }
+    const view = Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", brave), palette)
+    assert.equal(view.media.time, "")
+    assert.equal(view.media.progress, null)
+  },
+  "ease and progress drive the paced animations"() {
+    assert.equal(Stats.ease(0), 0)
+    assert.equal(Stats.ease(1), 1)
+    assert.equal(Stats.ease(0.5), 0.5)
+    assert.equal(Stats.ease(0.25), 0.125)
+    assert.equal(Stats.ease(-1), 0)
+    assert.equal(Stats.ease(2), 1)
+    assert.equal(Stats.progress(1500, 1000, 1000), 0.5)
+    assert.equal(Stats.progress(900, 1000, 1000), 0)
+    assert.equal(Stats.progress(5000, 1000, 1000), 1)
+    assert.equal(Stats.progress(1000, 1000, 0), 1)
   },
 })
 

@@ -9,6 +9,8 @@
 # PROCESS_EVERY: list every process (and GPU app) on every Nth frame,
 # starting with the first; 0 never does. FRAMES: stop after that many
 # frames; 0 or none runs until the shell closes the pipe.
+# STATS_NVIDIA=0 in the environment leaves nvidia-smi out: the shell sets
+# it while the NVIDIA GPU rests or sleeps, since asking wakes it.
 
 export LC_ALL=C
 interval=${1:-1}
@@ -25,7 +27,34 @@ dump() {
 # another device's sensors can wake it from a low-power state.
 # ACPI thermal zones are left out: reading one runs firmware code.
 temp_chip='^(k10temp|zenpower|coretemp|k8temp|cpu_thermal|spd5118|jc42)$'
+# Chips read every fifth frame only: a Dell's fans are read through the
+# firmware (SMM), which stalls every core for the moment it takes.
+slow_chip='^(dell_smm)$'
 nvidia=$(type -P nvidia-smi)
+[[ ${STATS_NVIDIA:-1} == 0 ]] && nvidia=""
+# Frames in a row each AMD card that can power itself down read idle;
+# after five it is read only every tenth frame, so it can go to sleep.
+declare -A rest
+
+# A hwmon chip's lines (chip, sensor, label, value): its fans, and its
+# temperatures when it is the CPU's or memory's. A device asleep is left
+# alone: reading its sensors would wake it.
+sensors() {
+  local dir=$1 chip=$2 status="" input sensor label value
+  { read -r status < "$dir/device/power/runtime_status"; } 2>/dev/null
+  [[ $status == suspended ]] && return
+  local inputs=("$dir"/fan*_input)
+  [[ $chip =~ $temp_chip ]] && inputs+=("$dir"/temp*_input)
+  for input in "${inputs[@]}"; do
+    [[ -e $input ]] || continue
+    sensor=${input##*/}
+    sensor=${sensor%_input}
+    label="" value=""
+    [[ -r $dir/${sensor}_label ]] && read -r label < "$dir/${sensor}_label"
+    { read -r value < "$input"; } 2>/dev/null
+    printf '%s\t%s\t%s\t%s\n' "$chip" "$sensor" "$label" "$value"
+  done
+}
 
 # A pipe nobody writes to, for sleeping with read -t instead of forking
 # sleep on every frame.
@@ -64,28 +93,20 @@ while :; do
   done
 
   printf '@hwmon\n'
+  slow=()
   for dir in /sys/class/hwmon/hwmon*; do
-    # A device asleep is left alone: reading its sensors would wake it.
-    status=""
-    { read -r status < "$dir/device/power/runtime_status"; } 2>/dev/null
-    [[ $status == suspended ]] && continue
     { read -r chip < "$dir/name"; } 2>/dev/null || continue
-    inputs=("$dir"/fan*_input)
-    [[ $chip =~ $temp_chip ]] && inputs+=("$dir"/temp*_input)
-    for input in "${inputs[@]}"; do
-      [[ -e $input ]] || continue
-      sensor=${input##*/}
-      sensor=${sensor%_input}
-      label="" value=""
-      [[ -r $dir/${sensor}_label ]] && read -r label < "$dir/${sensor}_label"
-      { read -r value < "$input"; } 2>/dev/null
-      printf '%s\t%s\t%s\t%s\n' "$chip" "$sensor" "$label" "$value"
-    done
+    if [[ $chip =~ $slow_chip ]]; then slow+=("$dir"); continue; fi
+    sensors "$dir" "$chip"
   done
 
   # Every fifth frame: each read sends the drive a command, which wakes a
   # laptop's SSD from its deepest power state.
   if (( n % 5 == 0 )); then
+    printf '@slowhwmon\n'
+    for dir in "${slow[@]}"; do
+      { read -r chip < "$dir/name"; } 2>/dev/null && sensors "$dir" "$chip"
+    done
     printf '@nvme\n'
     for input in /sys/class/nvme/nvme*/hwmon*/temp1_input; do
       [[ -e $input ]] || continue
@@ -118,8 +139,9 @@ while :; do
     done
   done
 
-  # AMD and Intel GPUs, by card; NVIDIA's come from nvidia-smi. A card the
-  # kernel put to sleep only reports that: reading it would wake it.
+  # AMD and Intel GPUs, by card; NVIDIA's come from nvidia-smi, and only
+  # say here whether they sleep. A card the kernel put to sleep only
+  # reports that: reading it would wake it.
   printf '@drm\n'
   for card in /sys/class/drm/card*; do
     id=${card##*/}
@@ -127,16 +149,32 @@ while :; do
     dev=$card/device
     driver=""
     { while IFS='=' read -r key value; do [[ $key == DRIVER ]] && driver=$value; done < "$dev/uevent"; } 2>/dev/null
-    [[ $driver == amdgpu || $driver == i915 || $driver == xe ]] || continue
-    status=""
+    [[ $driver == amdgpu || $driver == i915 || $driver == xe || $driver == nvidia ]] || continue
+    status="" control=""
     [[ -r $dev/power/runtime_status ]] && read -r status < "$dev/power/runtime_status"
+    [[ -r $dev/power/control ]] && read -r control < "$dev/power/control"
     gpu() { [[ -r $2 ]] && read -r value < "$2" && printf '%s\t%s\t%s\t%s\n' "$id" "$driver" "$1" "$value"; }
     printf '%s\t%s\tstatus\t%s\n' "$id" "$driver" "${status:-active}"
+    if [[ $driver == nvidia ]]; then
+      printf '%s\t%s\tcontrol\t%s\n' "$id" "$driver" "$control"
+      [[ $status == suspended ]] && nvidia=""
+      continue
+    fi
     [[ $status == suspended ]] && continue
+    # Resting: left alone but every tenth frame.
+    if [[ $driver == amdgpu && $control == auto ]] && (( ${rest[$id]:-0} >= 5 && n % 10 != 0 )); then
+      printf '%s\t%s\trest\t1\n' "$id" "$driver"
+      continue
+    fi
     gpu vram_used "$dev/mem_info_vram_used"
     gpu vram_total "$dev/mem_info_vram_total"
     if [[ $driver == amdgpu ]]; then
-      gpu busy "$dev/gpu_busy_percent"
+      # Only a discrete card's memory has a vendor.
+      [[ -e $dev/mem_info_vram_vendor ]] && printf '%s\t%s\tdedicated\t1\n' "$id" "$driver"
+      busy=""
+      { read -r busy < "$dev/gpu_busy_percent"; } 2>/dev/null
+      [[ -n $busy ]] && printf '%s\t%s\tbusy\t%s\n' "$id" "$driver" "$busy"
+      if [[ $control == auto && $busy == 0 ]]; then rest[$id]=$(( ${rest[$id]:-0} + 1 )); else rest[$id]=0; fi
       for hwmon in "$dev"/hwmon/hwmon*; do
         gpu temp "$hwmon/temp1_input"
         if [[ -r $hwmon/power1_average ]]; then gpu power "$hwmon/power1_average"; else gpu power "$hwmon/power1_input"; fi

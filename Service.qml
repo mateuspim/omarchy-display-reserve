@@ -156,7 +156,7 @@ Scope {
 
     function status(): string {
       var result = {
-        idleBlack: root.state.idleBlack, idle: root.idle, ruler: root.state.ruler,
+        idleBlack: root.state.idleBlack, idle: root.idle, statsPace: root.state.statsPace, ruler: root.state.ruler,
         profile: root.state.currentProfile, profiles: Model.profileNames(root.state.profiles),
         autoProfiles: root.state.autoProfiles, monitors: root.state.connected, outputs: {}
       }
@@ -257,6 +257,12 @@ Scope {
     function idle(seconds: int): string {
       root.state.setIdleBlack(seconds)
       return "Black when idle: " + Model.idleName(root.state.idleBlack)
+    }
+    // Frames a second the dashboard's graphs and meters move at: 0 the
+    // display's rate, 1 no animation.
+    function pace(fps: int): string {
+      root.state.setStatsPace(fps)
+      return "Dashboard animation: " + Model.paceName(root.state.statsPace)
     }
   }
 

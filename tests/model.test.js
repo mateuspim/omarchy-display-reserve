@@ -386,6 +386,24 @@ const tests = {
     assert.equal(Model.idleName(120), "2 min")
     assert.equal(Model.idleSeconds("-5"), 0)
   },
+  "the stats frame pace cycles through its choices and keeps hand edits"() {
+    assert.deepEqual([...Model.STATS_PACES], [0, 60, 30, 15, 1])
+    assert.equal(Model.statsPace(undefined), 30)
+    assert.equal(Model.statsPace("fast"), 30)
+    assert.equal(Model.statsPace(0), 0)
+    assert.equal(Model.statsPace("15"), 15)
+    // Any whole number of frames a second up to 240, from a hand edit.
+    assert.equal(Model.statsPace(144), 144)
+    assert.equal(Model.statsPace(500), 30)
+    assert.equal(Model.statsPace(2.5), 30)
+    assert.equal(Model.nextPace(0), 60)
+    assert.equal(Model.nextPace(30), 15)
+    assert.equal(Model.nextPace(1), 0)
+    assert.equal(Model.nextPace(144), 0)
+    assert.equal(Model.paceName(0), "Display rate")
+    assert.equal(Model.paceName(30), "30 fps")
+    assert.equal(Model.paceName(1), "No animation")
+  },
   "parseAspect reads ratios and plain numbers"() {
     assert.equal(Model.parseAspect("16:9"), 16 / 9)
     assert.equal(Model.parseAspect("4/3"), 4 / 3)

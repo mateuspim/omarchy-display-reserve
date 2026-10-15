@@ -153,6 +153,7 @@ The shell answers IPC calls on the target `pym.display-reserve`, through
 | `aspect <monitor> <ratio> <place>` | An aspect preset: `16:9`, `4:3`, any `w:h`; `top`, `left`, `center`, `bottom`, `right`, or `""` to keep the current place |
 | `ruler <monitor>` | Show or hide the ruler |
 | `idle <seconds>` | Black when idle after `seconds`; `0` turns it off |
+| `pace <fps>` | Frames a second the dashboard's graphs and meters move at, up to 240; `0` the display's rate, `1` no animation |
 | `profile <name>` | Apply a profile to every monitor |
 | `saveProfile <name>` | Save every monitor as profile `name`, replacing one of that name |
 | `deleteProfile <name>` | Delete a profile |
@@ -229,7 +230,8 @@ default), and `panels`: the stats panels, `["gpu", "cpu", "memory",
 "network"]` by default.
 Clear keeps the fill. Black when idle is one setting for every monitor,
 stored beside `outputs` as `"idleBlack"`: seconds, left out while it is
-off. Profiles are stored beside them as `"profiles"`, each a copy of
+off. The dashboard's animation pace is one setting too, `"statsPace"`:
+frames a second, left out at the default 30. Profiles are stored beside them as `"profiles"`, each a copy of
 `outputs` under its name; applying one makes `outputs` exactly that copy.
 `"autoProfiles"` maps a profile's name to the monitor keys it applies with,
 and `"monitors"` holds the keys connected last, so the plugin can tell a
@@ -272,12 +274,17 @@ the list above.
 The GPU panel shows the discrete GPU (NVIDIA first), and the iGPU panel the
 integrated one beside it; on a machine with only one GPU, that one is the
 GPU panel's. AMD GPUs report everything nvidia-smi does except video
-encode/decode; an AMD GPU with less than 4 GiB of VRAM counts as
-integrated, which is the memory an APU sets aside. Intel GPUs report no
+encode/decode; an AMD GPU whose memory has a vendor is discrete, and one
+without, an APU whatever memory it sets aside, is integrated. Intel GPUs report no
 load, so it is worked out from how long the GPU sat idle, and only the
 clock besides: their temperature and power are the CPU's. A GPU the
 kernel has put to sleep, such as a laptop's discrete one, shows as asleep
-and is not read, since reading it would wake it.
+and is not read, since reading it would wake it. Reading an awake GPU
+also keeps it awake, so a discrete GPU that can power itself down (runtime
+power management on, as on most laptops) and has shown no load for 5
+seconds rests: nvidia-smi stops, an AMD card is read every 10 seconds
+instead of every second, and the panel shows its last reading as idle
+until a reading finds it busy again.
 
 The colors come from the theme's `colors.toml`, the way Omarchy's btop
 themes are built: each box has its own hue, and graphs and meters run
@@ -292,6 +299,14 @@ shell builtins only, so it starts no process per sample, and from one
 lists come every 3 seconds and only while the Processes panel is shown.
 Nothing runs unless a monitor shows the Stats fill (or the panel shows
 it in its preview), and everything stops while the session is idle.
+NVMe temperatures and Dell laptops' fans, which are read through the
+firmware and stall the CPU for a moment, are read every 5 seconds.
+
+The graphs scroll and the meters ease between samples at 30 frames a
+second by default, and the dashboard redraws only as often. The
+Animation button under the panels (or `pace`) sets it for every monitor:
+the display's own rate for the smoothest motion, 60, 30 or 15 fps, or no
+animation, which redraws once a second.
 
 ## Known limitations
 
