@@ -70,7 +70,7 @@ QtObject {
     stdout: SplitParser {
       splitMarker: "@end\n"
       onRead: function(frame) {
-        root.data = Stats.step(root.data, frame, root.gpuLines, root.media ? root.track() : null, root.batteries ? root.peripherals() : null)
+        root.data = Stats.step(root.data, frame, root.gpuLines, root.media ? root.track() : null, root.batteries ? Stats.upowerBatteries(root.peripherals()) : null)
         root.gpuLines = []
       }
     }

@@ -13,7 +13,10 @@ Item {
   id: card
   // Blank until set: a delegate's own bindings can run before these are
   // given, and would read undefined.
-  property var view: Stats.view("", Stats.empty(), Stats.palette({}, {}))
+  property var view: blank
+  readonly property var blank: Stats.view("", Stats.empty(), Stats.palette({}, {}))
+  // What the card draws: `view`, or blank while a binding gives none.
+  readonly property var shown: view || blank
   // Not `palette`: that would hide Item.palette.
   property var theme: Stats.palette({}, {})
   required property int unit
@@ -26,7 +29,7 @@ Item {
     anchors.topMargin: Math.round(card.unit / 2)
     color: "transparent"
     radius: Math.round(card.unit * 0.55)
-    border.color: card.view.color
+    border.color: card.shown.color
     border.width: card.line
     opacity: 0.75
   }
@@ -43,13 +46,13 @@ Item {
       anchors.centerIn: parent
       spacing: Math.round(card.unit * 0.4)
       Text {
-        text: card.view.icon
-        color: card.view.color
+        text: card.shown.icon
+        color: card.shown.color
         font.family: card.fontFamily
         font.pixelSize: card.unit
       }
       Text {
-        text: card.view.title
+        text: card.shown.title
         color: card.theme.foreground
         font.family: card.fontFamily
         font.pixelSize: Math.round(card.unit * 0.9)
@@ -58,7 +61,7 @@ Item {
     }
   }
   Rectangle {
-    visible: card.view.info !== ""
+    visible: card.shown.info !== ""
     anchors.right: parent.right
     anchors.rightMargin: card.unit
     height: card.unit
@@ -68,7 +71,7 @@ Item {
       id: infoText
       anchors.centerIn: parent
       width: Math.min(implicitWidth, card.width / 2)
-      text: card.view.info
+      text: card.shown.info
       elide: Text.ElideRight
       color: card.theme.subtle
       font.family: card.fontFamily
@@ -84,7 +87,7 @@ Item {
     columns: card.wide ? 2 : 1
     columnSpacing: card.unit * 1.2
     rowSpacing: Math.round(card.unit * 0.5)
-    visible: card.view.empty === ""
+    visible: card.shown.empty === ""
     clip: true
 
     // The headline: the big value, its graphs and the per-core bars.
@@ -93,10 +96,10 @@ Item {
       Layout.fillHeight: true
       Layout.preferredWidth: 1
       spacing: Math.round(card.unit * 0.4)
-      visible: card.view.value !== "" || card.view.graphs.length > 0 || card.view.bars.length > 0
+      visible: card.shown.value !== "" || card.shown.graphs.length > 0 || card.shown.bars.length > 0
 
       RowLayout {
-        visible: card.view.value !== ""
+        visible: card.shown.value !== ""
         spacing: Math.round(card.unit * 0.5)
         TextMetrics {
           id: widest
@@ -108,8 +111,8 @@ Item {
         Text {
           // As wide as the widest value, so the caption holds still.
           Layout.minimumWidth: widest.width
-          text: card.view.value
-          color: card.view.valueColor
+          text: card.shown.value
+          color: card.shown.valueColor
           font.family: card.fontFamily
           font.pixelSize: Math.round(card.unit * 2.2)
           font.bold: true
@@ -117,7 +120,7 @@ Item {
         Text {
           Layout.alignment: Qt.AlignBottom
           Layout.bottomMargin: Math.round(card.unit * 0.3)
-          text: card.view.caption
+          text: card.shown.caption
           color: card.theme.subtle
           font.family: card.fontFamily
           font.pixelSize: Math.round(card.unit * 0.8)
@@ -128,10 +131,10 @@ Item {
       // arrays, which are new every second: its delegates then stay, and
       // their meters and graphs move instead of being made again.
       Repeater {
-        model: card.view.graphs.length
+        model: card.shown.graphs.length
         Item {
           required property int index
-          readonly property var modelData: card.view.graphs[index] || ({ values: [], max: 1, stops: card.theme.gradients.cpu, label: "" })
+          readonly property var modelData: card.shown.graphs[index] || ({ values: [], max: 1, stops: card.theme.gradients.cpu, label: "" })
           Layout.fillWidth: true
           Layout.fillHeight: true
           Layout.minimumHeight: card.unit * 1.5
@@ -162,17 +165,17 @@ Item {
       // One bar per core, filled from the bottom.
       Row {
         id: cores
-        visible: card.view.bars.length > 0
+        visible: card.shown.bars.length > 0
         Layout.fillWidth: true
         Layout.preferredHeight: Math.round(card.unit * 1.8)
         spacing: Math.max(1, Math.round(card.unit / 8))
         Repeater {
-          model: card.view.bars.length
+          model: card.shown.bars.length
           Rectangle {
             id: coreBar
             required property int index
-            readonly property var modelData: card.view.bars[index] || ({ fraction: 0, color: card.theme.meter })
-            width: Math.max(1, (cores.width - cores.spacing * (card.view.bars.length - 1)) / card.view.bars.length)
+            readonly property var modelData: card.shown.bars[index] || ({ fraction: 0, color: card.theme.meter })
+            width: Math.max(1, (cores.width - cores.spacing * (card.shown.bars.length - 1)) / card.shown.bars.length)
             height: cores.height
             radius: Math.min(width / 2, card.unit / 6)
             color: card.theme.meter
@@ -200,33 +203,33 @@ Item {
       Layout.preferredWidth: 1
       Layout.alignment: Qt.AlignTop
       spacing: Math.round(card.unit * 0.35)
-      visible: card.view.rows.length > 0 || card.view.lists.length > 0
+      visible: card.shown.rows.length > 0 || card.shown.lists.length > 0
 
       Repeater {
-        model: card.view.rows.length
+        model: card.shown.rows.length
         StatRow {
           required property int index
-          readonly property var modelData: card.view.rows[index] || ({ label: "", text: "", fraction: null, color: "" })
+          readonly property var modelData: card.shown.rows[index] || ({ label: "", text: "", fraction: null, color: "" })
           Layout.fillWidth: true
           label: modelData.label
           text: modelData.text
           fraction: modelData.fraction
-          barColor: modelData.color || card.view.color
+          barColor: modelData.color || card.shown.color
           labelWidth: card.unit * 5.5
         }
       }
 
       Repeater {
-        model: card.view.lists.length
+        model: card.shown.lists.length
         ColumnLayout {
           id: list
           required property int index
-          readonly property var modelData: card.view.lists[index] || ({ title: "", items: [] })
+          readonly property var modelData: card.shown.lists[index] || ({ title: "", items: [] })
           Layout.fillWidth: true
           spacing: Math.round(card.unit * 0.3)
           Text {
             text: list.modelData.title
-            color: card.view.color
+            color: card.shown.color
             font.family: card.fontFamily
             font.pixelSize: Math.round(card.unit * 0.8)
             font.bold: true
@@ -262,8 +265,8 @@ Item {
   // bar with the time.
   Item {
     id: media
-    readonly property var track: card.view.media || null
-    visible: track !== null && card.view.empty === ""
+    readonly property var track: card.shown.media || null
+    visible: track !== null && card.shown.empty === ""
     anchors.fill: parent
     anchors.margins: card.unit
     anchors.topMargin: Math.round(card.unit * 1.6)
@@ -279,8 +282,8 @@ Item {
       Text {
         anchors.centerIn: parent
         visible: art.status !== Image.Ready
-        text: card.view.icon
-        color: card.view.color
+        text: card.shown.icon
+        color: card.shown.color
         font.family: card.fontFamily
         font.pixelSize: Math.round(parent.width * 0.4)
       }
@@ -316,7 +319,7 @@ Item {
         visible: text !== ""
         text: media.track ? media.track.artist : ""
         elide: Text.ElideRight
-        color: card.view.color
+        color: card.shown.color
         font.family: card.fontFamily
         font.pixelSize: card.unit
       }
@@ -338,15 +341,15 @@ Item {
         labelWidth: card.unit * 1.6
         text: media.track ? media.track.time : ""
         fraction: media.track ? media.track.progress : null
-        barColor: card.view.color
+        barColor: card.shown.color
       }
     }
   }
 
   Text {
     anchors.centerIn: parent
-    visible: card.view.empty !== ""
-    text: card.view.empty
+    visible: card.shown.empty !== ""
+    text: card.shown.empty
     color: card.theme.subtle
     font.family: card.fontFamily
     font.pixelSize: card.unit

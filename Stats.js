@@ -1008,7 +1008,7 @@ function view(panel, state, palette, room, wide) {
 
 // The rows of a GPU panel for one GPU, whichever its vendor: load with
 // its `history`, then every reading it has.
-function gpuView(v, gpu, history, g) {
+function gpuView(v, gpu, history, g, room, wide) {
   v.info = gpu.name
   if (gpu.asleep) { v.empty = "Asleep"; return }
   v.value = formatPercent(gpu.load)
@@ -1026,6 +1026,8 @@ function gpuView(v, gpu, history, g) {
   if (gpu.fan !== null) v.rows.push(row("Fan", formatPercent(gpu.fan), gpu.fan / 100, gradientAt(g.cpu, gpu.fan / 100)))
   if (gpu.encoder) v.rows.push(row("Encode", formatPercent(gpu.encoder), gpu.encoder / 100, gradientAt(g.cpu, gpu.encoder / 100)))
   if (gpu.decoder) v.rows.push(row("Decode", formatPercent(gpu.decoder), gpu.decoder / 100, gradientAt(g.cpu, gpu.decoder / 100)))
+  // A stacked card's headline takes about three rows' room.
+  if (room !== undefined) v.rows = v.rows.slice(0, Math.max(1, wide ? room : room - 3))
 }
 
 // Watts, with a decimal below 10: an iGPU draws fractions of one.
@@ -1034,15 +1036,15 @@ function watts(value) {
 }
 
 var VIEWS = {
-  gpu: function(v, state, palette, g) {
+  gpu: function(v, state, palette, g, room, wide) {
     var gpu = gpuRoles(state).main
     if (!gpu) { v.empty = state.time !== null && state.nvidiaMissing ? "No GPU found" : "Waiting for data"; return }
-    gpuView(v, gpu, state.history.gpu, g)
+    gpuView(v, gpu, state.history.gpu, g, room, wide)
   },
 
-  igpu: function(v, state, palette, g) {
+  igpu: function(v, state, palette, g, room, wide) {
     var roles = gpuRoles(state)
-    if (roles.integrated) gpuView(v, roles.integrated, state.history.igpu, g)
+    if (roles.integrated) gpuView(v, roles.integrated, state.history.igpu, g, room, wide)
     else v.empty = roles.main && roles.main.kind === "integrated" ? "Shown as GPU" : "No integrated GPU"
   },
   cpu: function(v, state, palette, g) {

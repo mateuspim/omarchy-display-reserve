@@ -829,6 +829,13 @@ Object.assign(tests, {
     // Without the list (the panel is not shown), the kernel's batteries only.
     assert.equal(Stats.step(Stats.empty(), frame(10, [0]), []).power.length, 1)
   },
+  "a stacked GPU card keeps only the rows that fit under its headline"() {
+    const rows = Stats.view("gpu", full, palette).rows.length
+    assert.ok(rows >= 5)
+    assert.equal(Stats.view("gpu", full, palette, 7, false).rows.length, 4)
+    assert.equal(Stats.view("gpu", full, palette, 7, true).rows.length, Math.min(rows, 7))
+    assert.equal(Stats.view("gpu", full, palette, 2, false).rows.length, 1)
+  },
 })
 
 let failed = 0
