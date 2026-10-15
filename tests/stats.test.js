@@ -677,6 +677,9 @@ Object.assign(tests, {
     assert.equal(Stats.pickPlayer(players.slice(0, 2)).identity, "mpv")
     assert.equal(Stats.pickPlayer(players.slice(0, 1)).identity, "Brave")
     assert.equal(Stats.pickPlayer([]), null)
+    // A player left behind with nothing in it (a closed browser tab) is
+    // nothing playing.
+    assert.equal(Stats.pickPlayer([{ identity: "Brave", isPlaying: false, trackTitle: "" }]), null)
   },
   "the media view shows the track, with its progress"() {
     const media = { identity: "Spotify", title: "Song", artist: "Band", album: "Record", art: "file:///a.png", playing: true, position: 83, length: 225 }
@@ -688,7 +691,7 @@ Object.assign(tests, {
     assert.ok(Math.abs(view.media.progress - 83 / 225) < 1e-9)
     assert.equal(Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", null), palette).empty, "Nothing playing")
     // A player that tells nothing of its track is named instead.
-    const bare = Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { identity: "Brave", title: "", artist: "", album: "", art: "", playing: false, position: null, length: null }), palette)
+    const bare = Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { identity: "Brave", title: "", artist: "", album: "", art: "", playing: true, position: null, length: null }), palette)
     assert.equal(bare.media.title, "Brave")
     assert.equal(bare.info, "")
     assert.equal(bare.media.time, "")
@@ -806,8 +809,12 @@ Object.assign(tests, {
     assert.deepEqual(plain(state.fans.map(fan => fan.name)), ["CPU fan", "Processor Fan"])
     assert.equal(state.fans[1].rpm, 2400)
   },
+  "an idle player with no track shows nothing playing"() {
+    const idle = { identity: "Brave", title: "", artist: "", album: "", art: "", playing: false, position: 0, length: null }
+    assert.equal(Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", idle), palette).empty, "Nothing playing")
+  },
   "the media view hides the time when the player gives no length"() {
-    const brave = { identity: "Brave", title: "", artist: "", album: "", art: "", playing: false, position: 0, length: null }
+    const brave = { identity: "Brave", title: "", artist: "", album: "", art: "", playing: true, position: 0, length: null }
     const view = Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", brave), palette)
     assert.equal(view.media.time, "")
     assert.equal(view.media.progress, null)

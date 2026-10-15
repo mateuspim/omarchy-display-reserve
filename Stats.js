@@ -300,14 +300,15 @@ function leadBattery(power) {
 }
 
 // The MPRIS player the media panel follows, from Quickshell's players: one
-// playing a track it names, else any naming its track, else one playing,
-// else the first; null without players.
+// playing a track it names, else any naming its track, else one playing;
+// null when none is. A player that neither plays nor names a track is one
+// left behind, such as a browser's after its tab closed: nothing playing.
 function pickPlayer(players) {
   function first(test) { for (var i = 0; i < players.length; i++) if (test(players[i])) return players[i]; return null }
   return first(function(p) { return p.isPlaying && p.trackTitle })
     || first(function(p) { return p.trackTitle })
     || first(function(p) { return p.isPlaying })
-    || players[0] || null
+    || null
 }
 
 // The mean of cpufreq's scaling_cur_freq values (kHz), in MHz.
@@ -1251,7 +1252,7 @@ var VIEWS = {
 
   media: function(v, state, palette, g) {
     var m = state.media
-    if (!m) { v.empty = "Nothing playing"; return }
+    if (!m || !m.title && !m.playing) { v.empty = "Nothing playing"; return }
     // A player that names no track (a browser tab, say) is named instead.
     v.info = m.title ? m.identity || "" : ""
     v.media = {

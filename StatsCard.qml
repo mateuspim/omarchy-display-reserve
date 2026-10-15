@@ -128,7 +128,8 @@ Item {
     ColumnLayout {
       Layout.fillWidth: true
       Layout.fillHeight: true
-      Layout.preferredWidth: 1
+      // Side by side the rows' text needs more of the width than the graph.
+      Layout.preferredWidth: 2
       spacing: Math.round(card.unit * 0.4)
       visible: card.shown.value !== "" || card.shown.graphs.length > 0 || card.shown.bars.length > 0
 
@@ -234,7 +235,7 @@ Item {
     ColumnLayout {
       Layout.fillWidth: true
       Layout.fillHeight: card.wide
-      Layout.preferredWidth: 1
+      Layout.preferredWidth: 3
       Layout.alignment: Qt.AlignTop
       spacing: Math.round(card.unit * 0.35)
       visible: card.shown.rows.length > 0 || card.shown.lists.length > 0
@@ -444,8 +445,9 @@ Item {
       id: value
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      // Never over the label: past the row, it elides.
-      width: Math.min(implicitWidth, parent.width - card.unit * 3)
+      // Never over the label: it takes the room the label can spare (all
+      // but a short label's own width), and past that it elides.
+      width: Math.min(implicitWidth, parent.width - Math.min(rowLabel.implicitWidth, card.unit * 3) - card.unit * 0.6)
       elide: Text.ElideRight
       text: statRow.text
       color: card.theme.foreground
