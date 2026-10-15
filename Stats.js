@@ -1150,6 +1150,8 @@ var VIEWS = {
       if (laptop.energy !== null && laptop.full) v.rows.push(row("Energy", laptop.energy.toFixed(1) + " / " + laptop.full.toFixed(1) + " Wh", null))
     }
     devices.forEach(function(d) {
+      // The peripheral leading the panel is not listed again.
+      if (d === lead && !laptop) return
       var fraction = d.capacity !== null ? d.capacity / 100 : LEVELS[d.level]
       v.rows.push(row(d.name, d.capacity !== null ? formatPercent(d.capacity) : d.level || "—",
         fraction === undefined ? null : fraction, gradientAt(g.temp, 1 - (fraction || 0))))

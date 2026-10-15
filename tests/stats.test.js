@@ -619,7 +619,12 @@ Object.assign(tests, {
     assert.equal(mouseOnly.value, "64%")
     assert.equal(mouseOnly.caption, "G502 X LIGHTSPEED")
     assert.deepEqual(plain(mouseOnly.graphs[0].values), [64, 64])
-    assert.deepEqual(plain(mouseOnly.rows.map(row => [row.label, row.text])), [["G502 X LIGHTSPEED", "64%"]])
+    // It is not listed again below.
+    assert.deepEqual(plain(mouseOnly.rows), [])
+    const twoMice = Object.assign({}, full, { power: full.power.concat([
+      { id: "hid2", name: "MX Master 3S", device: true, status: "Discharging", capacity: 40, level: "", power: null, energy: null, full: null }
+    ]) })
+    assert.deepEqual(plain(Stats.view("battery", twoMice, palette).rows.map(row => [row.label, row.text])), [["MX Master 3S", "40%"]])
     const laptop = Object.assign(Stats.empty(), { time: 1, history: Object.assign(Stats.empty().history, { battery: [81] }), power: [
       { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 },
       { id: "hid", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null }
