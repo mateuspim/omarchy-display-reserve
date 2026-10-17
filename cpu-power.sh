@@ -95,8 +95,8 @@ change() {
     echo "This lets every user read it, now and after each boot."
   else
     echo "This makes the CPU's energy counter root's again, as the kernel leaves it,"
-    echo "and removes the rule that opens it at boot. The dashboard then leaves its"
-    echo "Power row out."
+    echo "and removes the rule that opens it at boot. The dashboard then leaves the"
+    echo "power draw out."
   fi
   echo
   local run

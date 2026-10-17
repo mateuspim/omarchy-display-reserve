@@ -612,10 +612,11 @@ Object.assign(tests, {
     assert.equal(view.value, "50%")
     assert.equal(view.info, "2 threads")
   },
-  "the CPU view shows its power draw after its temperature"() {
+  "the CPU view puts its power draw beside the load, leaving the rows to temperature and clock"() {
     const view = Stats.view("cpu", full, palette)
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Temp", "Power", "Clock", "Load"])
-    assert.equal(view.rows[1].text, "65 W")
+    assert.equal(view.caption, "load · 65 W")
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Temp", "Clock", "Load"])
+    assert.equal(Stats.view("cpu", Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { power: null }) }), palette).caption, "load")
   },
   "the processes view lists CPU and GPU apps"() {
     const view = Stats.view("processes", full, palette)
@@ -909,7 +910,7 @@ Object.assign(tests, {
     // The value (about 1.8 rows), each graph (1), the core bars (1.4) and
     // the gap (0.3) come off the room first.
     assert.equal(Stats.view("cpu", full, palette, 6, false).rows.length, 1)
-    assert.equal(Stats.view("cpu", full, palette, 6, true).rows.length, 4)
+    assert.equal(Stats.view("cpu", full, palette, 6, true).rows.length, 3)
     assert.equal(Stats.view("memory", full, palette, 6, false).rows.length, 2)
     assert.equal(Stats.view("network", full, palette, 5, false).rows.length, 2)
     assert.equal(Stats.view("pressure", full, palette, 3, false).rows.length, 1)

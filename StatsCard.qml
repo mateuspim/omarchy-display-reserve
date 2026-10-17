@@ -155,6 +155,8 @@ Item {
         Text {
           Layout.alignment: Qt.AlignBottom
           Layout.bottomMargin: Math.round(card.unit * 0.3)
+          Layout.fillWidth: true
+          elide: Text.ElideRight
           text: card.shown.caption
           color: card.theme.subtle
           font.family: card.fontFamily

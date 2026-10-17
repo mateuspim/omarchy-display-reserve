@@ -1144,11 +1144,11 @@ var VIEWS = {
     v.info = cpu.threads ? cpu.threads + " threads" : ""
     v.value = formatPercent(cpu.total)
     v.valueColor = gradientAt(g.cpu, (cpu.total || 0) / 100)
-    v.caption = "load"
+    // The power draw rides beside the load, so it costs no row.
+    v.caption = cpu.power !== null ? "load · " + watts(cpu.power) + " W" : "load"
     v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
     v.bars = cpu.cores.map(function(load) { return { fraction: load / 100, color: gradientAt(g.cpu, load / 100) } })
     if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))
-    if (cpu.power !== null) v.rows.push(row("Power", watts(cpu.power) + " W", null))
     if (cpu.frequency !== null) v.rows.push(row("Clock", formatFrequency(cpu.frequency), null))
     if (cpu.loadavg.length) v.rows.push(row("Load", cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
   },

@@ -293,8 +293,8 @@ instead of every second, and the panel shows its last reading as idle
 until a reading finds it busy again.
 
 The CPU's power draw comes from its RAPL energy counter (Intel, and AMD
-since Zen), which the kernel lets only root read; the CPU panel leaves
-the row out until it can. The panel's **CPU power · Enable** button,
+since Zen), which the kernel lets only root read; once it can, the CPU
+panel shows it beside the load ("load · 65 W"). The panel's **CPU power · Enable** button,
 shown only where there is such a counter, opens a floating terminal that
 prints the root commands it would run, asks, and runs them with
 `sudo`, which asks for the password right there (or `pkexec` where there
