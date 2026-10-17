@@ -154,6 +154,7 @@ The shell answers IPC calls on the target `pym.display-reserve`, through
 | `ruler <monitor>` | Show or hide the ruler |
 | `idle <seconds>` | Black when idle after `seconds`; `0` turns it off |
 | `pace <fps>` | Frames a second the dashboard's graphs and meters move at, up to 240; `0` the display's rate, `1` no animation |
+| `cpuPower <status\|enable\|disable>` | Whether the CPU's power draw can be read (`none`, `locked` or `on`); `enable` and `disable` open a terminal that shows the root commands and asks first |
 | `profile <name>` | Apply a profile to every monitor |
 | `saveProfile <name>` | Save every monitor as profile `name`, replacing one of that name |
 | `deleteProfile <name>` | Delete a profile |
@@ -292,14 +293,19 @@ instead of every second, and the panel shows its last reading as idle
 until a reading finds it busy again.
 
 The CPU's power draw comes from its RAPL energy counter (Intel, and AMD
-since Zen), which the kernel lets only root read. To show it, let
-everyone read it with a udev rule, as btop's docs suggest; the panel
-leaves the row out until then:
+since Zen), which the kernel lets only root read; the CPU panel leaves
+the row out until it can. The panel's **CPU power · Enable** button,
+shown only where there is such a counter, opens a floating terminal that
+prints the root commands it would run, asks, and runs them with
+`pkexec`: a udev rule that lets everyone read the counter from boot on,
+as btop's docs suggest, and a `chmod` that opens it now. Once on, the
+button reads **CPU power · On**, and clicking it takes both back the same
+way. By hand:
 
 ```bash
 echo 'SUBSYSTEM=="powercap", ACTION=="add", RUN+="/bin/chmod a+r /sys%p/energy_uj"' |
   sudo tee /etc/udev/rules.d/70-rapl-energy.rules
-sudo chmod a+r /sys/class/powercap/intel-rapl:*/energy_uj
+sudo chmod a+r /sys/class/powercap/*/energy_uj
 ```
 
 The counter is root's because watching it closely enough can leak what

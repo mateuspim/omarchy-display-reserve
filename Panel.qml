@@ -156,6 +156,15 @@ Panel {
     function targetBelongsToWindow(target, window) { return root.bar ? root.bar.targetBelongsToWindow(target, window) : false }
   }
 
+  // Notices the CPU power terminal's change while the panel is open.
+  Timer {
+    interval: 2000
+    repeat: true
+    running: root.opened
+    triggeredOnStart: true
+    onTriggered: root.reserve.checkCpuPower()
+  }
+
   onOpenedChanged: {
     // The ruler is for setting edges up here, so it goes with the panel.
     if (!opened) { reserve.hold(false); reserve.flush(); reserve.ruler = ""; return }
@@ -602,6 +611,22 @@ Panel {
               fontFamily: root.fontFamily
               tooltipText: "How often the graphs and meters move on every monitor, which is how often the dashboard redraws.\nClick to cycle: display rate, 60, 30, 15 fps, no animation"
               onClicked: { root.reserve.setStatsPace(Model.nextPace(root.reserve.statsPace)); keySurface.forceActiveFocus() }
+            }
+            // The CPU's power draw needs its energy counter, which is root's
+            // until a udev rule opens it; hidden where there is none.
+            Button {
+              width: parent.width
+              visible: root.reserve.cpuPower === "locked" || root.reserve.cpuPower === "on"
+              text: "CPU power  ·  " + (root.reserve.cpuPower === "on" ? "On" : "Enable")
+              iconText: "󱐋"
+              selected: root.reserve.cpuPower === "on"
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              tooltipText: root.reserve.cpuPower === "on"
+                ? "The CPU panel shows the CPU's power draw.\nClick to lock its energy counter to root again: a terminal shows the commands and asks first"
+                : "The CPU's energy counter is root's, so the CPU panel cannot show its power draw.\nClick to open it with a udev rule: a terminal shows the commands and asks first"
+              onClicked: { root.reserve.changeCpuPower(root.reserve.cpuPower === "on" ? "disable" : "enable"); keySurface.forceActiveFocus() }
             }
           }
         }

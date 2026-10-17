@@ -264,6 +264,19 @@ Scope {
       root.state.setStatsPace(fps)
       return "Dashboard animation: " + Model.paceName(root.state.statsPace)
     }
+    // status prints whether the CPU's power draw can be read (none, locked
+    // or on); enable and disable open a terminal that shows the root
+    // commands and asks first.
+    function cpuPower(action: string): string {
+      if (action === "enable" || action === "disable") {
+        root.state.changeCpuPower(action)
+        return "Opened a terminal to " + action + " the CPU's power draw"
+      }
+      if (action !== "status" && action !== "") return "Unknown action " + action + ": use status, enable or disable"
+      // The last check's answer; the next one starts now.
+      root.state.checkCpuPower()
+      return root.state.cpuPower || "unknown"
+    }
   }
 
   // Fullscreen on a monitor with a reserve fills the reachable area rather

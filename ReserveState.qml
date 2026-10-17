@@ -401,6 +401,29 @@ QtObject {
   }
   property var iconArt: null
 
+  // Whether the CPU's power draw can be read: "none" (no RAPL counter),
+  // "locked" (root's, as the kernel leaves it) or "on"; "" until checked.
+  // cpu-power.sh reads it, and opens or locks the counter in a floating
+  // terminal that shows its root commands and asks first.
+  property string cpuPower: ""
+  readonly property string cpuPowerScript: decodeURIComponent(String(Qt.resolvedUrl("cpu-power.sh")).replace(/^file:\/\//, ""))
+  property Process cpuPowerProc: Process {
+    command: ["bash", root.cpuPowerScript, "status"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var status = String(text || "").trim()
+        if (status !== root.cpuPower) root.cpuPower = status
+      }
+    }
+  }
+  function checkCpuPower() { if (!cpuPowerProc.running) cpuPowerProc.running = true }
+  Component.onCompleted: checkCpuPower()
+  function changeCpuPower(action) {
+    if (action !== "enable" && action !== "disable") return
+    Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation",
+      "bash '" + cpuPowerScript.replace(/'/g, "'\\''") + "' " + action])
+  }
+
   property Timer applyTimer: Timer {
     interval: 100
     onTriggered: if (!root.holding && root.applied !== root.outputs) root.apply()
