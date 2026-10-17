@@ -1173,7 +1173,7 @@ var VIEWS = {
     v.caption = cpu.frequency !== null ? "load · " + formatFrequency(cpu.frequency) : "load"
     v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
     v.bars = cpu.cores.map(function(load) { return { fraction: load / 100, color: gradientAt(g.cpu, load / 100) } })
-    if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))
+    // The power first: the Temperatures panel has the temperature too.
     if (cpu.power !== null) {
       // Against the CPU's limit, blue to red, when it is known.
       var limit = cpuPowerLimit((state.sysinfo || {}).cpu, cpu.powerLimit)
@@ -1181,6 +1181,7 @@ var VIEWS = {
       v.rows.push(row("Power", limit ? watts(cpu.power) + " / " + watts(limit) + " W" : watts(cpu.power) + " W",
         used, limit ? gradientAt(g.power, used) : ""))
     }
+    if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))
     if (cpu.loadavg.length) v.rows.push(row("Load", cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
   },
 

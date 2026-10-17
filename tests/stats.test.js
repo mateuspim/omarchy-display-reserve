@@ -626,19 +626,20 @@ Object.assign(tests, {
     assert.equal(view.value, "50%")
     assert.equal(view.info, "2 threads")
   },
-  "the CPU view lists its power draw after its temperature, with the clock beside the load"() {
+  "the CPU view lists its power draw first, with the clock beside the load"() {
     const view = Stats.view("cpu", full, palette)
     assert.equal(view.caption, "load · 5.10 GHz")
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Temp", "Power", "Load"])
+    // The Temperatures panel has the temperature too; nothing else has the power.
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Power", "Temp", "Load"])
     // No known limit: the watts alone, without a meter.
-    assert.equal(view.rows[1].text, "65 W")
-    assert.equal(view.rows[1].fraction, null)
+    assert.equal(view.rows[0].text, "65 W")
+    assert.equal(view.rows[0].fraction, null)
     const unclocked = Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { frequency: null, power: null }) })
     assert.equal(Stats.view("cpu", unclocked, palette).caption, "load")
     assert.deepEqual(plain(Stats.view("cpu", unclocked, palette).rows.map(row => row.label)), ["Temp", "Load"])
     // Against the CPU's limit, blue to red, when it is known.
     const ryzen = Object.assign({}, full, { sysinfo: { cpu: "AMD Ryzen 9 9900X 12-Core Processor" } })
-    const power = Stats.view("cpu", ryzen, palette).rows[1]
+    const power = Stats.view("cpu", ryzen, palette).rows[0]
     assert.equal(power.text, "65 / 162 W")
     assert.equal(power.fraction, 65 / 162)
     assert.equal(power.color, Stats.gradientAt(palette.gradients.power, 65 / 162))
