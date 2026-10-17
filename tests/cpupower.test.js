@@ -57,6 +57,17 @@ const tests = {
       assert.match(result.stderr, /terminal/)
     }
   },
+  "root commands run through sudo, or pkexec where there is no sudo"() {
+    const bin = join(root, "bin")
+    const fake = name => { writeFileSync(join(bin, name), "#!/bin/sh\n"); chmodSync(join(bin, name), 0o755) }
+    const runner = () => spawnSync("/bin/bash", [script, "runner"], { encoding: "utf8", env: { ...env, PATH: bin } }).stdout
+    reset()
+    mkdirSync(bin)
+    fake("pkexec")
+    assert.equal(runner(), "pkexec\n")
+    fake("sudo")
+    assert.equal(runner(), "sudo\n")
+  },
   "anything else prints the usage"() {
     const result = run("bogus")
     assert.equal(result.status, 2)

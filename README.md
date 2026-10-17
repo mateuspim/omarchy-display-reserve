@@ -297,7 +297,8 @@ since Zen), which the kernel lets only root read; the CPU panel leaves
 the row out until it can. The panel's **CPU power · Enable** button,
 shown only where there is such a counter, opens a floating terminal that
 prints the root commands it would run, asks, and runs them with
-`pkexec`: a udev rule that lets everyone read the counter from boot on,
+`sudo`, which asks for the password right there (or `pkexec` where there
+is no sudo): a udev rule that lets everyone read the counter from boot on,
 as btop's docs suggest, and a `chmod` that opens it now. Once on, the
 button reads **CPU power · On**, and clicking it takes both back the same
 way. By hand:

@@ -8,10 +8,12 @@
 #
 #   cpu-power.sh status            none, locked or on
 #   cpu-power.sh commands ACTION   the root commands ACTION runs
-#   cpu-power.sh enable|disable    show them, ask, run them with pkexec
+#   cpu-power.sh runner            sudo, or pkexec where there is no sudo
+#   cpu-power.sh enable|disable    show them, ask, run them as root
 #
 # The panel opens enable and disable in a floating terminal, so every
-# command is on screen before anything runs as root.
+# command is on screen before anything runs as root, and sudo asks for
+# the password right under them.
 
 sysfs=${CPU_POWER_SYSFS:-/sys/class/powercap}
 rule_file=/etc/udev/rules.d/70-rapl-energy.rules
@@ -53,6 +55,14 @@ watts() {
   (( after >= before )) && printf '%d.%d W\n' $(( (after - before) / 1000000 )) $(( (after - before) / 100000 % 10 ))
 }
 
+# What runs the commands as root: sudo, in the terminal they were shown
+# in, or else pkexec, through the desktop's authentication dialog.
+runner() {
+  if command -v sudo >/dev/null; then echo sudo
+  elif command -v pkexec >/dev/null; then echo pkexec
+  fi
+}
+
 confirm() {
   if command -v gum >/dev/null; then gum confirm "$1"
   else local answer; read -rp "$1 [y/N] " answer; [[ $answer == [yY]* ]]; fi
@@ -89,7 +99,13 @@ change() {
     echo "Power row out."
   fi
   echo
-  bold "These commands run as root, through pkexec:"
+  local run
+  run=$(runner)
+  if [[ -z $run ]]; then
+    echo "Neither sudo nor pkexec is installed, so there is no way to run these as root."
+    return 1
+  fi
+  bold "These commands run as root, through $run:"
   echo
   commands "$action" | sed 's/^/    /'
   echo
@@ -97,9 +113,9 @@ change() {
     echo "Nothing changed."
     return 0
   fi
-  if ! pkexec /bin/sh -c "set -e; $(commands "$action")"; then
+  if ! "$run" /bin/sh -c "set -e; $(commands "$action")"; then
     echo
-    echo "Nothing changed: pkexec was cancelled or refused."
+    echo "Nothing changed: $run was cancelled or refused."
     return 1
   fi
   echo
@@ -116,7 +132,8 @@ change() {
 
 case $1 in
   status) status ;;
+  runner) runner ;;
   commands) [[ $2 == enable || $2 == disable ]] && commands "$2" || { echo "usage: cpu-power.sh commands enable|disable" >&2; exit 2; } ;;
   enable|disable) change "$1" ;;
-  *) echo "usage: cpu-power.sh status | commands enable|disable | enable | disable" >&2; exit 2 ;;
+  *) echo "usage: cpu-power.sh status | runner | commands enable|disable | enable | disable" >&2; exit 2 ;;
 esac
