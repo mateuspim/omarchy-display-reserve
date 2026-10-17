@@ -626,18 +626,22 @@ Object.assign(tests, {
     assert.equal(view.value, "50%")
     assert.equal(view.info, "2 threads")
   },
-  "the CPU view puts its power draw beside the load, leaving the rows to temperature and clock"() {
+  "the CPU view lists its power draw after its temperature, with the clock beside the load"() {
     const view = Stats.view("cpu", full, palette)
-    assert.equal(view.caption, "load · 65 W")
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Temp", "Clock", "Load"])
-    assert.equal(Stats.view("cpu", Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { power: null }) }), palette).caption, "load")
-
-    // Colored against the limit, blue to red, when the CPU's is known.
-    assert.equal(view.captionParts, undefined)
+    assert.equal(view.caption, "load · 5.10 GHz")
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Temp", "Power", "Load"])
+    // No known limit: the watts alone, without a meter.
+    assert.equal(view.rows[1].text, "65 W")
+    assert.equal(view.rows[1].fraction, null)
+    const unclocked = Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { frequency: null, power: null }) })
+    assert.equal(Stats.view("cpu", unclocked, palette).caption, "load")
+    assert.deepEqual(plain(Stats.view("cpu", unclocked, palette).rows.map(row => row.label)), ["Temp", "Load"])
+    // Against the CPU's limit, blue to red, when it is known.
     const ryzen = Object.assign({}, full, { sysinfo: { cpu: "AMD Ryzen 9 9900X 12-Core Processor" } })
-    const parts = Stats.view("cpu", ryzen, palette).captionParts
-    assert.deepEqual(plain(parts.map(part => part.text)), ["load · ", "65 W"])
-    assert.equal(parts[1].color, Stats.gradientAt(palette.gradients.power, 65 / 162))
+    const power = Stats.view("cpu", ryzen, palette).rows[1]
+    assert.equal(power.text, "65 / 162 W")
+    assert.equal(power.fraction, 65 / 162)
+    assert.equal(power.color, Stats.gradientAt(palette.gradients.power, 65 / 162))
     assert.deepEqual(plain(palette.gradients.power), ["#81a1c1", "#a3be8c", "#ebcb8b", "#bf616a"])
   },
   "the processes view lists CPU and GPU apps"() {

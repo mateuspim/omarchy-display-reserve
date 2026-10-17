@@ -157,13 +157,7 @@ Item {
           Layout.bottomMargin: Math.round(card.unit * 0.3)
           Layout.fillWidth: true
           elide: Text.ElideRight
-          // Parts with their own color (the CPU's watts against its limit)
-          // go in as styled text; the rest take the caption's.
-          textFormat: card.shown.captionParts ? Text.StyledText : Text.PlainText
-          text: card.shown.captionParts ? card.shown.captionParts.map(function(part) {
-            var text = String(part.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/ /g, "&nbsp;")
-            return part.color ? "<font color=\"" + part.color + "\">" + text + "</font>" : text
-          }).join("") : card.shown.caption
+          text: card.shown.caption
           color: card.theme.subtle
           font.family: card.fontFamily
           font.pixelSize: Math.round(card.unit * 0.8)

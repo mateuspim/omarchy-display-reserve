@@ -1169,19 +1169,18 @@ var VIEWS = {
     v.info = cpu.threads ? cpu.threads + " threads" : ""
     v.value = formatPercent(cpu.total)
     v.valueColor = gradientAt(g.cpu, (cpu.total || 0) / 100)
-    // The power draw rides beside the load, so it costs no row, colored
-    // by how near the CPU's limit it runs when that is known.
-    v.caption = "load"
-    if (cpu.power !== null) {
-      var draw = watts(cpu.power) + " W"
-      v.caption = "load · " + draw
-      var limit = cpuPowerLimit((state.sysinfo || {}).cpu, cpu.powerLimit)
-      if (limit) v.captionParts = [{ text: "load · " }, { text: draw, color: gradientAt(g.power, Math.min(1, cpu.power / limit)) }]
-    }
+    // The clock rides beside the load, so the power draw can have its row.
+    v.caption = cpu.frequency !== null ? "load · " + formatFrequency(cpu.frequency) : "load"
     v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
     v.bars = cpu.cores.map(function(load) { return { fraction: load / 100, color: gradientAt(g.cpu, load / 100) } })
     if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))
-    if (cpu.frequency !== null) v.rows.push(row("Clock", formatFrequency(cpu.frequency), null))
+    if (cpu.power !== null) {
+      // Against the CPU's limit, blue to red, when it is known.
+      var limit = cpuPowerLimit((state.sysinfo || {}).cpu, cpu.powerLimit)
+      var used = limit ? Math.min(1, cpu.power / limit) : null
+      v.rows.push(row("Power", limit ? watts(cpu.power) + " / " + watts(limit) + " W" : watts(cpu.power) + " W",
+        used, limit ? gradientAt(g.power, used) : ""))
+    }
     if (cpu.loadavg.length) v.rows.push(row("Load", cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
   },
 

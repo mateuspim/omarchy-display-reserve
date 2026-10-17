@@ -255,7 +255,7 @@ with history graphs and meters:
 | --- | --- | --- |
 | GPU | The discrete GPU: load, video memory, temperature, power against its limit, clock, fan, video encode/decode while busy | `nvidia-smi` for NVIDIA, sysfs for AMD and Intel |
 | iGPU | The integrated GPU beside it, read the same way | sysfs |
-| CPU | Load with a bar per thread, temperature, power draw, clock, load average | `/proc/stat`, the CPU's hwmon sensor, RAPL, cpufreq |
+| CPU | Load and clock with a bar per thread, temperature, power draw against the CPU's limit, load average | `/proc/stat`, the CPU's hwmon sensor, RAPL, cpufreq |
 | Memory | Used, available, cached, swap | `/proc/meminfo` |
 | Network | Download and upload graphs, totals, on the interface of the default route | `/proc/net/dev`, `/proc/net/route` |
 | Disks | Read and write per disk, NVMe temperatures | `/proc/diskstats`, NVMe hwmon |
@@ -294,10 +294,11 @@ until a reading finds it busy again.
 
 The CPU's power draw comes from its RAPL energy counter (Intel, and AMD
 since Zen), which the kernel lets only root read; once it can, the CPU
-panel shows it beside the load ("load · 65 W"), blue through green and
-yellow to red as it nears the CPU's power limit: Intel's own (PL1), or an
+panel lists it after the temperature ("Power 85 / 162 W", with the clock
+moving up beside the load), its meter blue through green and yellow to
+red as it nears the CPU's power limit: Intel's own (PL1), or an
 AMD desktop's stock PPT, looked up by model since AMD keeps it in
-firmware. A laptop's or unlisted model's watts stay uncolored. The panel's **CPU power · Enable** button,
+firmware. A laptop's or unlisted model's watts show without a meter. The panel's **CPU power · Enable** button,
 shown only where there is such a counter, opens a floating terminal that
 prints the root commands it would run, asks, and runs them with
 `sudo`, which asks for the password right there (or `pkexec` where there
