@@ -316,6 +316,31 @@ function pickPlayer(players) {
     || null
 }
 
+// The CPU packages' energy counters from stats.sh's @rapl lines (zone,
+// energy_uj, max_energy_range_uj), summed, in joules: { energy, range },
+// or null when none could be read. The kernel lets only root read them
+// unless a udev rule opens them up.
+function parseRapl(lines) {
+  var energy = 0, range = 0, read = false
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split("\t")
+    if (f[1] === undefined || f[1] === "" || isNaN(Number(f[1]))) continue
+    energy += Number(f[1]) / 1e6
+    range += Number(f[2] || 0) / 1e6
+    read = true
+  }
+  return read ? { energy: energy, range: range } : null
+}
+
+// Watts between two parseRapl readings; a counter that wrapped went past
+// its range.
+function raplWatts(before, after, seconds) {
+  if (!before || !after || !(seconds > 0)) return null
+  var used = after.energy - before.energy
+  if (used < 0) used += after.range
+  return used >= 0 ? used / seconds : null
+}
+
 // The mean of cpufreq's scaling_cur_freq values (kHz), in MHz.
 function averageFrequency(lines) {
   var values = lines.map(Number).filter(function(n) { return n > 0 })
@@ -445,7 +470,7 @@ function empty() {
   return {
     time: null,
     counters: null,
-    cpu: { total: null, cores: [], threads: 0, temp: null, frequency: null, loadavg: [] },
+    cpu: { total: null, cores: [], threads: 0, temp: null, frequency: null, power: null, loadavg: [] },
     memory: null,
     network: { interface: "", rx: null, tx: null, rxTotal: 0, txTotal: 0 },
     disks: [],
@@ -528,6 +553,7 @@ function ingest(state, frame) {
     cpu: parseCpu(frame.stat || []),
     net: parseNetDev(frame.net || []),
     disk: parseDiskstats(frame.disk || []),
+    rapl: parseRapl(frame.rapl || []),
     drmIdle: {}
   }
   for (var card in cards) if (cards[card].idle_ms !== undefined) counters.drmIdle[card] = cards[card].idle_ms
@@ -547,6 +573,7 @@ function ingest(state, frame) {
     threads: counters.cpu.cores.length,
     temp: sensors.cpuTemp,
     frequency: averageFrequency(frame.freq || []),
+    power: before ? raplWatts(before.rapl, counters.rapl, seconds) : null,
     loadavg: (frame.loadavg && frame.loadavg[0] ? frame.loadavg[0].split(" ").slice(0, 3).map(Number) : [])
   }
   if (load) history.cpu = pushHistory(history.cpu, load.total)
@@ -1121,6 +1148,7 @@ var VIEWS = {
     v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
     v.bars = cpu.cores.map(function(load) { return { fraction: load / 100, color: gradientAt(g.cpu, load / 100) } })
     if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))
+    if (cpu.power !== null) v.rows.push(row("Power", watts(cpu.power) + " W", null))
     if (cpu.frequency !== null) v.rows.push(row("Clock", formatFrequency(cpu.frequency), null))
     if (cpu.loadavg.length) v.rows.push(row("Load", cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
   },

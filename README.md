@@ -254,7 +254,7 @@ with history graphs and meters:
 | --- | --- | --- |
 | GPU | The discrete GPU: load, video memory, temperature, power against its limit, clock, fan, video encode/decode while busy | `nvidia-smi` for NVIDIA, sysfs for AMD and Intel |
 | iGPU | The integrated GPU beside it, read the same way | sysfs |
-| CPU | Load with a bar per thread, temperature, clock, load average | `/proc/stat`, the CPU's hwmon sensor, cpufreq |
+| CPU | Load with a bar per thread, temperature, power draw, clock, load average | `/proc/stat`, the CPU's hwmon sensor, RAPL, cpufreq |
 | Memory | Used, available, cached, swap | `/proc/meminfo` |
 | Network | Download and upload graphs, totals, on the interface of the default route | `/proc/net/dev`, `/proc/net/route` |
 | Disks | Read and write per disk, NVMe temperatures | `/proc/diskstats`, NVMe hwmon |
@@ -290,6 +290,21 @@ power management on, as on most laptops) and has shown no load for 5
 seconds rests: nvidia-smi stops, an AMD card is read every 10 seconds
 instead of every second, and the panel shows its last reading as idle
 until a reading finds it busy again.
+
+The CPU's power draw comes from its RAPL energy counter (Intel, and AMD
+since Zen), which the kernel lets only root read. To show it, let
+everyone read it with a udev rule, as btop's docs suggest; the panel
+leaves the row out until then:
+
+```bash
+echo 'SUBSYSTEM=="powercap", ACTION=="add", RUN+="/bin/chmod a+r /sys%p/energy_uj"' |
+  sudo tee /etc/udev/rules.d/70-rapl-energy.rules
+sudo chmod a+r /sys/class/powercap/intel-rapl:*/energy_uj
+```
+
+The counter is root's because watching it closely enough can leak what
+another program computes (Platypus, CVE-2020-8694); a desktop with one
+user gives little away.
 
 The colors come from the theme's `colors.toml`, the way Omarchy's btop
 themes are built: each box has its own hue, and graphs and meters run

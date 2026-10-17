@@ -117,6 +117,18 @@ while :; do
     done
   fi
 
+  # The CPU packages' energy counters, for their power draw. Only root can
+  # read them unless a udev rule lets everyone (see the README); then
+  # their lines carry no energy.
+  printf '@rapl\n'
+  for zone in /sys/class/powercap/intel-rapl:[0-9] /sys/class/powercap/intel-rapl:[0-9][0-9]; do
+    [[ -d $zone ]] || continue
+    energy="" range=""
+    { read -r energy < "$zone/energy_uj"; } 2>/dev/null
+    { read -r range < "$zone/max_energy_range_uj"; } 2>/dev/null
+    printf '%s\t%s\t%s\n' "${zone##*/}" "$energy" "$range"
+  done
+
   printf '@freq\n'
   for input in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_cur_freq; do
     [[ -r $input ]] && read -r value < "$input" && printf '%s\n' "$value"

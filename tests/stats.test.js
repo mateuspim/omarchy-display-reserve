@@ -75,6 +75,8 @@ hidpp_battery_0	scope	Device
 hidpp_battery_0	status	Unknown
 hidpp_battery_0	capacity	64
 hidpp_battery_0	model_name	G502 X LIGHTSPEED
+@rapl
+package-0	${1000000000 + time * 65000000}	65532610987
 @drm
 card2	amdgpu	status	active
 card2	amdgpu	busy	99
@@ -262,6 +264,27 @@ const tests = {
     assert.deepEqual(plain(state.history.cpu), [50])
     assert.deepEqual(plain(state.history.rx), [1000])
     assert.equal(state.history.memory.length, 2)
+  },
+  "parseRapl sums the packages' energy counters, in joules"() {
+    assert.deepEqual(plain(Stats.parseRapl(["package-0\t2000000\t65532610987", "package-1\t1000000\t65532610987"])),
+      { energy: 3, range: 131065.221974 })
+    assert.equal(Stats.parseRapl([]), null)
+    assert.equal(Stats.parseRapl(["package-0\t\t65532610987"]), null)
+  },
+  "ingest turns the CPU's energy counter into watts"() {
+    let state = Stats.ingest(Stats.empty(), Stats.parseFrame(frame(100, [0])))
+    assert.equal(state.cpu.power, null)
+    state = Stats.ingest(state, Stats.parseFrame(frame(102, [0])))
+    assert.equal(state.cpu.power, 65)
+    // The counter wraps at its range.
+    const wrap = text => text.replace(/@rapl\n[^\n]*/, "@rapl\npackage-0\t" + text.match(/@time (\S+)/)[1] * 1e6 + "\t100000000")
+    state = Stats.ingest(Stats.empty(), Stats.parseFrame(wrap(frame(98, [0]))))
+    state = Stats.ingest(state, Stats.parseFrame(wrap(frame(2, [0])).replace("@time 2", "@time 99")))
+    assert.equal(state.cpu.power, 4)
+    // Unreadable without a udev rule: no power.
+    state = Stats.ingest(Stats.empty(), Stats.parseFrame(frame(100, [0]).replace(/@rapl\n[^\n]*\n/, "@rapl\n")))
+    state = Stats.ingest(state, Stats.parseFrame(frame(101, [0]).replace(/@rapl\n[^\n]*\n/, "@rapl\n")))
+    assert.equal(state.cpu.power, null)
   },
   "ingest starts the rates over after a long gap"() {
     let state = Stats.ingest(Stats.empty(), Stats.parseFrame(frame(100, [100, 0, 0, 900, 0, 0, 0, 0, 0, 0])))
@@ -589,6 +612,11 @@ Object.assign(tests, {
     assert.equal(view.value, "50%")
     assert.equal(view.info, "2 threads")
   },
+  "the CPU view shows its power draw after its temperature"() {
+    const view = Stats.view("cpu", full, palette)
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Temp", "Power", "Clock", "Load"])
+    assert.equal(view.rows[1].text, "65 W")
+  },
   "the processes view lists CPU and GPU apps"() {
     const view = Stats.view("processes", full, palette)
     assert.deepEqual(plain(view.lists.map(list => list.title)), ["CPU", "VRAM"])
@@ -881,7 +909,7 @@ Object.assign(tests, {
     // The value (about 1.8 rows), each graph (1), the core bars (1.4) and
     // the gap (0.3) come off the room first.
     assert.equal(Stats.view("cpu", full, palette, 6, false).rows.length, 1)
-    assert.equal(Stats.view("cpu", full, palette, 6, true).rows.length, 3)
+    assert.equal(Stats.view("cpu", full, palette, 6, true).rows.length, 4)
     assert.equal(Stats.view("memory", full, palette, 6, false).rows.length, 2)
     assert.equal(Stats.view("network", full, palette, 5, false).rows.length, 2)
     assert.equal(Stats.view("pressure", full, palette, 3, false).rows.length, 1)
