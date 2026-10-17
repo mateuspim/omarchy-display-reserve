@@ -267,9 +267,23 @@ const tests = {
   },
   "parseRapl sums the packages' energy counters, in joules"() {
     assert.deepEqual(plain(Stats.parseRapl(["package-0\t2000000\t65532610987", "package-1\t1000000\t65532610987"])),
-      { energy: 3, range: 131065.221974 })
+      { energy: 3, range: 131065.221974, limit: null })
     assert.equal(Stats.parseRapl([]), null)
     assert.equal(Stats.parseRapl(["package-0\t\t65532610987"]), null)
+    // Intel's long-term limit (PL1) comes with the counter, in microwatts.
+    assert.equal(Stats.parseRapl(["package-0\t2000000\t65532610987\t125000000"]).limit, 125)
+  },
+  "cpuPowerLimit is Intel's own limit, or an AMD desktop's stock PPT by model"() {
+    assert.equal(Stats.cpuPowerLimit("Intel(R) Core(TM) i7-14700K", 125), 125)
+    // PPT is 1.35 times the TDP on AM4 and AM5.
+    assert.equal(Stats.cpuPowerLimit("AMD Ryzen 9 9900X 12-Core Processor", null), 162)
+    assert.equal(Stats.cpuPowerLimit("AMD Ryzen 7 9800X3D 8-Core Processor", null), 162)
+    assert.equal(Stats.cpuPowerLimit("AMD Ryzen 9 7950X 16-Core Processor", null), 230)
+    assert.equal(Stats.cpuPowerLimit("AMD Ryzen 7 5800X3D 8-Core Processor", null), 142)
+    assert.equal(Stats.cpuPowerLimit("AMD Ryzen 5 7600 6-Core Processor", null), 88)
+    // A laptop's or an unknown model's: none, so no color.
+    assert.equal(Stats.cpuPowerLimit("AMD Ryzen 7 7840HS w/ Radeon 780M Graphics", null), null)
+    assert.equal(Stats.cpuPowerLimit("", null), null)
   },
   "ingest turns the CPU's energy counter into watts"() {
     let state = Stats.ingest(Stats.empty(), Stats.parseFrame(frame(100, [0])))
@@ -617,6 +631,14 @@ Object.assign(tests, {
     assert.equal(view.caption, "load · 65 W")
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["Temp", "Clock", "Load"])
     assert.equal(Stats.view("cpu", Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { power: null }) }), palette).caption, "load")
+
+    // Colored against the limit, blue to red, when the CPU's is known.
+    assert.equal(view.captionParts, undefined)
+    const ryzen = Object.assign({}, full, { sysinfo: { cpu: "AMD Ryzen 9 9900X 12-Core Processor" } })
+    const parts = Stats.view("cpu", ryzen, palette).captionParts
+    assert.deepEqual(plain(parts.map(part => part.text)), ["load · ", "65 W"])
+    assert.equal(parts[1].color, Stats.gradientAt(palette.gradients.power, 65 / 162))
+    assert.deepEqual(plain(palette.gradients.power), ["#81a1c1", "#a3be8c", "#ebcb8b", "#bf616a"])
   },
   "the processes view lists CPU and GPU apps"() {
     const view = Stats.view("processes", full, palette)

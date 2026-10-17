@@ -317,19 +317,42 @@ function pickPlayer(players) {
 }
 
 // The CPU packages' energy counters from stats.sh's @rapl lines (zone,
-// energy_uj, max_energy_range_uj), summed, in joules: { energy, range },
-// or null when none could be read. The kernel lets only root read them
-// unless a udev rule opens them up.
+// energy_uj, max_energy_range_uj, long-term limit in µW), summed, in
+// joules: { energy, range, limit }, or null when none could be read. The
+// kernel lets only root read them unless a udev rule opens them up. Only
+// Intel's give a limit (PL1), in watts; else it is null.
 function parseRapl(lines) {
-  var energy = 0, range = 0, read = false
+  var energy = 0, range = 0, limit = 0, limited = true, read = false
   for (var i = 0; i < lines.length; i++) {
     var f = lines[i].split("\t")
     if (f[1] === undefined || f[1] === "" || isNaN(Number(f[1]))) continue
     energy += Number(f[1]) / 1e6
     range += Number(f[2] || 0) / 1e6
+    if (Number(f[3]) > 0) limit += Number(f[3]) / 1e6
+    else limited = false
     read = true
   }
-  return read ? { energy: energy, range: range } : null
+  return read ? { energy: energy, range: range, limit: limited ? limit : null } : null
+}
+
+// AMD desktop CPUs' stock TDPs, in watts, by model: AMD keeps the power
+// limit (PPT) in firmware, out of the kernel's reach, but sets it at 1.35
+// times the TDP on AM4 and AM5.
+var AMD_TDP = {
+  "9950X3D": 170, "9950X": 170, "9900X3D": 120, "9900X": 120, "9800X3D": 120, "9700X": 65, "9600X": 65, "9600": 65,
+  "7950X3D": 120, "7950X": 170, "7900X3D": 120, "7900X": 170, "7900": 65, "7800X3D": 120, "7700X": 105, "7700": 65, "7600X": 105, "7600": 65,
+  "5950X": 105, "5900XT": 105, "5900X": 105, "5800XT": 105, "5800X3D": 105, "5800X": 105, "5700X3D": 105, "5700X": 65, "5700": 65, "5600X3D": 105, "5600X": 65, "5600": 65,
+  "3950X": 105, "3900XT": 105, "3900X": 105, "3800XT": 105, "3800X": 105, "3700X": 65, "3600XT": 95, "3600X": 95, "3600": 65
+}
+var PPT_PER_TDP = 1.35
+
+// The CPU's power limit in watts: Intel's own (`raplLimit`, parseRapl's),
+// or an AMD desktop's stock PPT by `model`; null when neither is known.
+function cpuPowerLimit(model, raplLimit) {
+  if (raplLimit > 0) return raplLimit
+  var match = /Ryzen \d+ (\w+)/.exec(String(model || ""))
+  var tdp = match ? AMD_TDP[match[1]] : undefined
+  return tdp ? Math.round(tdp * PPT_PER_TDP) : null
 }
 
 // Watts between two parseRapl readings; a counter that wrapped went past
@@ -470,7 +493,7 @@ function empty() {
   return {
     time: null,
     counters: null,
-    cpu: { total: null, cores: [], threads: 0, temp: null, frequency: null, power: null, loadavg: [] },
+    cpu: { total: null, cores: [], threads: 0, temp: null, frequency: null, power: null, powerLimit: null, loadavg: [] },
     memory: null,
     network: { interface: "", rx: null, tx: null, rxTotal: 0, txTotal: 0 },
     disks: [],
@@ -574,6 +597,7 @@ function ingest(state, frame) {
     temp: sensors.cpuTemp,
     frequency: averageFrequency(frame.freq || []),
     power: before ? raplWatts(before.rapl, counters.rapl, seconds) : null,
+    powerLimit: counters.rapl ? counters.rapl.limit : null,
     loadavg: (frame.loadavg && frame.loadavg[0] ? frame.loadavg[0].split(" ").slice(0, 3).map(Number) : [])
   }
   if (load) history.cpu = pushHistory(history.cpu, load.total)
@@ -873,7 +897,8 @@ function palette(colors, fallback) {
       used: [green, cyan, blue],
       download: [yellow, orange, red],
       upload: [green, cyan, blue],
-      process: [cyan, blue, magenta]
+      process: [cyan, blue, magenta],
+      power: [blue, green, yellow, red]
     }
   }
 }
@@ -1144,8 +1169,15 @@ var VIEWS = {
     v.info = cpu.threads ? cpu.threads + " threads" : ""
     v.value = formatPercent(cpu.total)
     v.valueColor = gradientAt(g.cpu, (cpu.total || 0) / 100)
-    // The power draw rides beside the load, so it costs no row.
-    v.caption = cpu.power !== null ? "load · " + watts(cpu.power) + " W" : "load"
+    // The power draw rides beside the load, so it costs no row, colored
+    // by how near the CPU's limit it runs when that is known.
+    v.caption = "load"
+    if (cpu.power !== null) {
+      var draw = watts(cpu.power) + " W"
+      v.caption = "load · " + draw
+      var limit = cpuPowerLimit((state.sysinfo || {}).cpu, cpu.powerLimit)
+      if (limit) v.captionParts = [{ text: "load · " }, { text: draw, color: gradientAt(g.power, Math.min(1, cpu.power / limit)) }]
+    }
     v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
     v.bars = cpu.cores.map(function(load) { return { fraction: load / 100, color: gradientAt(g.cpu, load / 100) } })
     if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))

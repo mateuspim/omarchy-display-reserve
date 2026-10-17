@@ -294,7 +294,10 @@ until a reading finds it busy again.
 
 The CPU's power draw comes from its RAPL energy counter (Intel, and AMD
 since Zen), which the kernel lets only root read; once it can, the CPU
-panel shows it beside the load ("load · 65 W"). The panel's **CPU power · Enable** button,
+panel shows it beside the load ("load · 65 W"), blue through green and
+yellow to red as it nears the CPU's power limit: Intel's own (PL1), or an
+AMD desktop's stock PPT, looked up by model since AMD keeps it in
+firmware. A laptop's or unlisted model's watts stay uncolored. The panel's **CPU power · Enable** button,
 shown only where there is such a counter, opens a floating terminal that
 prints the root commands it would run, asks, and runs them with
 `sudo`, which asks for the password right there (or `pkexec` where there

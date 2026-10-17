@@ -117,16 +117,20 @@ while :; do
     done
   fi
 
-  # The CPU packages' energy counters, for their power draw. Only root can
-  # read them unless a udev rule lets everyone (see the README); then
-  # their lines carry no energy.
+  # The CPU packages' energy counters, for their power draw, and Intel's
+  # limit. Only root can read the counters unless a udev rule lets
+  # everyone (see the README); until then their lines carry no energy.
   printf '@rapl\n'
   for zone in /sys/class/powercap/intel-rapl:[0-9] /sys/class/powercap/intel-rapl:[0-9][0-9]; do
     [[ -d $zone ]] || continue
     energy="" range=""
     { read -r energy < "$zone/energy_uj"; } 2>/dev/null
     { read -r range < "$zone/max_energy_range_uj"; } 2>/dev/null
-    printf '%s\t%s\t%s\n' "${zone##*/}" "$energy" "$range"
+    # Intel's long-term limit (PL1); AMD's zones have none.
+    limit="" name=""
+    { read -r name < "$zone/constraint_0_name"; } 2>/dev/null
+    [[ $name == long_term ]] && { read -r limit < "$zone/constraint_0_power_limit_uw"; } 2>/dev/null
+    printf '%s\t%s\t%s\t%s\n' "${zone##*/}" "$energy" "$range" "$limit"
   done
 
   printf '@freq\n'
