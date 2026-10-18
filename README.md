@@ -1,16 +1,44 @@
-# Display Reserve for Omarchy
+# <img src="icon.svg" alt="" width="32" height="32" align="top"> Display Reserve
 
-Blacks out display edges you can't reach (for example, the top of a tall
-rotated monitor) and keeps the Omarchy bar and tiled windows in the area you
-can reach.
+![Display Reserve: a portrait monitor with its top edge showing a btop-style system dashboard above the Omarchy bar and a terminal, beside the plugin's panel](preview.png)
 
-<p align="center">
-  <img src="docs/screenshot.png" width="360"
-       alt="A portrait monitor with its top 680 and bottom 610 pixels reserved, each showing the Omarchy logo on black; the Omarchy bar and a browser window sit in the band between them">
-</p>
+**Use only the screen you can reach.** Display Reserve blacks out monitor
+edges you can't reach (the top of a tall rotated monitor, a strip behind a
+bezel or a shelf) and keeps the Omarchy bar and tiled windows in the area you
+can. The edges can stay black, or show the theme color, the wallpaper, the
+Omarchy logo, a clock or a live btop-style system dashboard.
+
+[Install](#install) · [Remove](#remove) · [Security](#security-and-privileges) ·
+[Usage](#usage) · [IPC](#keybinds-and-scripts) · [Stats fill](#the-stats-fill) ·
+[Architecture](docs/architecture.md) · [Changelog](CHANGELOG.md)
+
+- **Any edge, in pixels:** drag an edge in a to-scale preview, type exact
+  pixels, or pick an aspect preset (21:9, 16:9, 4:3, 1:1). Changes apply live,
+  without editing `monitors.lua` or reloading Hyprland.
+- **Fills:** black (safe on OLED), the theme color, the wallpaper slice
+  (plain or dimmed), the Omarchy logo, a big blocky clock, or a live
+  **stats dashboard** with 13 panels: GPU, CPU, memory, network, disks,
+  temperatures, battery, now playing and more.
+- **Profiles:** save every monitor under a name, apply it with `1` to `9`,
+  or let it apply by itself when that set of monitors connects.
+- **Fullscreen that fits:** videos and games fill the reachable area instead
+  of being cropped by the black edge.
+- **OLED care and calibration:** black when idle, fills that move against
+  burn-in, and a ruler to find exactly where the reachable area starts.
 
 Requires Omarchy 4 with its Quickshell bar and shell plugins (tested on
 4.0.4 with Hyprland 0.56).
+
+## Quick start
+
+1. Install and enable it:
+   `omarchy plugin add https://github.com/mateuspim/omarchy-display-reserve.git --enable --yes`.
+2. Click the new monitor icon on the right of the bar.
+3. Pick the monitor, then drag its edge in the preview (or type the pixels)
+   until the bar sits where you can reach it. The **Ruler** button shows
+   which pixel is the first one you can see.
+4. Choose a **Fill**, and save the setup as a profile if you switch between
+   several.
 
 ## Install
 
@@ -32,9 +60,59 @@ Keep the `sleep`: restarting while the shell is still reloading plugins can
 crash the old shell on its way out. It comes back on its own, but there's no
 reason to trigger it.
 
-To uninstall, run `omarchy plugin remove pym.display-reserve`. Your saved
-reservations stay in `~/.config/omarchy/display-reserve.json` until you
-delete it.
+Optional, for the stats fill: `nvidia-smi` (from the NVIDIA driver) for an
+NVIDIA GPU's panel. AMD and Intel GPUs, and everything else, are read from
+`/proc` and `/sys`.
+
+## Remove
+
+If you turned on **CPU power** in the stats fill, turn it off first (click
+**CPU power · On** in the panel, or
+`omarchy-shell pym.display-reserve cpuPower disable`), which removes its udev
+rule. Then remove the plugin:
+
+```bash
+omarchy plugin remove pym.display-reserve
+```
+
+Every reserved edge goes away with it. Your saved reservations and profiles
+stay on disk; to delete them too:
+
+```bash
+rm -f ~/.config/omarchy/display-reserve.json
+```
+
+If you removed the plugin with CPU power still on, take its rule back by
+hand:
+
+```bash
+sudo rm -f /etc/udev/rules.d/70-rapl-energy.rules
+sudo chmod 0400 /sys/class/powercap/*/energy_uj
+```
+
+## Security and privileges
+
+Display Reserve runs as your user inside the Omarchy shell. Loading it
+installs nothing and writes only its own settings file.
+
+- **Root, once, when you ask:** the stats fill's **CPU power** button (shown
+  only on CPUs with a RAPL energy counter) opens a floating terminal running
+  `cpu-power.sh`. It prints the exact commands, asks, and runs them with
+  `sudo`, which asks for your password in that terminal (or `pkexec` where
+  there is no sudo). Enabling writes
+  `/etc/udev/rules.d/70-rapl-energy.rules` and makes
+  `/sys/class/powercap/*/energy_uj` readable; disabling removes the rule and
+  makes the counters root's again. The commands are fixed and take no input.
+  Why the kernel keeps the counter from other users is in
+  [The stats fill](#the-stats-fill).
+- **Your config:** never edited. Edges are reserved with layer-shell surfaces,
+  not `monitors.lua`, and Hyprland is never reloaded. The only file written
+  is `~/.config/omarchy/display-reserve.json`.
+- **Commands it runs:** `hyprctl -j clients` on fullscreen events (to fit
+  fullscreen windows), `readlink` on the wallpaper link while a wallpaper fill
+  shows, and, while the stats fill shows, `stats.sh` (bash builtins reading
+  `/proc` and `/sys`) and `nvidia-smi`.
+- **Network:** none. It downloads and runs nothing from the internet.
 
 ## Usage
 
@@ -43,7 +121,7 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 <p align="center">
   <img src="docs/panel.png" width="360"
-       alt="The Display Reserve panel for DP-4: a to-scale preview of a portrait monitor with the logo on its top edge, the six fill buttons with Logo selected, a slider and pixel field for each edge, the aspect presets, two saved profiles with Omarchy applied and set to Auto, and the idle, ruler and undo buttons">
+       alt="The Display Reserve panel for DP-4 with the Desk profile: a to-scale preview of a portrait monitor with the stats dashboard on its top 660 pixels, the seven fill buttons with Stats selected, the clock-edge choice, the thirteen stats panels with GPU, CPU, Memory and Network on, the Animation and CPU power buttons, and a slider and pixel field for each edge">
 </p>
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
@@ -245,7 +323,7 @@ The file is watched, so hand edits apply right away. An edit made within
 
 <p align="center">
   <img src="docs/stats.png" width="540"
-       alt="The top 660 pixels of a portrait monitor showing four btop-style boxes: GPU at 95% load with a load graph and VRAM, temperature, power, clock and fan meters; CPU at 29% with a bar per thread; memory at 46% used; and network download and upload graphs">
+       alt="The top 660 pixels of a portrait monitor showing four btop-style boxes: GPU with a load graph and VRAM, temperature, power, clock and fan meters; CPU with a bar per thread, power against its limit and temperature; memory used, available, cached and swap; and network download and upload graphs">
 </p>
 
 The Stats fill shows live system numbers on one edge, as rounded boxes
@@ -347,3 +425,22 @@ animation, which redraws once a second.
 - Omarchy's own popouts (clock, audio and others) assume the bar sits at the
   screen edge, so on a monitor with a reserved edge on the bar's side they
   open inside the black strip. This plugin's own panel opens beside the bar.
+
+## Documentation
+
+- [Architecture](docs/architecture.md): the components and how data flows
+  between them.
+- [Decision records](docs/adr/README.md): why it works the way it does.
+- [Changelog](CHANGELOG.md).
+
+## Development
+
+```bash
+npm test                     # Node tests for Model.js, Stats.js, stats.sh and cpu-power.sh
+omarchy plugin validate .    # the manifest, as the marketplace checks it
+```
+
+The installed plugin, `~/.config/omarchy/plugins/pym.display-reserve`, is a
+git checkout of this repository: check out a branch there (or pull one into
+it) and restart the shell to try it. [AGENTS.md](AGENTS.md) has the conventions, and how to render the
+fills and the panel offscreen.
