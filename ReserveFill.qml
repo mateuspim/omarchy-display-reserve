@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import qs.Commons
+import qs.Commons as Commons
 import "." as Reserve
 import "Model.js" as Model
 
@@ -17,8 +18,8 @@ Rectangle {
   required property real screenHeight
   // How dark the dimmed fill is, 0 to 1.
   property real dim: Model.DIM_DEFAULT / 100
-  property color logoColor: Color.foreground
-  property color clockColor: Color.accent
+  property color logoColor: Commons.Color.foreground
+  property color clockColor: Commons.Color.accent
   // The stats fill's panels, and how many strip pixels one screen pixel
   // takes up: 1 on the monitor, the preview's scale in the panel.
   property var panels: []
@@ -28,7 +29,7 @@ Rectangle {
   // against burn-in (clockShift). Only ticks while one of them is shown.
   property date now: new Date()
   readonly property var shift: Model.clockShift(now)
-  color: mode === "theme" ? Color.background : "black"
+  color: mode === "theme" ? Commons.Color.background : "black"
   clip: true
 
   // The slice of the wallpaper that would be on screen here, scaled and

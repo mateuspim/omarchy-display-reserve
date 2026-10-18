@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Mpris
 import Quickshell.Services.UPower
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 import "Stats.js" as Stats
 
@@ -188,16 +189,16 @@ QtObject {
   // of them; so the file is read again whenever those change, by when
   // Omarchy has put the new theme in place.
   property var colors: ({})
-  readonly property string themeColors: String(Color.foreground) + String(Color.background) + String(Color.accent) + String(Color.urgent) + String(Color.muted)
+  readonly property string themeColors: String(Commons.Color.foreground) + String(Commons.Color.background) + String(Commons.Color.accent) + String(Commons.Color.urgent) + String(Commons.Color.muted)
   onThemeColorsChanged: themeFile.reload()
   readonly property var palette: Stats.palette(colors, {
-    foreground: hex(Color.foreground), background: hex(Color.background),
-    accent: hex(Color.accent), urgent: hex(Color.urgent), muted: hex(Color.muted)
+    foreground: hex(Commons.Color.foreground), background: hex(Commons.Color.background),
+    accent: hex(Commons.Color.accent), urgent: hex(Commons.Color.urgent), muted: hex(Commons.Color.muted)
   })
   function hex(color) { return Model.hexColor(color.r, color.g, color.b) }
 
   property FileView themeFile: FileView {
-    path: Color.currentThemePath + "/colors.toml"
+    path: Commons.Color.currentThemePath + "/colors.toml"
     watchChanges: true
     printErrors: false
     onFileChanged: reload()

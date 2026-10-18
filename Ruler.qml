@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import "Model.js" as Model
 
 // The calibration ruler: a scale from the middle of every edge to the middle
@@ -9,7 +10,7 @@ import "Model.js" as Model
 // how much that edge hides.
 Item {
   id: ruler
-  property color color: Color.accent
+  property color color: Commons.Color.accent
   property string fontFamily: Style.font.family
 
   Repeater {

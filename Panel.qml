@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Hyprland
 import qs.Ui
 import qs.Commons
+import qs.Commons as Commons
 import "." as Reserve
 import "Model.js" as Model
 import "Stats.js" as Stats
@@ -16,7 +17,7 @@ Panel {
   manageIpc: false
 
   readonly property var reserve: Reserve.ReserveState
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
+  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color subtle: Qt.darker(foreground, 1.45)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property var barWindow: button.QsWindow.window
@@ -402,7 +403,7 @@ Panel {
           iconComponent: Component {
             Text {
               text: root.reserved && !root.edge.enabled ? "󰶐" : "󰍹"
-              color: root.reserve.isActive(root.output) ? Color.accent : root.foreground
+              color: root.reserve.isActive(root.output) ? Commons.Color.accent : root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
             }
@@ -883,7 +884,7 @@ Panel {
       width: Style.space(58)
       anchors.verticalCenter: parent.verticalCenter
       text: Model.title(row.modelData)
-      color: row.selected ? Color.accent : (row.value > 0 ? root.foreground : root.subtle)
+      color: row.selected ? Commons.Color.accent : (row.value > 0 ? root.foreground : root.subtle)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
@@ -900,7 +901,7 @@ Panel {
       step: 10
       integer: true
       value: row.value
-      fillColor: row.selected ? Color.accent : root.foreground
+      fillColor: row.selected ? Commons.Color.accent : root.foreground
       knobColor: fillColor
       onMoved: function(value) { root.cursor = row.index; root.setEdge(row.modelData, value) }
       onDraggingChanged: root.reserve.hold(dragging)
@@ -945,7 +946,7 @@ Panel {
       anchors.horizontalCenter: parent.horizontalCenter
       width: Math.round(preview.screenWidth * preview.ratio)
       height: Math.round(preview.screenHeight * preview.ratio)
-      color: Style.hoverFillFor(root.foreground, Color.accent)
+      color: Style.hoverFillFor(root.foreground, Commons.Color.accent)
       border.color: root.subtle
       border.width: 1
       clip: true
@@ -1034,7 +1035,7 @@ Panel {
           anchors.centerIn: parent
           width: handle.horizontal ? parent.width : Math.max(2, Style.space(2))
           height: handle.horizontal ? Math.max(2, Style.space(2)) : parent.height
-          color: Color.accent
+          color: Commons.Color.accent
           visible: handle.lit
         }
       }
