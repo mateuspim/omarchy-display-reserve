@@ -1,1 +1,17 @@
+# Editors
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+.DS_Store
+
+# Generated
+.qmlcache/
+*.qmlc
+*.jsc
+node_modules/
+*.log
+
+# Local-only session notes
 HANDOFF.md
