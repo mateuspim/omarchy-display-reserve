@@ -1,11 +1,11 @@
 # Architecture Decision Records
 
-Each record describes one decision in Display Reserve's design: the context
-that led to it, what was decided, and what follows from it. They use Michael
-Nygard's format (Title, Status, Context, Decision, Consequences) and are
-numbered in the order the decisions were made. Dates and commit ids come
-from the git history. For how the parts fit together today, see the
-[architecture overview](../architecture.md).
+Each record describes one decision in OmaReach's design: the context that led
+to it, what was decided, and what follows from it. They use Michael Nygard's
+format (Title, Status, Context, Decision, Consequences) and are numbered in
+the order the decisions were made. Dates and commit ids come from the git
+history. For how the parts fit together today, see the [architecture
+overview](../architecture.md).
 
 | # | Decision | Date | Status |
 | --- | --- | --- | --- |
@@ -18,3 +18,4 @@ from the git history. For how the parts fit together today, see the
 | [7](0007-let-an-idle-dgpu-rest.md) | Let an idle discrete GPU rest | 2026-10-15 | Accepted |
 | [8](0008-cpu-power-through-a-visible-terminal.md) | Open the CPU's energy counter only through a visible terminal | 2026-10-17 | Accepted |
 | [9](0009-qualify-theme-color-for-qt-6-12.md) | Qualify the theme `Color` as `Commons.Color` (Qt 6.12) | 2026-10-18 | Accepted |
+| [10](0010-rename-to-omareach-with-a-new-id.md) | Rename Display Reserve to OmaReach with a new plugin ID | 2026-10-19 | Accepted |

@@ -1,12 +1,12 @@
-# <img src="icon.svg" alt="" width="32" height="32" align="top"> Display Reserve
+# <img src="icon.svg" alt="" width="32" height="32" align="top"> OmaReach
 
-![Display Reserve: a portrait monitor with its top edge showing a btop-style system dashboard above the Omarchy bar and a terminal, beside the plugin's panel](preview.png)
+![OmaReach: a portrait monitor with its top edge showing a btop-style system dashboard above the Omarchy bar and a terminal, beside the plugin's panel](preview.png)
 
-**Use only the screen you can reach.** Display Reserve blacks out monitor
-edges you can't reach (the top of a tall rotated monitor, a strip behind a
-bezel or a shelf) and keeps the Omarchy bar and tiled windows in the area you
-can. The edges can stay black, or show the theme color, the wallpaper, the
-Omarchy logo, a clock or a live btop-style system dashboard.
+**Use only the screen you can reach.** OmaReach blacks out monitor edges you
+can't reach (the top of a tall rotated monitor, a strip behind a bezel or a
+shelf) and keeps the Omarchy bar and tiled windows in the area you can. The edges can stay black, or show the theme
+color, the wallpaper, the Omarchy logo, a clock or a live btop-style system
+dashboard.
 
 [Install](#install) · [Remove](#remove) · [Security](#security-and-privileges) ·
 [Usage](#usage) · [IPC](#keybinds-and-scripts) · [Stats fill](#the-stats-fill) ·
@@ -32,7 +32,7 @@ Requires Omarchy 4 with its Quickshell bar and shell plugins (tested on
 ## Quick start
 
 1. Install and enable it:
-   `omarchy plugin add https://github.com/mateuspim/omarchy-display-reserve.git --enable --yes`.
+   `omarchy plugin add https://github.com/mateuspim/omareach.git --enable --yes`.
 2. Click the new monitor icon on the right of the bar.
 3. Pick the monitor, then drag its edge in the preview (or type the pixels)
    until the bar sits where you can reach it. The **Ruler** button shows
@@ -43,17 +43,17 @@ Requires Omarchy 4 with its Quickshell bar and shell plugins (tested on
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/mateuspim/omarchy-display-reserve.git --enable --yes
+omarchy plugin add https://github.com/mateuspim/omareach.git --enable --yes
 ```
 
 A monitor icon appears on the right of the bar. To put it elsewhere, run
-`omarchy plugin enable pym.display-reserve --section left` (or `center`).
+`omarchy plugin enable pym.omareach --section left` (or `center`).
 
 To update, pull the new version and restart the shell. The black edges stay
 up while plugins reload, so the new version only takes over after a restart:
 
 ```bash
-omarchy plugin update pym.display-reserve --yes && sleep 3 && omarchy restart shell
+omarchy plugin update pym.omareach --yes && sleep 3 && omarchy restart shell
 ```
 
 Keep the `sleep`: restarting while the shell is still reloading plugins can
@@ -64,22 +64,39 @@ Optional, for the stats fill: `nvidia-smi` (from the NVIDIA driver) for an
 NVIDIA GPU's panel. AMD and Intel GPUs, and everything else, are read from
 `/proc` and `/sys`.
 
+### Coming from Display Reserve
+
+OmaReach was called Display Reserve (`pym.display-reserve`) before 1.7.0. The
+rename came with a new plugin ID and settings file and no automatic
+migration, so move over by hand:
+
+```bash
+omarchy plugin remove pym.display-reserve
+mv ~/.config/omarchy/display-reserve.json ~/.config/omarchy/omareach.json
+omarchy plugin add https://github.com/mateuspim/omareach.git --enable --yes
+omarchy restart shell
+```
+
+Keybinds and scripts that call `omarchy-shell pym.display-reserve …` now call
+`omarchy-shell pym.omareach …`. If you turned on **CPU power**, nothing
+changes: its udev rule's file name never had the plugin's name in it.
+
 ## Remove
 
 If you turned on **CPU power** in the stats fill, turn it off first (click
 **CPU power · On** in the panel, or
-`omarchy-shell pym.display-reserve cpuPower disable`), which removes its udev
+`omarchy-shell pym.omareach cpuPower disable`), which removes its udev
 rule. Then remove the plugin:
 
 ```bash
-omarchy plugin remove pym.display-reserve
+omarchy plugin remove pym.omareach
 ```
 
 Every reserved edge goes away with it. Your saved reservations and profiles
 stay on disk; to delete them too:
 
 ```bash
-rm -f ~/.config/omarchy/display-reserve.json
+rm -f ~/.config/omarchy/omareach.json
 ```
 
 If you removed the plugin with CPU power still on, take its rule back by
@@ -92,7 +109,7 @@ sudo chmod 0400 /sys/class/powercap/*/energy_uj
 
 ## Security and privileges
 
-Display Reserve runs as your user inside the Omarchy shell. Loading it
+OmaReach runs as your user inside the Omarchy shell. Loading it
 installs nothing and writes only its own settings file.
 
 - **Root, once, when you ask:** the stats fill's **CPU power** button (shown
@@ -107,7 +124,7 @@ installs nothing and writes only its own settings file.
   [The stats fill](#the-stats-fill).
 - **Your config:** never edited. Edges are reserved with layer-shell surfaces,
   not `monitors.lua`, and Hyprland is never reloaded. The only file written
-  is `~/.config/omarchy/display-reserve.json`.
+  is `~/.config/omarchy/omareach.json`.
 - **Commands it runs:** `hyprctl -j clients` on fullscreen events (to fit
   fullscreen windows), `readlink` on the wallpaper link while a wallpaper fill
   shows, and, while the stats fill shows, `stats.sh` (bash builtins reading
@@ -121,7 +138,7 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 <p align="center">
   <img src="docs/panel.png" width="360"
-       alt="The Display Reserve panel for DP-4 with the Desk profile: a to-scale preview of a portrait monitor with the stats dashboard on its top 660 pixels, the seven fill buttons with Stats selected, the clock-edge choice, the thirteen stats panels with GPU, CPU, Memory and Network on, the Animation and CPU power buttons, and a slider and pixel field for each edge">
+       alt="The OmaReach panel for DP-4 with the Desk profile: a to-scale preview of a portrait monitor with the stats dashboard on its top 660 pixels, the seven fill buttons with Stats selected, the clock-edge choice, the thirteen stats panels with GPU, CPU, Memory and Network on, the Animation and CPU power buttons, and a slider and pixel field for each edge">
 </p>
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
@@ -213,7 +230,7 @@ monitor switches to a smaller mode, are trimmed when drawn.
 
 ## Keybinds and scripts
 
-The shell answers IPC calls on the target `pym.display-reserve`, through
+The shell answers IPC calls on the target `pym.omareach`, through
 `omarchy-shell`. For the calls that take one, the first argument names the monitor: a connector such as
 `DP-4`, `""` or `focused` for the focused monitor, or `all`.
 
@@ -242,11 +259,11 @@ The shell answers IPC calls on the target `pym.display-reserve`, through
 For example, from a terminal:
 
 ```bash
-omarchy-shell pym.display-reserve fill DP-4 clock
-omarchy-shell pym.display-reserve fill DP-4 stats
-omarchy-shell pym.display-reserve panels DP-4 gpu,cpu,processes
-omarchy-shell pym.display-reserve aspect DP-4 16:9 bottom
-omarchy-shell pym.display-reserve profile Gaming
+omarchy-shell pym.omareach fill DP-4 clock
+omarchy-shell pym.omareach fill DP-4 stats
+omarchy-shell pym.omareach panels DP-4 gpu,cpu,processes
+omarchy-shell pym.omareach aspect DP-4 16:9 bottom
+omarchy-shell pym.omareach profile Gaming
 ```
 
 Profile names are matched ignoring case.
@@ -255,8 +272,8 @@ To pause the focused monitor with Super+Alt+P and cycle its fill with
 Super+Alt+Shift+P, add to `~/.config/hypr/bindings.lua`:
 
 ```lua
-o.bind("SUPER + ALT + P", "Pause display reserve", "omarchy-shell pym.display-reserve toggle focused")
-o.bind("SUPER + ALT + SHIFT + P", "Next reserve fill", "omarchy-shell pym.display-reserve nextFill focused")
+o.bind("SUPER + ALT + P", "Pause OmaReach", "omarchy-shell pym.omareach toggle focused")
+o.bind("SUPER + ALT + SHIFT + P", "Next reserve fill", "omarchy-shell pym.omareach nextFill focused")
 ```
 
 ## How it works
@@ -265,10 +282,10 @@ Each reserved edge gets two layer-shell surfaces:
 
 | Surface | Layer | Purpose |
 | --- | --- | --- |
-| `pym-display-reserve-spacer` | Bottom | Reserves the edge with an exclusive zone. Hyprland lays out exclusive zones from the lowest layer up, so this claims the edge before the Top-layer bar, which lands just inside the reachable area with tiled windows after it. |
-| `pym-display-reserve` | Overlay | A strip in the monitor's fill that blocks the pointer and covers anything that strays into the reserved area. |
+| `pym-omareach-spacer` | Bottom | Reserves the edge with an exclusive zone. Hyprland lays out exclusive zones from the lowest layer up, so this claims the edge before the Top-layer bar, which lands just inside the reachable area with tiled windows after it. |
+| `pym-omareach` | Overlay | A strip in the monitor's fill that blocks the pointer and covers anything that strays into the reserved area. |
 
-While the ruler is up, a click-through `pym-display-reserve-ruler` surface
+While the ruler is up, a click-through `pym-omareach-ruler` surface
 covers its monitor on the Overlay layer.
 
 Fullscreen windows ignore exclusive zones, so on a monitor with a reserve
@@ -290,7 +307,7 @@ The plugin never edits `~/.config/hypr/monitors.lua` or runs
 
 ### Saved settings
 
-Reservations are stored in `~/.config/omarchy/display-reserve.json`, keyed
+Reservations are stored in `~/.config/omarchy/omareach.json`, keyed
 by the monitor's Hyprland description (make, model and serial, as in
 `hyprctl monitors`), so they follow the monitor when a dock renumbers its
 connectors:
@@ -440,7 +457,7 @@ npm test                     # Node tests for Model.js, Stats.js, stats.sh and c
 omarchy plugin validate .    # the manifest, as the marketplace checks it
 ```
 
-The installed plugin, `~/.config/omarchy/plugins/pym.display-reserve`, is a
+The installed plugin, `~/.config/omarchy/plugins/pym.omareach`, is a
 git checkout of this repository: check out a branch there (or pull one into
 it) and restart the shell to try it. [AGENTS.md](AGENTS.md) has the conventions, and how to render the
 fills and the panel offscreen.

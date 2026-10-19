@@ -11,7 +11,7 @@ whatever monitor took its connector.
 
 ## Decision
 
-Entries in `~/.config/omarchy/display-reserve.json` are keyed by the
+Entries in `~/.config/omarchy/omareach.json` are keyed by the
 monitor's Hyprland description (make, model and serial). A monitor with no
 description, or one that shares its description with another connected
 monitor, falls back to its connector name. Callers (the panel, IPC) still

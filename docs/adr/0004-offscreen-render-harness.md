@@ -15,7 +15,7 @@ UI is checked with Qt's offscreen platform: a throwaway Quickshell config in
 a scratch folder with `Commons` and `Ui` linked from Omarchy, a copy of the
 plugin, and a `shell.qml` that draws one component and saves it with
 `grabToImage`. Named monitors come from an offscreen `configfile`, and a
-throwaway `HOME` with a demo `display-reserve.json` keeps the user's
+throwaway `HOME` with a demo `omareach.json` keeps the user's
 settings out of it. Then the change is deployed and the user checks it by
 hand.
 

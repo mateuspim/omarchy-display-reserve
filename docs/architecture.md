@@ -1,6 +1,6 @@
-# Display Reserve architecture
+# OmaReach architecture
 
-Display Reserve is an Omarchy shell plugin: QML loaded into Omarchy's
+OmaReach is an Omarchy shell plugin: QML loaded into Omarchy's
 Quickshell, plus two bash scripts. This page is how the parts fit together
 today; the [decision records](adr/README.md) say why. The
 [README](../README.md) is the user manual.
@@ -17,7 +17,7 @@ today; the [decision records](adr/README.md) say why. The
 ## Components and data flow
 
 ```
-display-reserve.json ⇄ ReserveState (singleton) ──► Service ──► spacer + cap surfaces ──► ReserveFill
+omareach.json ⇄ ReserveState (singleton) ──► Service ──► spacer + cap surfaces ──► ReserveFill
                               ▲      │                │                                     │
                      Panel ───┘      │                └─ fullscreen fitting (hyprctl, dispatch)
                      IPC  ───────────┘                                                      ▼
@@ -26,7 +26,7 @@ display-reserve.json ⇄ ReserveState (singleton) ──► Service ──► sp
 
 - **`ReserveState.qml`** (singleton) holds every monitor's settings,
   profiles and session settings, reads and writes
-  `~/.config/omarchy/display-reserve.json`, and watches it for hand edits.
+  `~/.config/omarchy/omareach.json`, and watches it for hand edits.
   It keeps `outputs` (what the user set) and `applied` (what is on screen),
   which trails it by up to 100 ms and holds during drags
   ([ADR 3](adr/0003-throttle-applied-state.md)). It also owns the shared
@@ -43,7 +43,7 @@ display-reserve.json ⇄ ReserveState (singleton) ──► Service ──► sp
   ([ADR 1](adr/0001-exclusive-zones-not-monitors-lua.md)). It fits fullscreen
   windows to the reachable area
   ([ADR 5](adr/0005-fit-fullscreen-to-the-reachable-area.md)), turns every
-  edge black while idle, and answers `omarchy-shell pym.display-reserve …`.
+  edge black while idle, and answers `omarchy-shell pym.omareach …`.
 - **`Panel.qml`** is the bar widget: a to-scale preview, fills, stats
   panels, edge sliders and fields, aspect presets, profiles, idle, ruler and
   undo, with keyboard shortcuts. Edits go to `ReserveState`.
@@ -81,7 +81,7 @@ display-reserve.json ⇄ ReserveState (singleton) ──► Service ──► sp
 
 | What | Where |
 | --- | --- |
-| Monitors, profiles, automatic profiles, idle, animation pace | `~/.config/omarchy/display-reserve.json` |
+| Monitors, profiles, automatic profiles, idle, animation pace | `~/.config/omarchy/omareach.json` |
 | The CPU power rule, only if you enable it | `/etc/udev/rules.d/70-rapl-energy.rules` |
 
 Nothing else is written. The wallpaper is read through

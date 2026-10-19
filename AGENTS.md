@@ -1,11 +1,10 @@
-# Display Reserve agent instructions
+# OmaReach agent instructions
 
-Display Reserve is an Omarchy shell plugin (Quickshell/QML + bash) that
-blacks out monitor edges you can't reach and keeps the bar and tiled windows
-in the rest, with optional fills, including a btop-style stats dashboard.
-Plugin id `pym.display-reserve`; public at
-https://github.com/mateuspim/omarchy-display-reserve. The README is the user
-manual; read its section before changing a feature. `docs/architecture.md`
+OmaReach is an Omarchy shell plugin (Quickshell/QML + bash) that blacks out
+monitor edges you can't reach and keeps the bar and tiled windows in the
+rest, with optional fills, including a btop-style stats dashboard. Plugin id
+`pym.omareach`; public at https://github.com/mateuspim/omareach. The README
+is the user manual; read its section before changing a feature. `docs/architecture.md`
 says how the parts fit, `docs/adr/` why.
 
 ## Project
@@ -17,8 +16,11 @@ says how the parts fit, `docs/adr/` why.
   in `docs/`.
 - Logic that can live without QML goes in `Model.js` (reserves, profiles,
   fills) or `Stats.js` (the dashboard), so Node can test it.
-- Naming: plugin id and IPC target `pym.display-reserve`, layer namespaces
-  `pym-display-reserve*`, settings `~/.config/omarchy/display-reserve.json`.
+- Naming: OmaReach everywhere: plugin id and IPC target `pym.omareach`,
+  layer namespaces `pym-omareach*`, settings `~/.config/omarchy/omareach.json`,
+  log prefix `omareach:`. Never reintroduce `display-reserve` or
+  `Display Reserve` (ADR 10); only CHANGELOG history, ADR 10 and the README's
+  migration note name it.
 - Qt 6.12: QtQuick exports its own `Color`. Write
   `import qs.Commons as Commons` and `Commons.Color.x`; never a bare `Color.`
   (ADR 9).
@@ -55,7 +57,7 @@ says how the parts fit, `docs/adr/` why.
   `grabToImage`s one component, run with
   `QT_QPA_PLATFORM=offscreen quickshell -p <dir>`. `QT_SCALE_FACTOR=2` for
   crisp images; `offscreen:configfile=<json>` for named monitors; a throwaway
-  `HOME` with a demo `display-reserve.json` so the user's settings stay out.
+  `HOME` with a demo `omareach.json` so the user's settings stay out.
   The panel needs a `FloatingWindow` stand-in for `KeyboardPanel`. Shaders
   (`MultiEffect`) draw nothing offscreen.
 - Never screenshot (`grim`) or inject input (`wtype`) on the user's monitors.
@@ -81,5 +83,5 @@ says how the parts fit, `docs/adr/` why.
 - Release: bump `version` in `manifest.json` and `package.json`, add the
   `CHANGELOG.md` entry, check the README covers the change, `npm test`,
   `omarchy plugin validate .`, commit `Release X.Y.Z`, annotated tag
-  `vX.Y.Z` ("Display Reserve X.Y.Z"). After pushing, file the marketplace's
+  `vX.Y.Z` ("OmaReach X.Y.Z"). After pushing, file the marketplace's
   "Plugin verification" issue with the full 40-character commit SHA.
