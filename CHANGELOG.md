@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.1 — 2026-10-18
+
+### Changed
+
+- **New icon:** a monitor with its top and bottom edges reserved and the bar
+  between them, in the bar, the panel header, the README and the
+  marketplace banner. In the bar it takes the bar's colors, shows its edges
+  once the bar's monitor has a reserve, and is struck through while that is
+  paused.
+
 ## 1.6.0 — 2026-10-18
 
 ### Added
