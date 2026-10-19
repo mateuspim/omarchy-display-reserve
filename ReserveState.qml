@@ -18,7 +18,7 @@ import "Model.js" as Model
 QtObject {
   id: root
 
-  readonly property string path: Quickshell.env("HOME") + "/.config/omarchy/display-reserve.json"
+  readonly property string path: Quickshell.env("HOME") + "/.config/omarchy/omareach.json"
   readonly property var edgeNames: Model.EDGES
   property var outputs: ({})
   // Seconds without input before every edge goes black; 0 never does. One
@@ -302,7 +302,7 @@ QtObject {
       autoProfiles = Model.autoProfiles(parsed && parsed.autoProfiles, profiles)
       lastMonitors = Model.keyList(parsed && parsed.monitors)
     } catch (error) {
-      console.warn("display-reserve: invalid state file: " + error)
+      console.warn("omareach: invalid state file: " + error)
     }
   }
 

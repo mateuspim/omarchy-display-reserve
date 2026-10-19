@@ -13,7 +13,7 @@ import "Stats.js" as Stats
 // while you drag; there is nothing to apply.
 Panel {
   id: root
-  moduleName: "pym.display-reserve"
+  moduleName: "pym.omareach"
   manageIpc: false
 
   readonly property var reserve: Reserve.ReserveState
@@ -373,7 +373,7 @@ Panel {
     tooltipText: root.barOutput + "  ·  " + Model.summary(root.barEntry)
       + (root.barReserved ? "\nRight click to " + (root.barEntry.enabled ? "pause" : "resume") : "")
     Accessible.role: Accessible.Button
-    Accessible.name: "Display Reserve"
+    Accessible.name: "OmaReach"
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.LeftButton) root.toggle()
       else if (mouseButton === Qt.RightButton) root.toggleEnabled(root.barOutput)
@@ -407,7 +407,7 @@ Panel {
 
         PanelHero {
           width: parent.width
-          title: "Display Reserve"
+          title: "OmaReach"
           meta: (root.reserve.currentProfile ? root.reserve.currentProfile + "  ·  " : "") + Model.shortSummary(root.edge)
           foreground: root.foreground
           fontFamily: root.fontFamily

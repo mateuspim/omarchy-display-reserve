@@ -79,7 +79,7 @@ change() {
   local now
   now=$(status)
   echo
-  bold "Display Reserve · CPU power draw"
+  bold "OmaReach · CPU power draw"
   echo
   if [[ $now == none ]]; then
     echo "This machine has no RAPL energy counter (ARM, AMD before Zen, or a VM), so there is no CPU power draw to show."

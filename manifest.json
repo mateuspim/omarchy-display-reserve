@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "pym.display-reserve",
-  "name": "Display Reserve",
-  "version": "1.6.1",
+  "id": "pym.omareach",
+  "name": "OmaReach",
+  "version": "1.7.0",
   "author": "Mateus Pym",
   "license": "MIT",
   "description": "Black out monitor edges you can't reach, like the top of a tall rotated screen, and keep the bar and tiled windows in the part you can, with optional fills, including a btop-style system dashboard.",
@@ -13,7 +13,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Display Reserve",
+    "displayName": "OmaReach",
     "description": "Black out unreachable display edges, set in pixels, or fill them with a theme color, the wallpaper, the Omarchy logo, a clock or a live btop-style dashboard of GPU, CPU, memory and more.",
     "category": "Display",
     "allowMultiple": false,

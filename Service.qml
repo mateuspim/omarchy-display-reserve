@@ -82,7 +82,7 @@ Scope {
           exclusionMode: ExclusionMode.Ignore
           color: "transparent"
           mask: Region {}
-          WlrLayershell.namespace: "pym-display-reserve-ruler"
+          WlrLayershell.namespace: "pym-omareach-ruler"
           WlrLayershell.layer: WlrLayer.Overlay
           WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
           Reserve.Ruler { anchors.fill: parent }
@@ -149,10 +149,10 @@ Scope {
     return root.state.isReserved(name) ? "" : Model.fillName(fill) + "  ·  no reserved edges to show it"
   }
 
-  // omarchy-shell pym.display-reserve <function> [arguments]; README.md
+  // omarchy-shell pym.omareach <function> [arguments]; README.md
   // lists them.
   IpcHandler {
-    target: "pym.display-reserve"
+    target: "pym.omareach"
 
     function status(): string {
       var result = {
@@ -343,7 +343,7 @@ Scope {
         exclusiveZone: reserved.pixels
         color: "transparent"
         mask: Region {}
-        WlrLayershell.namespace: "pym-display-reserve-spacer"
+        WlrLayershell.namespace: "pym-omareach-spacer"
         WlrLayershell.layer: WlrLayer.Bottom
       }
 
@@ -352,7 +352,7 @@ Scope {
         side: reserved.side
         pixels: reserved.pixels
         exclusionMode: ExclusionMode.Ignore
-        WlrLayershell.namespace: "pym-display-reserve"
+        WlrLayershell.namespace: "pym-omareach"
         WlrLayershell.layer: WlrLayer.Overlay
         MouseArea { anchors.fill: parent }
         Reserve.ReserveFill {
