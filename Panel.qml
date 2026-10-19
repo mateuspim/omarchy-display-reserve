@@ -356,8 +356,19 @@ Panel {
   BarIconButton {
     id: button
     bar: root.bar
-    // The same glyphs as the monitor buttons: a crossed-out monitor is paused.
-    text: root.barReserved && !root.barEntry.enabled ? "󰶐" : "󰍹"
+    // The plugin's icon, in the bar's colors: its edges show once the bar's
+    // monitor has a reserve, struck through while that is paused.
+    iconComponent: Component {
+      Item {
+        Reserve.ReserveIcon {
+          anchors.centerIn: parent
+          iconSize: Style.bar.iconCanvas
+          color: button.active && button.useActiveColor ? button.activeColor : button.foreground
+          reserved: root.barReserved
+          paused: root.barReserved && !root.barEntry.enabled
+        }
+      }
+    }
     active: root.opened || root.reserve.isActive(root.barOutput)
     tooltipText: root.barOutput + "  ·  " + Model.summary(root.barEntry)
       + (root.barReserved ? "\nRight click to " + (root.barEntry.enabled ? "pause" : "resume") : "")
@@ -401,11 +412,11 @@ Panel {
           foreground: root.foreground
           fontFamily: root.fontFamily
           iconComponent: Component {
-            Text {
-              text: root.reserved && !root.edge.enabled ? "󰶐" : "󰍹"
+            Reserve.ReserveIcon {
+              iconSize: Style.font.display * 1.25
               color: root.reserve.isActive(root.output) ? Commons.Color.accent : root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
+              reserved: root.reserved
+              paused: root.reserved && !root.edge.enabled
             }
           }
           trailingControl: Component {

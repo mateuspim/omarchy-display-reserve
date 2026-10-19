@@ -52,6 +52,8 @@ display-reserve.json ⇄ ReserveState (singleton) ──► Service ──► sp
   The logo recolors the SVG's text, and the clock is blocks from
   `Model.clockLayout`. Both move a few pixels every 5 minutes against burn-in.
 - **`Ruler.qml`** is the calibration ruler, a click-through Overlay surface.
+- **`ReserveIcon.qml`** draws `icon.svg` with Shapes in the bar's colors, for
+  the bar button and the panel header.
 
 ## The stats fill
 
