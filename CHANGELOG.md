@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.7.0 — 2026-10-19
+
+### Changed
+
+- **Renamed to OmaReach,** after the tagline "Use only the screen you can
+  reach", with a new plugin ID and no automatic migration: plugin ID and IPC
+  target `pym.omareach` (was `pym.display-reserve`), settings
+  `~/.config/omarchy/omareach.json` (was `display-reserve.json`), layer
+  namespaces `pym-omareach*`, repository `mateuspim/omareach` (was
+  `mateuspim/omarchy-display-reserve`). To move over:
+
+  ```bash
+  omarchy plugin remove pym.display-reserve
+  mv ~/.config/omarchy/display-reserve.json ~/.config/omarchy/omareach.json
+  omarchy plugin add https://github.com/mateuspim/omareach.git --enable --yes
+  ```
+
+  Then point keybinds and scripts at `omarchy-shell pym.omareach …`. The CPU
+  power udev rule carries over as it is.
+
 ## 1.6.1 — 2026-10-18
 
 ### Changed
