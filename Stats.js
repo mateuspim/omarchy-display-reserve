@@ -1080,6 +1080,13 @@ function row(label, text, fraction, color) {
   return { label: label, text: text, fraction: fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, fraction)), color: color || "" }
 }
 
+// MPRIS art URLs come from players (and, for browser players, pages). Qt's
+// Image accepts network URLs, so only local artwork belongs in this panel.
+function localArtwork(url) {
+  var value = String(url || "")
+  return value.length <= 4096 && /^file:\/\/\/[^/\\\x00-\x1f]/.test(value) && !/[\\\x00-\x1f]/.test(value) ? value : ""
+}
+
 // A graph's top: its largest value, at least `floor`.
 function graphMax(values, floor) {
   return Math.max.apply(null, [floor].concat(values))
@@ -1324,7 +1331,7 @@ var VIEWS = {
       title: m.title || m.identity || "Unknown player",
       artist: m.artist || "",
       album: m.album || "",
-      art: m.art || "",
+      art: localArtwork(m.art),
       playing: !!m.playing,
       progress: m.length > 0 ? Math.max(0, Math.min(1, m.position / m.length)) : null,
       // Without a length, a position (a browser's 0:00) tells nothing.

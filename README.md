@@ -129,7 +129,9 @@ installs nothing and writes only its own settings file.
   fullscreen windows), `readlink` on the wallpaper link while a wallpaper fill
   shows, and, while the stats fill shows, `stats.sh` (bash builtins reading
   `/proc` and `/sys`) and `nvidia-smi`.
-- **Network:** none. It downloads and runs nothing from the internet.
+- **Network:** none. It downloads and runs nothing from the internet. The
+  Now playing panel displays local cover files only; it ignores remote
+  artwork URLs supplied by media players.
 
 ## Usage
 

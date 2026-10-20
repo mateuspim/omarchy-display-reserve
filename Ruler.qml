@@ -65,6 +65,7 @@ Item {
 
         Text {
           required property var modelData
+          textFormat: Text.PlainText
           text: modelData.label
           color: ruler.color
           font.family: ruler.fontFamily

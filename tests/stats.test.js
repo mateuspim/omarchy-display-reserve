@@ -754,6 +754,13 @@ Object.assign(tests, {
     assert.equal(bare.info, "")
     assert.equal(bare.media.time, "")
   },
+  "the media view loads local artwork only"() {
+    const media = { identity: "Browser", title: "Song", playing: true, position: null, length: null }
+    const art = url => Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { ...media, art: url }), palette).media.art
+    assert.equal(art("file:///tmp/cover.png"), "file:///tmp/cover.png")
+    for (const url of ["https://example.com/cover.png", "http://127.0.0.1/cover.png", "file://host/cover.png", "file:////host/cover.png", "data:image/png;base64,AAAA", "image://provider/cover"])
+      assert.equal(art(url), "", url)
+  },
   "the fans view adds the GPU fan"() {
     const view = Stats.view("fans", full, palette)
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU fan", "GPU"])

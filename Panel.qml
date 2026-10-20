@@ -513,6 +513,7 @@ Panel {
             height: dimSlider.implicitHeight
             Text {
               id: dimLabel
+              textFormat: Text.PlainText
               width: Style.space(58)
               anchors.verticalCenter: parent.verticalCenter
               text: "Dim"
@@ -540,6 +541,7 @@ Panel {
             }
             Text {
               id: dimValue
+              textFormat: Text.PlainText
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               width: Style.space(40)
@@ -806,6 +808,7 @@ Panel {
             Text {
               required property string modelData
               required property int index
+              textFormat: Text.PlainText
               text: modelData
               color: index % 2 === 0 ? root.foreground : root.subtle
               font.family: root.fontFamily
@@ -819,6 +822,7 @@ Panel {
           width: parent.width
           height: clearButton.implicitHeight
           Text {
+            textFormat: Text.PlainText
             anchors.left: parent.left
             anchors.right: idleButton.left
             anchors.rightMargin: Style.spacing.md
@@ -892,6 +896,7 @@ Panel {
 
     Text {
       id: label
+      textFormat: Text.PlainText
       width: Style.space(58)
       anchors.verticalCenter: parent.verticalCenter
       text: Model.title(row.modelData)
@@ -997,6 +1002,7 @@ Panel {
           // Only over plain black: it would sit on top of the logo, and the
           // fields below show the same number.
           Text {
+            textFormat: Text.PlainText
             anchors.centerIn: parent
             visible: parent.mode === "black" && (parent.horizontal ? parent.height >= font.pixelSize + 4 : parent.width >= implicitWidth + 6)
             text: root.edge[parent.modelData]
@@ -1054,6 +1060,7 @@ Panel {
 
     Text {
       id: caption
+      textFormat: Text.PlainText
       anchors.bottom: parent.bottom
       anchors.horizontalCenter: parent.horizontalCenter
       text: preview.paused

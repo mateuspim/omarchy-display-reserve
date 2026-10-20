@@ -9,6 +9,8 @@ import "Stats.js" as Stats
 // top edge, over black. `view` is Stats.view's description of the panel.
 // A wide card puts its value and graphs on the left and its rows on the
 // right; a narrow one stacks them.
+// Text stays plain: MPRIS metadata and device/process names can be supplied
+// by other processes, and Qt's AutoText would interpret markup in them.
 Item {
   id: card
   // Blank until set: a delegate's own bindings can run before these are
@@ -53,12 +55,14 @@ Item {
       anchors.centerIn: parent
       spacing: Math.round(card.unit * 0.4)
       Text {
+        textFormat: Text.PlainText
         text: card.shown.icon
         color: card.shown.color
         font.family: card.fontFamily
         font.pixelSize: card.unit
       }
       Text {
+        textFormat: Text.PlainText
         text: card.shown.title
         color: card.theme.foreground
         font.family: card.fontFamily
@@ -76,6 +80,7 @@ Item {
     color: "black"
     Text {
       id: infoText
+      textFormat: Text.PlainText
       anchors.centerIn: parent
       width: Math.min(implicitWidth, card.width / 2)
       text: card.shown.info
@@ -144,6 +149,7 @@ Item {
           font.bold: true
         }
         Text {
+          textFormat: Text.PlainText
           // As wide as the widest value, so the caption holds still.
           Layout.minimumWidth: widest.width
           text: card.shown.value
@@ -153,6 +159,7 @@ Item {
           font.bold: true
         }
         Text {
+          textFormat: Text.PlainText
           Layout.alignment: Qt.AlignBottom
           Layout.bottomMargin: Math.round(card.unit * 0.3)
           Layout.fillWidth: true
@@ -185,6 +192,7 @@ Item {
             lineWidth: Math.max(1.5, card.unit / 9)
           }
           Text {
+            textFormat: Text.PlainText
             visible: parent.modelData.label !== ""
             x: Math.round(card.unit * 0.3)
             y: Math.round(card.unit * 0.1)
@@ -265,6 +273,7 @@ Item {
           Layout.fillWidth: true
           spacing: Math.round(card.unit * 0.3)
           Text {
+            textFormat: Text.PlainText
             text: list.modelData.title
             color: card.shown.color
             font.family: card.fontFamily
@@ -286,6 +295,7 @@ Item {
             }
           }
           Text {
+            textFormat: Text.PlainText
             visible: list.modelData.items.length === 0
             text: "Nothing busy"
             color: card.theme.subtle
@@ -318,6 +328,7 @@ Item {
       // Only beside room for the title: a narrow card is all text.
       visible: width >= card.unit * 3 && parent.width - width - card.unit >= card.unit * 14
       Text {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: art.status !== Image.Ready
         text: card.shown.icon
@@ -344,6 +355,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       spacing: Math.round(card.unit * 0.35)
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: media.track ? media.track.title : ""
         elide: Text.ElideRight
@@ -353,6 +365,7 @@ Item {
         font.bold: true
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         visible: text !== ""
         text: media.track ? media.track.artist : ""
@@ -362,6 +375,7 @@ Item {
         font.pixelSize: card.unit
       }
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         visible: text !== ""
         text: media.track ? media.track.album : ""
@@ -385,6 +399,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     anchors.centerIn: parent
     visible: card.shown.empty !== ""
     text: card.shown.empty
@@ -410,6 +425,7 @@ Item {
 
     Text {
       id: rowLabel
+      textFormat: Text.PlainText
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
       // Never into the value: a long value takes the room of the meter,
@@ -445,6 +461,7 @@ Item {
     }
     Text {
       id: value
+      textFormat: Text.PlainText
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       // Never over the label: it takes the room the label can spare (all
