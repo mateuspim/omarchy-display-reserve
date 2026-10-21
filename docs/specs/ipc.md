@@ -9,8 +9,8 @@ omarchy-shell pym.omareach <action> [arguments]
 
 Every action answers with plain text on stdout, except `status`, which
 answers with JSON. Errors are answers too (the call itself succeeds), so a
-script should read the text. The README's
-[Keybinds and scripts](../../README.md#keybinds-and-scripts) section is the
+script should read the text. The
+[Keybinds and scripts](../guide/keybinds-and-scripts.md) guide is the
 user-facing summary; this page is the exact behaviour.
 
 ## Arguments

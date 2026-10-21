@@ -2,9 +2,17 @@
 
 ## Use OmaReach
 
-- [README](../README.md): install, features and everyday use, including
-  the [IPC calls](../README.md#keybinds-and-scripts) and
-  [the stats fill](../README.md#the-stats-fill).
+- [README](../README.md): features, install, update and remove.
+- [The panel](guide/panel.md): edges, aspect presets, the ruler, keys.
+- [Fills](guide/fills.md): black, theme, wallpaper, logo, clock, stats,
+  and black when idle.
+- [Profiles](guide/profiles.md): saved setups, applied by hand or on dock.
+- [The stats fill](guide/stats-fill.md): the dashboard's panels, GPUs,
+  CPU power, colors and animation.
+- [Keybinds and scripts](guide/keybinds-and-scripts.md): the IPC calls
+  and key binding examples.
+- [How it works](guide/how-it-works.md): surfaces, fullscreen, the
+  wallpaper, saved settings and known limitations.
 - [Troubleshooting](runbooks/troubleshooting.md): symptom, cause, fix.
 - [Security and privileges](../SECURITY.md): what it runs, reads and
   writes, and the one root action.
