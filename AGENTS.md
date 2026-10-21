@@ -5,7 +5,9 @@ monitor edges you can't reach and keeps the bar and tiled windows in the
 rest, with optional fills, including a btop-style stats dashboard. Plugin id
 `pym.omareach`; public at https://github.com/mateuspim/omareach. The README
 is the user manual; read its section before changing a feature. `docs/architecture.md`
-says how the parts fit, `docs/adr/` why.
+says how the parts fit, `docs/adr/` why, `docs/specs/` what the contracts
+are (settings file, IPC actions, `stats.sh` frames). `docs/README.md`
+indexes the rest; update the spec a change touches.
 
 ## Project
 
@@ -59,7 +61,9 @@ says how the parts fit, `docs/adr/` why.
   crisp images; `offscreen:configfile=<json>` for named monitors; a throwaway
   `HOME` with a demo `omareach.json` so the user's settings stay out.
   The panel needs a `FloatingWindow` stand-in for `KeyboardPanel`. Shaders
-  (`MultiEffect`) draw nothing offscreen.
+  (`MultiEffect`) draw nothing offscreen. The full harness, with fake
+  sampler data, is in `docs/runbooks/development.md`; the hero's
+  captures in `docs/brand/captures/` come from it.
 - Never screenshot (`grim`) or inject input (`wtype`) on the user's monitors.
   Deploy and let the user check by hand.
 - Live shell log (read-only):
@@ -70,6 +74,8 @@ says how the parts fit, `docs/adr/` why.
 
 - No `/home/...` paths, real monitor serials or private names in tracked
   files; examples use `DP-4` and sample descriptions.
+- The privilege model lives in `SECURITY.md`; update it when the plugin
+  runs, reads or writes something new.
 - Nothing runs as root except through `cpu-power.sh` in a visible terminal
   that shows its commands and asks first (ADR 8). Never modify user config
   on load.
@@ -85,3 +91,4 @@ says how the parts fit, `docs/adr/` why.
   `omarchy plugin validate .`, commit `Release X.Y.Z`, annotated tag
   `vX.Y.Z` ("OmaReach X.Y.Z"). After pushing, file the marketplace's
   "Plugin verification" issue with the full 40-character commit SHA.
+  The same steps are in `docs/runbooks/development.md#release`.

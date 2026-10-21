@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.7.1 — 2026-10-21
+
+### Added
+
+- **Documentation:** a docs index (`docs/README.md`); specs for the
+  settings file, the IPC actions and the `stats.sh` frame format; a
+  development runbook with the full offscreen render harness, refreshing
+  the hero and the release steps; and a troubleshooting runbook.
+- **Contributor files:** `CONTRIBUTING.md`, `SECURITY.md` with the full
+  privilege model and private reporting, and GitHub issue and pull
+  request templates.
+- **Brand sources:** `docs/branding.md` with the colours (accent
+  `#88a4ad`), dark and light wordmarks, and `docs/brand/preview.svg`, the
+  editable source of the README hero, with its offscreen captures.
+
+### Changed
+
+- `preview.png` is now rendered from `docs/brand/preview.svg`, with fresh
+  captures made from made-up data; the layout is the same.
+- The author is **Mateus Pim** in `manifest.json`, `package.json` and
+  `LICENSE`; `.mailmap` maps the old "Mateus Pym" commits.
+- The README's security section is shorter and links `SECURITY.md`; its
+  Documentation section links the new docs.
+
 ## 1.7.0 — 2026-10-19
 
 ### Changed

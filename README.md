@@ -109,29 +109,13 @@ sudo chmod 0400 /sys/class/powercap/*/energy_uj
 
 ## Security and privileges
 
-OmaReach runs as your user inside the Omarchy shell. Loading it
-installs nothing and writes only its own settings file.
-
-- **Root, once, when you ask:** the stats fill's **CPU power** button (shown
-  only on CPUs with a RAPL energy counter) opens a floating terminal running
-  `cpu-power.sh`. It prints the exact commands, asks, and runs them with
-  `sudo`, which asks for your password in that terminal (or `pkexec` where
-  there is no sudo). Enabling writes
-  `/etc/udev/rules.d/70-rapl-energy.rules` and makes
-  `/sys/class/powercap/*/energy_uj` readable; disabling removes the rule and
-  makes the counters root's again. The commands are fixed and take no input.
-  Why the kernel keeps the counter from other users is in
-  [The stats fill](#the-stats-fill).
-- **Your config:** never edited. Edges are reserved with layer-shell surfaces,
-  not `monitors.lua`, and Hyprland is never reloaded. The only file written
-  is `~/.config/omarchy/omareach.json`.
-- **Commands it runs:** `hyprctl -j clients` on fullscreen events (to fit
-  fullscreen windows), `readlink` on the wallpaper link while a wallpaper fill
-  shows, and, while the stats fill shows, `stats.sh` (bash builtins reading
-  `/proc` and `/sys`) and `nvidia-smi`.
-- **Network:** none. It downloads and runs nothing from the internet. The
-  Now playing panel displays local cover files only; it ignores remote
-  artwork URLs supplied by media players.
+OmaReach runs as your user inside the Omarchy shell. Loading it installs
+nothing, writes only `~/.config/omarchy/omareach.json`, never edits your
+Hyprland config, and uses no network. The one root action is the stats
+fill's **CPU power** button, which opens a terminal that prints its fixed
+commands, asks, and runs them with `sudo` (see
+[The stats fill](#the-stats-fill)). [SECURITY.md](SECURITY.md) lists every
+command it runs and file it reads, and how to report a vulnerability.
 
 ## Usage
 
@@ -447,9 +431,15 @@ animation, which redraws once a second.
 
 ## Documentation
 
+- [Documentation index](docs/README.md): everything below and more.
 - [Architecture](docs/architecture.md): the components and how data flows
   between them.
 - [Decision records](docs/adr/README.md): why it works the way it does.
+- [Specs](docs/specs/): the [settings file](docs/specs/settings.md), the
+  [IPC actions](docs/specs/ipc.md) and the
+  [stats sampler's output](docs/specs/stats-frames.md).
+- [Troubleshooting](docs/runbooks/troubleshooting.md).
+- [Contributing](CONTRIBUTING.md) and [Security](SECURITY.md).
 - [Changelog](CHANGELOG.md).
 
 ## Development
@@ -461,5 +451,6 @@ omarchy plugin validate .    # the manifest, as the marketplace checks it
 
 The installed plugin, `~/.config/omarchy/plugins/pym.omareach`, is a
 git checkout of this repository: check out a branch there (or pull one into
-it) and restart the shell to try it. [AGENTS.md](AGENTS.md) has the conventions, and how to render the
-fills and the panel offscreen.
+it) and restart the shell to try it. [AGENTS.md](AGENTS.md) has the conventions, and the
+[development runbook](docs/runbooks/development.md) how to render the
+fills and the panel offscreen and how to release.

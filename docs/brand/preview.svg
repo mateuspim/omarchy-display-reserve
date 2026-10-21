@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3840" height="2160" viewBox="0 0 3840 2160">
+<!-- Editable source of the README hero. Render: rsvg-convert -o preview.png docs/brand/preview.svg
+     (see docs/runbooks/development.md#refresh-the-preview). Colours come from the
+     Tsukiyo theme the shipped hero was made in; see docs/branding.md. -->
+<defs>
+  <radialGradient id="slateGlow" cx="0" cy="1" r=".75">
+    <stop offset="0" stop-color="#2a343c" stop-opacity=".85"/><stop offset=".55" stop-color="#2a343c" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="topGlow" cx="1" cy="0" r=".7">
+    <stop offset="0" stop-color="#1c2328" stop-opacity=".9"/><stop offset=".6" stop-color="#1c2328" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="iconGlow" cx=".5" cy=".5" r=".5">
+    <stop offset="0" stop-color="#88a4ad" stop-opacity=".22"/><stop offset="1" stop-color="#88a4ad" stop-opacity="0"/>
+  </radialGradient>
+  <pattern id="dots" width="56" height="56" patternUnits="userSpaceOnUse">
+    <circle cx="28" cy="28" r="2.6" fill="#7a8f9d" opacity=".09"/>
+  </pattern>
+  <linearGradient id="panelFade" x1="0" y1="0" x2="0" y2="1">
+    <stop offset=".52" stop-color="#fff"/><stop offset=".68" stop-color="#fff" stop-opacity="0"/>
+  </linearGradient>
+  <mask id="panelMask" maskUnits="userSpaceOnUse" x="0" y="0" width="860" height="2132">
+    <rect width="860" height="2132" fill="url(#panelFade)"/>
+  </mask>
+  <filter id="shadow" x="-.2" y="-.2" width="1.5" height="1.5"><feGaussianBlur stdDeviation="40"/></filter>
+  <symbol id="mark" viewBox="0 0 24 24">
+    <!-- icon.svg, inlined so the hero renders standalone; keep in sync. -->
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2.5" y="3" width="19" height="14" rx="2" stroke="#88a4ad" stroke-width="1.5"/>
+      <rect x="4.5" y="5" width="15" height="3" rx=".6" fill="#88a4ad"/>
+      <rect x="4.5" y="12" width="15" height="3" rx=".6" fill="#88a4ad" opacity=".5"/>
+      <g fill="#9aa0a3"><circle cx="6.1" cy="10" r=".75"/><circle cx="8.2" cy="10" r=".75"/></g>
+      <path d="M15 10h2.9" stroke="#9aa0a3" stroke-width="1.3"/>
+      <path d="M12 17v2.6M8.5 20.6h7" stroke="#88a4ad" stroke-width="1.5"/>
+    </g>
+  </symbol>
+</defs>
+
+<!-- Background: Tsukiyo's darkest surface, a slate glow bottom-left, a dot grid. -->
+<rect width="3840" height="2160" fill="#0a0e13"/>
+<rect width="3840" height="2160" fill="url(#slateGlow)"/>
+<rect width="3840" height="2160" fill="url(#topGlow)"/>
+<rect width="3840" height="2160" fill="url(#dots)"/>
+
+<!-- Left column: mark, wordmark, tagline, subline, feature chips, install box. -->
+<circle cx="340" cy="430" r="250" fill="url(#iconGlow)"/>
+<use href="#mark" x="177" y="266" width="326" height="326"/>
+<text x="556" y="528" font-family="JetBrainsMono Nerd Font,JetBrains Mono,DejaVu Sans Mono,monospace" font-size="250" font-weight="500" letter-spacing="-4" fill="#d8d4cc">Oma<tspan fill="#88a4ad">Reach</tspan></text>
+<text x="194" y="720" font-family="JetBrainsMono Nerd Font,JetBrains Mono,DejaVu Sans Mono,monospace" font-size="76" font-weight="700" fill="#d8d4cc">Use only the screen you can reach.</text>
+<g font-family="JetBrainsMono Nerd Font,JetBrains Mono,DejaVu Sans Mono,monospace" font-size="54" fill="#8a9196">
+  <text x="194" y="864">Black out monitor edges you can't reach, like the</text>
+  <text x="194" y="945">top of a tall rotated screen, and keep the Omarchy</text>
+  <text x="194" y="1025">bar and tiled windows in the rest. Or fill them</text>
+  <text x="194" y="1106">with a clock, the logo, the wallpaper or a live</text>
+  <text x="194" y="1187">system dashboard.</text>
+</g>
+<!-- Chip icons are Nerd Font glyphs (JetBrainsMono Nerd Font). -->
+<g font-family="JetBrainsMono Nerd Font,JetBrains Mono,DejaVu Sans Mono,monospace" font-size="48" fill="#d8d4cc">
+  <g fill="#10161e" stroke="#243039" stroke-width="4">
+    <rect x="194" y="1281" width="568" height="106"/>
+    <rect x="795" y="1281" width="539" height="106"/>
+    <rect x="194" y="1419" width="568" height="106"/>
+    <rect x="795" y="1419" width="482" height="106"/>
+    <rect x="1308" y="1419" width="541" height="106"/>
+    <rect x="194" y="1557" width="511" height="106"/>
+    <rect x="737" y="1557" width="569" height="106"/>
+    <rect x="1338" y="1557" width="281" height="106"/>
+  </g>
+  <text x="232" y="1351">&#xF0E51;</text><text x="290" y="1351">Per-edge pixels</text>
+  <text x="833" y="1351">&#xF019E;</text><text x="891" y="1351">Aspect presets</text>
+  <text x="232" y="1489">&#xF0A07;</text><text x="290" y="1489">Stats dashboard</text>
+  <text x="833" y="1489">&#xF017;</text><text x="891" y="1489">Clock &amp; logo</text>
+  <text x="1346" y="1489">&#xF03E;</text><text x="1404" y="1489">Wallpaper fill</text>
+  <text x="232" y="1627">&#xF0C7;</text><text x="290" y="1627">Auto profiles</text>
+  <text x="775" y="1627">&#xF04B2;</text><text x="833" y="1627">Black when idle</text>
+  <text x="1376" y="1627">&#xF080;</text><text x="1434" y="1627">Ruler</text>
+</g>
+<rect x="194" y="1737" width="1434" height="140" fill="#121820" stroke="#243039" stroke-width="4"/>
+<g font-family="JetBrainsMono Nerd Font,JetBrains Mono,DejaVu Sans Mono,monospace" font-size="44">
+  <text x="250" y="1823" fill="#88a4ad">$</text>
+  <text x="307" y="1823" fill="#d8d4cc">omarchy plugin add github.com/mateuspim/omareach</text>
+</g>
+
+<!-- Right: a portrait 1080x1920 monitor with 660 px reserved on top showing
+     the stats fill (captures/stats.png), the bar under it, a terminal with
+     the IPC calls and a placeholder window. Local units: 0.912 per pixel. -->
+<g transform="translate(2112 228) rotate(-1.2)">
+  <rect x="-10" y="20" width="1060" height="1820" rx="40" fill="#000" opacity=".6" filter="url(#shadow)"/>
+  <rect x="-30" y="-28" width="1045" height="1808" rx="36" fill="#161c22" stroke="#34414a" stroke-width="5"/>
+  <rect x="0" y="0" width="985" height="1751" fill="#0a0e13"/>
+  <image x="0" y="0" width="985" height="602" href="captures/stats.png" xlink:href="captures/stats.png"/>
+  <rect x="0" y="602" width="985" height="42" fill="#0e1319"/>
+  <circle cx="44" cy="623" r="8" fill="#c8c4bb"/>
+  <circle cx="79" cy="623" r="8" fill="none" stroke="#c8c4bb" stroke-width="3"/>
+  <circle cx="111" cy="623" r="8" fill="none" stroke="#c8c4bb" stroke-width="3"/>
+  <rect x="22" y="644" width="941" height="595" rx="12" fill="#121820" stroke="#88a4ad" stroke-width="4"/>
+  <g font-family="JetBrainsMono Nerd Font,JetBrains Mono,DejaVu Sans Mono,monospace" font-size="22" fill="#b3b0a8" xml:space="preserve">
+    <text x="45" y="711"><tspan fill="#6a7175">~ ❯ </tspan>omarchy-shell pym.omareach edge DP-4 top <tspan fill="#c4b48a">660</tspan></text>
+    <text x="45" y="749"><tspan fill="#6a7175">~ ❯ </tspan>omarchy-shell pym.omareach fill DP-4 <tspan fill="#c4b48a">stats</tspan></text>
+    <text x="45" y="786"><tspan fill="#6a7175">~ ❯ </tspan>omarchy-shell pym.omareach saveProfile <tspan fill="#c4b48a">Desk</tspan></text>
+    <text x="45" y="823"><tspan fill="#6a7175">~ ❯ </tspan></text>
+  </g>
+  <rect x="100" y="802" width="11" height="26" fill="#c8c4bb"/>
+  <rect x="22" y="1262" width="941" height="468" rx="12" fill="#121820" stroke="#2c3740" stroke-width="4"/>
+  <g stroke="#2a333b" stroke-width="17" stroke-linecap="round">
+    <path d="M70 1306H600M70 1354H820M70 1402H700M70 1450H770M70 1498H460"/>
+  </g>
+</g>
+
+<!-- The panel (captures/panel.png), fading out below the CPU power row. -->
+<g transform="translate(3009 330) rotate(1.8) scale(.92)">
+  <rect x="20" y="40" width="860" height="1400" rx="20" fill="#000" opacity=".55" filter="url(#shadow)"/>
+  <g mask="url(#panelMask)">
+    <image x="0" y="0" width="860" height="2132" href="captures/panel.png" xlink:href="captures/panel.png"/>
+  </g>
+</g>
+</svg>
