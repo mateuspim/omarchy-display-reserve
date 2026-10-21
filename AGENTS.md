@@ -4,8 +4,9 @@ OmaReach is an Omarchy shell plugin (Quickshell/QML + bash) that blacks out
 monitor edges you can't reach and keeps the bar and tiled windows in the
 rest, with optional fills, including a btop-style stats dashboard. Plugin id
 `pym.omareach`; public at https://github.com/mateuspim/omareach. The README
-is the user manual; read its section before changing a feature. `docs/architecture.md`
-says how the parts fit, `docs/adr/` why, `docs/specs/` what the contracts
+is the landing page; the user manual is `docs/guide/` (one page per
+feature area), so read the guide before changing a feature.
+`docs/architecture.md` says how the parts fit, `docs/adr/` why, `docs/specs/` what the contracts
 are (settings file, IPC actions, `stats.sh` frames). `docs/README.md`
 indexes the rest; update the spec a change touches.
 
@@ -14,7 +15,7 @@ indexes the rest; update the spec a change touches.
 - Layout: every `.qml` and `.js` file, `stats.sh` and `cpu-power.sh` at the
   root. Omarchy loads the entry points in `manifest.json` (`Service.qml`,
   `Panel.qml`); QML finds siblings through `qmldir`, so a new component goes
-  in `qmldir` too. Don't add QML subfolders. Tests in `tests/`, README images
+  in `qmldir` too. Don't add QML subfolders. Tests in `tests/`, guide images
   in `docs/`.
 - Logic that can live without QML goes in `Model.js` (reserves, profiles,
   fills) or `Stats.js` (the dashboard), so Node can test it.
@@ -87,7 +88,7 @@ indexes the rest; update the spec a change touches.
   body that says why. Ask the owner before pushing commits or tags, and
   before publishing a GitHub release.
 - Release: bump `version` in `manifest.json` and `package.json`, add the
-  `CHANGELOG.md` entry, check the README covers the change, `npm test`,
+  `CHANGELOG.md` entry, check the README and guides cover the change, `npm test`,
   `omarchy plugin validate .`, commit `Release X.Y.Z`, annotated tag
   `vX.Y.Z` ("OmaReach X.Y.Z"). After pushing, file the marketplace's
   "Plugin verification" issue with the full 40-character commit SHA.

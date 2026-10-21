@@ -41,7 +41,7 @@ and theme's colours instead of these.
 | [`preview.svg`](brand/preview.svg) | Editable README hero layout. |
 | [`captures/`](brand/captures/) | Offscreen renders the hero places: the stats fill and the panel, with made-up data. |
 | [`preview.png`](../preview.png) | Rendered README hero at 3840 × 2160, also the marketplace image. |
-| [`panel.png`](panel.png), [`stats.png`](stats.png) | Smaller README images: the panel and the stats fill. |
+| [`panel.png`](panel.png), [`stats.png`](stats.png) | Guide images: the panel and the stats fill. |
 
 The logo SVGs and the preview inline the mark so they render standalone;
 keep their paths in sync with `icon.svg` when changing it. Wordmarks and

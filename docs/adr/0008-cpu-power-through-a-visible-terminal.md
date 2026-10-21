@@ -21,7 +21,7 @@ and makes the counter root's again. Nothing runs as root otherwise.
 
 ## Consequences
 
-- Every root command is on screen before it runs, and the README lists them
+- Every root command is on screen before it runs, and the [stats fill guide](../guide/stats-fill.md#cpu-power) lists them
   for doing it by hand.
 - The rule lets every local user read the counter; on a single-user desktop
   that gives little away.

@@ -50,10 +50,10 @@ it there. A bug fix gets a regression test.
 
 ## Make a change
 
-1. Read the README section for the feature, then
+1. Read the [guide](../guide/) for the feature, then
    [architecture](../architecture.md) and the relevant
    [ADR](../adr/README.md) or [spec](../specs/).
-2. Keep the change focused; update the README section, the spec it
+2. Keep the change focused; update the guide, the spec it
    touches and `CHANGELOG.md` under **Unreleased**.
 3. Run `npm test` and `omarchy plugin validate .`.
 4. For a UI change, render it offscreen (below), deploy, and check it by
@@ -415,7 +415,7 @@ chip icons are its glyphs. The current `preview.png` was rendered with
 librsvg 2.63.3 with that font installed. Other fonts change spacing and
 drop the icons, so inspect the output after rendering.
 
-The README's smaller images, `docs/panel.png` and `docs/stats.png`, are
+The guides' smaller images, `docs/panel.png` and `docs/stats.png`, are
 renders of the same two components; refresh them the same way when the
 panel or the dashboard changes.
 
@@ -423,7 +423,7 @@ panel or the dashboard changes.
 
 1. Bump `version` in `manifest.json` and `package.json`.
 2. Turn **Unreleased** in `CHANGELOG.md` into `## X.Y.Z — YYYY-MM-DD`.
-3. Check the README covers the change.
+3. Check the README and the guides cover the change.
 4. `npm test` and `omarchy plugin validate .`.
 5. Commit `Release X.Y.Z` and add an annotated tag:
    `git tag -a vX.Y.Z -m "OmaReach X.Y.Z"`.

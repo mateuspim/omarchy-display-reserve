@@ -119,7 +119,7 @@ while :; do
 
   # The CPU packages' energy counters, for their power draw, and Intel's
   # limit. Only root can read the counters unless a udev rule lets
-  # everyone (see the README); until then their lines carry no energy.
+  # everyone (see docs/guide/stats-fill.md); until then their lines carry no energy.
   printf '@rapl\n'
   for zone in /sys/class/powercap/intel-rapl:[0-9] /sys/class/powercap/intel-rapl:[0-9][0-9]; do
     [[ -d $zone ]] || continue

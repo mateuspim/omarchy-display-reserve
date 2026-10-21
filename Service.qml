@@ -149,8 +149,8 @@ Scope {
     return root.state.isReserved(name) ? "" : Model.fillName(fill) + "  ·  no reserved edges to show it"
   }
 
-  // omarchy-shell pym.omareach <function> [arguments]; README.md
-  // lists them.
+  // omarchy-shell pym.omareach <function> [arguments];
+  // docs/guide/keybinds-and-scripts.md lists them.
   IpcHandler {
     target: "pym.omareach"
 

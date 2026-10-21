@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- The README is a short landing page. The manual moved, word for word, to
+  guides in `docs/guide/`: the panel, fills, profiles, the stats fill,
+  keybinds and scripts, and how it works (with the saved settings and
+  known limitations), indexed in `docs/README.md`.
+
 ## 1.7.1 — 2026-10-21
 
 ### Added
