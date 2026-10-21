@@ -31,4 +31,4 @@ An edge at 0 has no surfaces at all.
 - Fullscreen windows ignore exclusive zones, which needed its own fix
   ([ADR 5](0005-fit-fullscreen-to-the-reachable-area.md)).
 - Omarchy's own popouts still assume the bar is at the screen edge (a known
-  limitation in the README).
+  limitation in [How it works](../guide/how-it-works.md#known-limitations)).

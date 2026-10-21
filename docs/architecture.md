@@ -3,7 +3,7 @@
 OmaReach is an Omarchy shell plugin: QML loaded into Omarchy's
 Quickshell, plus two bash scripts. This page is how the parts fit together
 today; the [decision records](adr/README.md) say why. The
-[README](../README.md) is the user manual.
+[guides](guide/) are the user manual.
 
 ## Entry points
 

@@ -27,7 +27,8 @@ details.
 ## Make a change
 
 1. Branch from `master`.
-2. Keep the change focused; update the README section, the
+2. Keep the change focused; update the guide in
+   [docs/guide](docs/guide/), the
    [spec](docs/specs/) or doc it affects.
 3. Add or update tests. Run `npm test` and `omarchy plugin validate .`.
 4. For UI changes, attach an offscreen render (see the
