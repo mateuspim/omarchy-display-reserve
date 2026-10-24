@@ -87,7 +87,7 @@ card2	amdgpu	freq	2200000000
 ${extra}@end
 `
 
-const ALL_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "pressure", "fans", "battery", "media", "system"]
+const ALL_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "battery", "media", "system"]
 
 const tests = {
   "parseFrame splits a frame into its sections"() {
@@ -152,16 +152,49 @@ const tests = {
     assert.equal(Stats.parseSensors(["cpu_thermal\ttemp1\t\t48000"], []).cpuTemp, 48)
     assert.equal(Stats.parseSensors([], []).cpuTemp, null)
   },
-  "parseSensors names the CPU dies and memory modules for the temperatures panel"() {
+  "parseSensors names the CPU dies and memory modules for the sensors panel"() {
     const sections = Stats.parseFrame(frame(0, [0]))
     const sensors = Stats.parseSensors(sections.hwmon, sections.nvme)
     assert.deepEqual(plain(sensors.temps), [
-      { name: "CPU", temp: 67.375 }, { name: "CCD 1", temp: 65.5 },
-      { name: "DIMM 1", temp: 58 }, { name: "DIMM 2", temp: 56.25 }
+      { name: "CPU", temp: 67.375, limit: 95 }, { name: "CCD 1", temp: 65.5, limit: 95 },
+      { name: "DIMM 1", temp: 58, limit: 85 }, { name: "DIMM 2", temp: 56.25, limit: 85 }
     ])
     // Intel's per-core sensors stay out; its package is the CPU.
     const intel = Stats.parseSensors(["coretemp\ttemp1\tPackage id 0\t55000", "coretemp\ttemp2\tCore 0\t50000"], [])
-    assert.deepEqual(plain(intel.temps), [{ name: "CPU", temp: 55 }])
+    assert.deepEqual(plain(intel.temps), [{ name: "CPU", temp: 55, limit: 100 }])
+  },
+  "parseSensors takes each sensor's critical temperature as its limit"() {
+    // stats.sh's fifth column, as a coretemp gives its TjMax and a DDR5
+    // module its limit; NVMe lines carry theirs third.
+    const sensors = Stats.parseSensors([
+      "coretemp\ttemp1\tPackage id 0\t72000\t105000",
+      "spd5118\ttemp1\t\t51000\t85000",
+      "spd5118\ttemp1\t\t49000\t"
+    ], ["nvme0\t42850\t84850", "nvme1\t33850"])
+    assert.equal(sensors.cpuTemp, 72)
+    assert.equal(sensors.cpuLimit, 105)
+    assert.deepEqual(plain(sensors.temps.map(t => t.limit)), [105, 85, 85])
+    assert.deepEqual(plain(sensors.nvmeLimits), { nvme0: 84.85, nvme1: 80 })
+    // k10temp gives none: AMD desktops throttle at 95 °C.
+    assert.equal(Stats.parseSensors(["k10temp\ttemp1\tTctl\t66000\t"], []).cpuLimit, 95)
+  },
+  "heat fills a meter from room temperature to the limit"() {
+    assert.equal(Stats.heat(30, 95), 0)
+    assert.equal(Stats.heat(95, 95), 1)
+    assert.equal(Stats.heat(62.5, 95), 0.5)
+    assert.equal(Stats.heat(20, 95), 0)
+    assert.equal(Stats.heat(null, 95), 0)
+    // No usable limit reads as 100 °C.
+    assert.equal(Stats.heat(65, null), 0.5)
+  },
+  "coreGroups splits a hybrid CPU's threads by kind"() {
+    assert.deepEqual(plain(Stats.cpuList("0-3,8,10-11")), [0, 1, 2, 3, 8, 10, 11])
+    assert.deepEqual(plain(Stats.cpuList("")), [])
+    assert.deepEqual(plain(Stats.coreGroups({ cpu_core: "0-15", cpu_atom: "16-23" })), {
+      performance: [...Array(16).keys()], efficient: [16, 17, 18, 19, 20, 21, 22, 23]
+    })
+    assert.equal(Stats.coreGroups({ cpu_core: "0-15" }), null)
+    assert.equal(Stats.coreGroups(null), null)
   },
   "parseSystem reads the host, kernel and uptime"() {
     const system = Stats.parseSystem(Stats.parseFrame(frame(0, [0])).system)
@@ -258,11 +291,10 @@ const tests = {
     assert.equal(state.network.rx, 1000)
     assert.equal(state.network.tx, 100)
     const nvme = state.disks.find(disk => disk.name === "nvme0n1")
-    assert.deepEqual(plain(nvme), { name: "nvme0n1", model: "KINGSTON SFYRDK2000G", read: 1024, write: 0, temp: 34.85 })
+    assert.deepEqual(plain(nvme), { name: "nvme0n1", model: "KINGSTON SFYRDK2000G", read: 1024, write: 0, temp: 34.85, tempLimit: 80 })
     assert.equal(state.disks.find(disk => disk.name === "sda").temp, null)
     assert.deepEqual(plain(state.history.cpu), [50])
     assert.deepEqual(plain(state.history.rx), [1000])
-    assert.equal(state.history.memory.length, 2)
   },
   "parseRapl sums the packages' energy counters, in joules"() {
     assert.deepEqual(plain(Stats.parseRapl(["package-0\t2000000\t65532610987", "package-1\t1000000\t65532610987"])),
@@ -366,7 +398,7 @@ const tests = {
     const [amd] = plain(Stats.drmGpus(Stats.parseDrm(sections.drm), {}, 0))
     assert.deepEqual(amd, {
       id: "card2", vendor: "AMD", name: "Radeon Graphics", kind: "integrated", asleep: false, resting: false,
-      load: 99, memUsed: 1228115968, memTotal: 2147483648, temp: 60, power: 0.157, powerLimit: null,
+      load: 99, memUsed: 1228115968, memTotal: 2147483648, temp: 60, tempLimit: 100, power: 0.157, powerLimit: null,
       clock: 2200, fan: null, encoder: null, decoder: null
     })
     // An AMD card with memory of its own (from a VRAM vendor) is a discrete one, and its fan
@@ -380,6 +412,8 @@ const tests = {
     const asleep = Stats.drmGpus({ card3: { driver: "amdgpu", status: "suspended" } }, {}, 0)[0]
     assert.equal(asleep.asleep, true)
     assert.equal(asleep.load, null)
+    // A card that gives a critical temperature is measured against it.
+    assert.equal(Stats.drmGpus({ card1: { driver: "amdgpu", status: "active", temp: 70000, temp_crit: 110000 } }, {}, 0)[0].tempLimit, 110)
   },
   "Intel load is the share of time the GPU was not idle"() {
     const now = { card0: { driver: "i915", freq_mhz: 1300, idle_ms: 5750 } }
@@ -404,10 +438,14 @@ const tests = {
     assert.equal(roles.main.name, "Radeon Graphics")
     assert.equal(roles.integrated, null)
   },
-  "the pressure view says so on a kernel without pressure stall information"() {
-    const state = Stats.step(Stats.empty(), frame(10, [0]).replace(/@psi\n(.*\n)*?@hwmon/, "@psi\n@hwmon"), [])
-    assert.equal(Views.view("pressure", state, palette).empty, "Not available on this kernel")
-    assert.deepEqual(plain(state.history.pressure), [])
+  "stalls show as rows on the CPU, memory and disks views, where the kernel reports them"() {
+    // Under 1%, a stall is left off: the frame's CPU stalls 0.12%.
+    assert.ok(!Views.view("cpu", full, palette).rows.some(row => row.label === "Stalled"))
+    assert.equal(Views.view("memory", full, palette).rows.find(row => row.label === "Stalled").text, "1.5%")
+    assert.equal(Views.view("disks", full, palette).rows.find(row => row.label === "Stalled").text, "4.0%")
+    const bare = Stats.step(Stats.empty(), frame(10, [0]).replace(/@psi\n(.*\n)*?@hwmon/, "@psi\n@hwmon"), [])
+    for (const panel of ["cpu", "memory", "disks"])
+      assert.ok(!Views.view(panel, bare, palette).rows.some(row => row.label === "Stalled"), panel)
   },
   "fit draws nothing on a strip with no size yet"() {
     for (const [w, h] of [[0, 0], [NaN, 100], [100, -5]]) {
@@ -435,7 +473,7 @@ const tests = {
     assert.equal(state.nvidia.load, 55)
     // The GPU history advances with the frames, one sample each.
     assert.deepEqual(plain(state.history.gpu), [55, 55])
-    assert.equal(state.history.gpu.length, state.history.memory.length)
+    assert.equal(state.history.gpu.length, state.history.cpu.length + 1)
     assert.deepEqual(plain(state.history.igpu), [99, 99])
   },
   "the GPU history starts over when another GPU becomes the main one"() {
@@ -451,7 +489,8 @@ const tests = {
   "palette builds btop-style gradients from the theme's named colors"() {
     const palette = Stats.palette({ foreground: "#d8dee9", background: "#2e3440", accent: "#81a1c1", muted: "#4c566a", red: "#bf616a", yellow: "#ebcb8b", green: "#a3be8c", cyan: "#88c0d0", blue: "#81a1c1", magenta: "#b48ead", orange: "#d5967a" })
     assert.deepEqual(plain(palette.gradients.cpu), ["#88c0d0", "#81a1c1", "#b48ead"])
-    assert.deepEqual(plain(palette.gradients.temp), ["#a3be8c", "#ebcb8b", "#bf616a"])
+    assert.deepEqual(plain(palette.gradients.level), ["#a3be8c", "#a3be8c", "#ebcb8b", "#bf616a"])
+    assert.equal(palette.alert, "#bf616a")
     assert.equal(palette.boxes.cpu, "#b48ead")
     assert.equal(palette.boxes.memory, "#a3be8c")
     assert.equal(palette.foreground, "#d8dee9")
@@ -459,11 +498,11 @@ const tests = {
   },
   "palette falls back to the numbered colors, then the foreground"() {
     const palette = Stats.palette({ color0: "#000000", color1: "#aa0000", color2: "#00aa00", color3: "#aaaa00", color4: "#0000aa", color5: "#aa00aa", color6: "#00aaaa", color7: "#cccccc", color8: "#555555" })
-    assert.deepEqual(plain(palette.gradients.temp), ["#00aa00", "#aaaa00", "#aa0000"])
+    assert.deepEqual(plain(palette.gradients.level), ["#00aa00", "#00aa00", "#aaaa00", "#aa0000"])
     assert.equal(palette.foreground, "#cccccc")
     assert.equal(palette.line, "#555555")
     // orange falls back to yellow.
-    assert.equal(palette.boxes.pressure, "#aaaa00")
+    assert.equal(palette.gradients.download[1], "#aaaa00")
     const bare = Stats.palette({}, { foreground: "#eeeeee", accent: "#3366ff" })
     assert.equal(bare.boxes.gpu, "#3366ff")
     assert.deepEqual(plain(bare.gradients.cpu), ["#3366ff", "#3366ff", "#3366ff"])
@@ -537,11 +576,12 @@ const tests = {
   "fit shrinks the text until every card has room for its content"() {
     // Four panels on the 1080x660 strip keep the largest text.
     assert.equal(Views.fit(["gpu", "cpu", "memory", "network"], 1080, 660).unit, 18)
-    // Eight panels make a 3x3 grid; the text shrinks to fit stacked cards.
+    // Every panel makes a crowded grid; the text shrinks until each card,
+    // stacked or wide, has room for its content.
     const dense = Views.fit(ALL_PANELS, 1080, 660)
     assert.ok(dense.unit < 18)
     assert.equal(dense.cards.length, ALL_PANELS.length)
-    for (const card of dense.cards) assert.ok(card.height >= Views.CARD_ROOM * dense.unit, JSON.stringify(card))
+    for (const card of dense.cards) assert.ok(Views.roomy(card, dense.unit), JSON.stringify(card))
     // A short, wide strip gets wide cards, which need less height.
     const strip = Views.fit(["gpu", "cpu", "memory", "network"], 2560, 160)
     assert.equal(strip.cards.length, 4)
@@ -628,7 +668,7 @@ Object.assign(tests, {
   "the CPU view lists its power draw first, with the clock beside the load"() {
     const view = Views.view("cpu", full, palette)
     assert.equal(view.caption, "load · 5.10 GHz")
-    // The Temperatures panel has the temperature too; nothing else has the power.
+    // The Sensors panel has the temperature too; nothing else has the power.
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["Power", "Temp", "Load"])
     // No known limit: the watts alone, without a meter.
     assert.equal(view.rows[0].text, "65 W")
@@ -636,13 +676,67 @@ Object.assign(tests, {
     const unclocked = Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { frequency: null, power: null }) })
     assert.equal(Views.view("cpu", unclocked, palette).caption, "load")
     assert.deepEqual(plain(Views.view("cpu", unclocked, palette).rows.map(row => row.label)), ["Temp", "Load"])
-    // Against the CPU's limit, blue to red, when it is known.
+    // Against the CPU's limit, green to red like every level meter, when it is known.
     const ryzen = Object.assign({}, full, { sysinfo: { cpu: "AMD Ryzen 9 9900X 12-Core Processor" } })
     const power = Views.view("cpu", ryzen, palette).rows[0]
     assert.equal(power.text, "65 / 162 W")
     assert.equal(power.fraction, 65 / 162)
-    assert.equal(power.color, Stats.gradientAt(palette.gradients.power, 65 / 162))
-    assert.deepEqual(plain(palette.gradients.power), ["#81a1c1", "#a3be8c", "#ebcb8b", "#bf616a"])
+    assert.equal(power.color, Stats.gradientAt(palette.gradients.level, 65 / 162))
+  },
+  "the CPU view's temperature fills towards the CPU's limit"() {
+    const temp = Views.view("cpu", full, palette).rows.find(row => row.label === "Temp")
+    assert.equal(temp.text, "67°C")
+    assert.equal(temp.fraction, Stats.heat(67.375, 95))
+  },
+  "the load average names its minutes where there is room, against the threads"() {
+    const narrow = Views.view("cpu", full, palette, undefined, false, 24).rows.find(row => row.label === "Load")
+    assert.equal(narrow.text, "0.52  0.61  0.70")
+    const wide = Views.view("cpu", full, palette, undefined, false, 26).rows.find(row => row.label === "Load")
+    assert.equal(wide.text, "1m 0.52  5m 0.61  15m 0.70")
+    // The frame has two threads: a load of 0.52 is about a quarter busy.
+    assert.equal(wide.fraction, 0.26)
+  },
+  "a hybrid CPU's bars come in two groups, performance first"() {
+    const hybrid = Object.assign({}, full, {
+      sysinfo: { cpu_core: "1", cpu_atom: "0" },
+      cpu: Object.assign({}, full.cpu, { cores: [10, 90], coreIds: [0, 1] })
+    })
+    const view = Views.view("cpu", hybrid, palette)
+    assert.equal(view.info, "1 P + 1 E threads")
+    assert.deepEqual(plain(view.bars.map(bar => bar.gap ? "gap" : bar.fraction)), [0.9, "gap", 0.1])
+    // One kind of core: one block, as before.
+    assert.ok(!Views.view("cpu", full, palette).bars.some(bar => bar.gap))
+  },
+  "a card asks for its warning color when something nears its limit"() {
+    assert.equal(Views.view("cpu", full, palette).alert, false)
+    const hotCpu = Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { temp: 92, tempLimit: 95 }) })
+    assert.equal(Views.view("cpu", hotCpu, palette).alert, true)
+    assert.equal(Views.view("temps", hotCpu, palette).alert, true)
+    const fullMemory = Object.assign({}, full, { memory: Object.assign({}, full.memory, { used: full.memory.total * 0.95 }) })
+    assert.equal(Views.view("memory", fullMemory, palette).alert, true)
+    const stalled = Object.assign({}, full, { pressure: { cpu: 0, memory: 0, io: 25 } })
+    assert.equal(Views.view("disks", stalled, palette).alert, true)
+  },
+  "the memory view is one stacked bar keyed by its rows"() {
+    const view = Views.view("memory", full, palette)
+    assert.equal(view.graphs.length, 0)
+    assert.equal(view.stack.length, 2)
+    const m = full.memory
+    assert.equal(view.stack[0].fraction, m.used / m.total)
+    assert.equal(view.stack[1].fraction, Math.min(m.cached, m.available) / m.total)
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Used", "Cached", "Available", "Swap", "Stalled"])
+    assert.ok(view.rows[0].swatch && view.rows[1].swatch && !view.rows[2].swatch)
+    assert.equal(view.rows[0].color, view.stack[0].color)
+    // Used and available already add up: no meters for them.
+    assert.equal(view.rows[2].fraction, null)
+  },
+  "the network graphs name the peak their top stands for"() {
+    const view = Views.view("network", full, palette)
+    assert.equal(view.graphs[0].peak, Stats.formatRate(view.graphs[0].max))
+    assert.equal(view.graphs[1].peak, Stats.formatRate(view.graphs[1].max))
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Since boot"])
+    assert.match(view.rows[0].text, /^↓ .+  ↑ .+$/)
+    assert.equal(Views.view("disks", full, palette).graphs[0].peak, Stats.formatRate(Views.view("disks", full, palette).graphs[0].max))
   },
   "the processes view lists CPU and GPU apps"() {
     const view = Views.view("processes", full, palette)
@@ -650,18 +744,27 @@ Object.assign(tests, {
     assert.equal(view.lists[0].items[0].name, "game")
     assert.equal(view.lists[0].items[0].text, "50%")
   },
-  "the temperatures view gathers every sensor, hottest colored hottest"() {
+  "the sensors view gathers every sensor, then the fans"() {
     const view = Views.view("temps", full, palette)
+    assert.equal(view.title, "Sensors")
     assert.equal(view.value, "67°C")
-    assert.equal(view.caption, "CPU")
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU", "CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2"])
+    assert.equal(view.caption, "CPU · max 95°C")
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU", "CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2", "CPU fan", "GPU fan"])
     assert.equal(view.rows.find(row => row.label === "GPU").text, "54°C")
+    assert.equal(view.rows.find(row => row.label === "GPU fan").text, "30%")
+    // Each against its own limit: NVIDIA's slowdown, a DIMM's critical.
+    assert.equal(view.rows.find(row => row.label === "GPU").fraction, Stats.heat(54, 90))
     assert.deepEqual(plain(view.graphs[0].values), [67.375, 67.375])
+    assert.equal(view.graphs[0].max, 95)
     // Rows past the card's room are left out: beside the headline in a
     // wide card, under it in a stacked one, where the value and graph take
     // about three rows' room.
     assert.equal(Views.view("temps", full, palette, 6, true).rows.length, 6)
     assert.equal(Views.view("temps", full, palette, 6, false).rows.length, 2)
+    // Without a CPU sensor there is no headline, just the fans.
+    const bare = Object.assign(Stats.empty(), { fans: [{ name: "CPU fan", rpm: 900 }] })
+    assert.equal(Views.view("temps", bare, palette).value, "")
+    assert.deepEqual(plain(Views.view("temps", bare, palette).rows.map(row => row.label)), ["CPU fan"])
   },
   "the system view leads with the uptime"() {
     const view = Views.view("system", full, palette)
@@ -759,27 +862,6 @@ Object.assign(tests, {
     assert.equal(art("file:///tmp/cover.png"), "file:///tmp/cover.png")
     for (const url of ["https://example.com/cover.png", "http://127.0.0.1/cover.png", "file://host/cover.png", "file:////host/cover.png", "data:image/png;base64,AAAA", "image://provider/cover"])
       assert.equal(art(url), "", url)
-  },
-  "the fans view adds the GPU fan"() {
-    const view = Views.view("fans", full, palette)
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU fan", "GPU"])
-    assert.equal(view.rows[1].text, "30%")
-  },
-  "the fans view leads with the GPU fan and its history"() {
-    const view = Views.view("fans", full, palette)
-    assert.equal(view.value, "30%")
-    assert.equal(view.caption, "GPU fan")
-    assert.equal(view.graphs.length, 1)
-    assert.deepEqual(plain(view.graphs[0].values), [30])
-    // Without a GPU there is no headline, just the rows.
-    const bare = Object.assign(Stats.empty(), { fans: [{ name: "CPU fan", rpm: 900 }] })
-    assert.equal(Views.view("fans", bare, palette).value, "")
-  },
-  "the GPU fan history advances with the frames"() {
-    const gpuLine = "0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"
-    let state = Stats.step(Stats.empty(), frame(10, [0]), gpuLine)
-    state = Stats.step(state, frame(11, [0]), "")
-    assert.deepEqual(plain(state.history.fan), [30, 30])
   },
   "the processes view fills the room it is given"() {
     const many = Array.from({ length: 12 }, (_, i) => ({ pid: i + 1, name: "p" + i, cpu: 50 - i, count: 1 }))
@@ -943,12 +1025,12 @@ Object.assign(tests, {
     // The value (about 1.8 rows), each graph (1), the core bars (1.4) and
     // the gap (0.3) come off the room first.
     assert.equal(Views.view("cpu", full, palette, 6, false).rows.length, 1)
-    assert.equal(Views.view("cpu", full, palette, 6, true).rows.length, 3)
-    assert.equal(Views.view("memory", full, palette, 6, false).rows.length, 2)
-    assert.equal(Views.view("network", full, palette, 5, false).rows.length, 2)
-    assert.equal(Views.view("pressure", full, palette, 3, false).rows.length, 1)
+    assert.equal(Views.view("cpu", full, palette, 3, true).rows.length, 3)
+    // The stacked bar takes less room than a graph did.
+    assert.equal(Views.view("memory", full, palette, 6, false).rows.length, 3)
+    assert.equal(Views.view("network", full, palette, 5, false).rows.length, 1)
     // Without a room, every row.
-    assert.equal(Views.view("memory", full, palette).rows.length, 4)
+    assert.equal(Views.view("memory", full, palette).rows.length, 5)
   },
   "the processes view counts an empty list's line"() {
     const many = Array.from({ length: 12 }, (_, i) => ({ pid: i + 1, name: "p" + i, cpu: 50 - i, count: 1 }))

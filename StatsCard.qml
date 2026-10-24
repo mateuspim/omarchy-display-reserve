@@ -33,15 +33,18 @@ Item {
   readonly property bool showsLogo: shown.logo === true && Reserve.ReserveState.iconArt !== null
     && logoSize >= unit * 4 && width - 3 * unit - logoSize >= unit * 20
   readonly property int line: Math.max(1, Math.round(unit / 12))
+  // A view that asks for attention trades its hue for the warning color,
+  // in a thicker, solid outline and title.
+  readonly property color outline: shown.alert ? theme.alert : shown.color
 
   Rectangle {
     anchors.fill: parent
     anchors.topMargin: Math.round(card.unit / 2)
     color: "transparent"
     radius: Math.round(card.unit * 0.55)
-    border.color: card.shown.color
-    border.width: card.line
-    opacity: 0.75
+    border.color: card.outline
+    border.width: card.shown.alert ? card.line * 2 : card.line
+    opacity: card.shown.alert ? 1 : 0.75
   }
 
   // The title, and on the right the panel's detail (a GPU's name, the
@@ -58,14 +61,14 @@ Item {
       Text {
         textFormat: Text.PlainText
         text: card.shown.icon
-        color: card.shown.color
+        color: card.outline
         font.family: card.fontFamily
         font.pixelSize: card.unit
       }
       Text {
         textFormat: Text.PlainText
         text: card.shown.title
-        color: card.theme.foreground
+        color: card.shown.alert ? card.theme.alert : card.theme.foreground
         font.family: card.fontFamily
         font.pixelSize: Math.round(card.unit * 0.9)
         font.bold: true
@@ -137,7 +140,7 @@ Item {
       // Side by side the rows' text needs more of the width than the graph.
       Layout.preferredWidth: 2
       spacing: Math.round(card.unit * 0.4)
-      visible: card.shown.value !== "" || card.shown.graphs.length > 0 || card.shown.bars.length > 0
+      visible: card.shown.value !== "" || card.shown.graphs.length > 0 || card.shown.bars.length > 0 || card.shown.stack.length > 0
 
       RowLayout {
         visible: card.shown.value !== ""
@@ -205,6 +208,46 @@ Item {
             style: Text.Outline
             styleColor: "black"
           }
+          // What the top of a self-scaling graph stands for.
+          Text {
+            textFormat: Text.PlainText
+            visible: !!parent.modelData.peak
+            anchors.right: parent.right
+            y: Math.round(card.unit * 0.1)
+            text: parent.modelData.peak ? "peak " + parent.modelData.peak : ""
+            color: card.theme.subtle
+            font.family: card.fontFamily
+            font.pixelSize: Math.round(card.unit * 0.7)
+            style: Text.Outline
+            styleColor: "black"
+          }
+        }
+      }
+
+      // Parts of a whole in one bar (memory: used, then cached), keyed by
+      // the rows' swatches.
+      Rectangle {
+        id: stack
+        visible: card.shown.stack.length > 0
+        Layout.fillWidth: true
+        Layout.preferredHeight: Math.max(4, Math.round(card.unit * 0.7))
+        radius: height / 2
+        color: card.theme.meter
+        clip: true
+        Row {
+          anchors.fill: parent
+          Repeater {
+            model: card.shown.stack.length
+            Rectangle {
+              id: part
+              required property int index
+              readonly property var modelData: card.shown.stack[index] || ({ fraction: 0, color: card.theme.meter })
+              Reserve.StatsEase { id: partShown; target: part.modelData.fraction }
+              width: Math.round(stack.width * partShown.value)
+              height: stack.height
+              color: modelData.color
+            }
+          }
         }
       }
 
@@ -220,10 +263,12 @@ Item {
           Rectangle {
             id: coreBar
             required property int index
-            readonly property var modelData: card.shown.bars[index] || ({ fraction: 0, color: card.theme.meter })
+            readonly property var modelData: card.shown.bars[index] || ({ fraction: 0, color: card.theme.meter, gap: false })
             width: Math.max(1, (cores.width - cores.spacing * (card.shown.bars.length - 1)) / card.shown.bars.length)
             height: cores.height
             radius: Math.min(width / 2, card.unit / 6)
+            // A gap between a hybrid CPU's kinds of core draws nothing.
+            opacity: modelData.gap ? 0 : 1
             color: card.theme.meter
             // The fraction eases, not the size: an eased size would keep
             // a stale track size when the card is laid out again.
@@ -255,12 +300,13 @@ Item {
         model: card.shown.rows.length
         StatRow {
           required property int index
-          readonly property var modelData: card.shown.rows[index] || ({ label: "", text: "", fraction: null, color: "" })
+          readonly property var modelData: card.shown.rows[index] || ({ label: "", text: "", fraction: null, color: "", swatch: false })
           Layout.fillWidth: true
           label: modelData.label
           text: modelData.text
           fraction: modelData.fraction
           barColor: modelData.color || card.shown.color
+          swatch: modelData.swatch === true
           labelWidth: card.unit * 5.5
         }
       }
@@ -421,13 +467,25 @@ Item {
     property real labelWidth: 0
     property bool labelFills: false
     property real meterWidth: 0
+    // A square of barColor before the label: the key to a stacked bar.
+    property bool swatch: false
     readonly property bool hasMeter: fraction !== null && fraction !== undefined
     implicitHeight: Math.round(card.unit * 1.25)
 
+    Rectangle {
+      id: swatchBox
+      visible: statRow.swatch
+      anchors.verticalCenter: parent.verticalCenter
+      width: visible ? Math.round(card.unit * 0.6) : 0
+      height: width
+      radius: Math.max(1, Math.round(card.unit / 8))
+      color: statRow.barColor
+    }
     Text {
       id: rowLabel
       textFormat: Text.PlainText
-      anchors.left: parent.left
+      anchors.left: swatchBox.visible ? swatchBox.right : parent.left
+      anchors.leftMargin: swatchBox.visible ? Math.round(card.unit * 0.4) : 0
       anchors.verticalCenter: parent.verticalCenter
       // Never into the value: a long value takes the room of the meter,
       // then of the label, which elides.

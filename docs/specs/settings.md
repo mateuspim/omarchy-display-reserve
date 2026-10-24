@@ -60,7 +60,7 @@ Every field is optional; `Model.normalize` fills in the rest.
 | `fill` | string | `"black"` | One of `black`, `theme`, `logo`, `wallpaper`, `dim`, `clock`, `stats`; anything else is `black`. |
 | `clockEdge` | string | `"largest"` | `largest` or `topBottom`: where the clock and stats fills go. |
 | `dim` | integer percent | `60` | Rounded and clamped to 10 to 90; a non-number is 60. |
-| `panels` | array of strings | `["gpu", "cpu", "memory", "network"]` | Known panel names only, each once, in the order `gpu`, `igpu`, `cpu`, `memory`, `network`, `disks`, `processes`, `temps`, `pressure`, `fans`, `battery`, `media`, `system`. Anything but an array is the default; `[]` is a dashboard with no panels. |
+| `panels` | array of strings | `["gpu", "cpu", "memory", "network"]` | Known panel names only, each once, in the order given, which is the order the dashboard lays them out and drops them from the end when the strip runs out of room. The names are `gpu`, `igpu`, `cpu`, `memory`, `network`, `disks`, `processes`, `temps` (the Sensors panel), `battery`, `media`, `system`. 1.7's `fans` reads as `temps` and its `pressure` is dropped, since their numbers moved to Sensors and to the CPU, Memory and Disks panels. Anything but an array is the default; `[]` is a dashboard with no panels. |
 
 The edges are stored as set, but drawn within a budget (`Model.fit`):
 opposite edges together reserve at most 90% of that axis. The first edge

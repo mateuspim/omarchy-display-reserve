@@ -36,11 +36,13 @@ nvidia=$(type -P nvidia-smi)
 # after five it is read only every tenth frame, so it can go to sleep.
 declare -A rest
 
-# A hwmon chip's lines (chip, sensor, label, value): its fans, and its
-# temperatures when it is the CPU's or memory's. A device asleep is left
+# A hwmon chip's lines (chip, sensor, label, value, critical): its fans,
+# and its temperatures when it is the CPU's or memory's, with the
+# temperature the chip calls critical when it gives one (Intel's TjMax, a
+# DIMM's limit), so a meter can fill towards it. A device asleep is left
 # alone: reading its sensors would wake it.
 sensors() {
-  local dir=$1 chip=$2 status="" input sensor label value
+  local dir=$1 chip=$2 status="" input sensor label value crit
   { read -r status < "$dir/device/power/runtime_status"; } 2>/dev/null
   [[ $status == suspended ]] && return
   local inputs=("$dir"/fan*_input)
@@ -49,10 +51,11 @@ sensors() {
     [[ -e $input ]] || continue
     sensor=${input##*/}
     sensor=${sensor%_input}
-    label="" value=""
+    label="" value="" crit=""
     [[ -r $dir/${sensor}_label ]] && read -r label < "$dir/${sensor}_label"
+    [[ -r $dir/${sensor}_crit ]] && { read -r crit < "$dir/${sensor}_crit"; } 2>/dev/null
     { read -r value < "$input"; } 2>/dev/null
-    printf '%s\t%s\t%s\t%s\n' "$chip" "$sensor" "$label" "$value"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$chip" "$sensor" "$label" "$value" "$crit"
   done
 }
 
@@ -111,9 +114,10 @@ while :; do
     for input in /sys/class/nvme/nvme*/hwmon*/temp1_input; do
       [[ -e $input ]] || continue
       controller=${input#/sys/class/nvme/}
-      value=""
+      value="" crit=""
       { read -r value < "$input"; } 2>/dev/null
-      printf '%s\t%s\n' "${controller%%/*}" "$value"
+      { read -r crit < "${input%_input}_crit"; } 2>/dev/null
+      printf '%s\t%s\t%s\n' "${controller%%/*}" "$value" "$crit"
     done
   fi
 
@@ -189,6 +193,12 @@ while :; do
     { while IFS=: read -r key value; do
         [[ $key == "model name"* ]] && { printf 'cpu\t%s\n' "${value# }"; break; }
       done < /proc/cpuinfo; } 2>/dev/null
+    # Intel's hybrid CPUs list their performance and efficient cores apart
+    # (cpu_core, cpu_atom), as CPU ranges like 0-15.
+    for kind in cpu_core cpu_atom; do
+      value=""; { read -r value < "/sys/devices/$kind/cpus"; } 2>/dev/null
+      [[ -n $value ]] && printf '%s\t%s\n' "$kind" "$value"
+    done
     # Installed packages: a directory each in pacman's database.
     packages=(/var/lib/pacman/local/*/)
     [[ -d ${packages[0]} ]] && printf 'packages\t%s\n' "${#packages[@]}"
@@ -245,6 +255,7 @@ while :; do
       if [[ $control == auto && $busy == 0 ]]; then rest[$id]=$(( ${rest[$id]:-0} + 1 )); else rest[$id]=0; fi
       for hwmon in "$dev"/hwmon/hwmon*; do
         gpu temp "$hwmon/temp1_input"
+        gpu temp_crit "$hwmon/temp1_crit"
         if [[ -r $hwmon/power1_average ]]; then gpu power "$hwmon/power1_average"; else gpu power "$hwmon/power1_input"; fi
         gpu power_cap "$hwmon/power1_cap"
         gpu freq "$hwmon/freq1_input"

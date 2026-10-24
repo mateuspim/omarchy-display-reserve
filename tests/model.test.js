@@ -16,28 +16,49 @@ const tests = {
     const { panels: _, ...empty } = Model.normalize(undefined)
     assert.deepEqual(empty, { enabled: true, fill: "black", clockEdge: "largest", dim: 60, top: 0, bottom: 0, left: 0, right: 0 })
   },
-  "panels keep known names, once each, in the dashboard's order"() {
-    assert.deepEqual([...Model.panelList(["network", "gpu", "rainbow", "gpu"])], ["gpu", "network"])
+  "panels keep known names, once each, in the order given"() {
+    assert.deepEqual([...Model.panelList(["network", "gpu", "rainbow", "gpu"])], ["network", "gpu"])
     assert.deepEqual([...Model.panelList([])], [])
     assert.deepEqual([...Model.panelList("gpu")], [...Model.STATS_DEFAULT])
     assert.deepEqual([...Model.panelList(undefined)], ["gpu", "cpu", "memory", "network"])
-    assert.deepEqual([...Model.normalize({ panels: ["fans", "cpu"] }).panels], ["cpu", "fans"])
-    assert.deepEqual([...Model.STATS_PANELS], ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "pressure", "fans", "battery", "media", "system"])
+    assert.deepEqual([...Model.normalize({ panels: ["system", "cpu"] }).panels], ["system", "cpu"])
+    assert.deepEqual([...Model.STATS_PANELS], ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "battery", "media", "system"])
     assert.equal(Model.panelFrom("Now playing"), "media")
     assert.equal(Model.panelFrom("temperatures"), "temps")
+    assert.equal(Model.panelFrom("Sensors"), "temps")
+    assert.equal(Model.panelFrom("fans"), "temps")
+    assert.equal(Model.panelFrom("pressure"), "")
     assert.equal(Model.STATS_PANELS[1], "igpu")
     assert.equal(Model.panelFrom("iGPU"), "igpu")
     assert.equal(Model.panelFrom("integrated"), "igpu")
   },
-  "togglePanel adds or removes one panel"() {
+  "retired panels read as the panel that took them over"() {
+    // 1.7's Fans panel is part of Sensors (temps); Pressure became rows.
+    assert.deepEqual([...Model.panelList(["fans", "cpu"])], ["temps", "cpu"])
+    assert.deepEqual([...Model.panelList(["temps", "fans"])], ["temps"])
+    assert.deepEqual([...Model.panelList(["pressure", "gpu"])], ["gpu"])
+    assert.deepEqual([...Model.normalize({ panels: ["pressure"] }).panels], [])
+  },
+  "togglePanel adds a panel last or removes it"() {
     assert.deepEqual([...Model.togglePanel(["gpu", "cpu"], "cpu")], ["gpu"])
-    assert.deepEqual([...Model.togglePanel(["gpu", "cpu"], "pressure")], ["gpu", "cpu", "pressure"])
+    assert.deepEqual([...Model.togglePanel(["memory", "cpu"], "gpu")], ["memory", "cpu", "gpu"])
     assert.deepEqual([...Model.togglePanel(["gpu"], "nope")], ["gpu"])
     assert.deepEqual([...Model.togglePanel(["gpu"], "gpu", true)], ["gpu"])
     assert.deepEqual([...Model.togglePanel(["gpu"], "cpu", false)], ["gpu"])
   },
-  "panelsFrom reads a comma list of names or labels"() {
-    assert.deepEqual([...Model.panelsFrom("CPU, gpu ,Disks")], ["gpu", "cpu", "disks"])
+  "movePanel moves a panel along the order, within it"() {
+    assert.deepEqual([...Model.movePanel(["gpu", "cpu", "memory"], "memory", -1)], ["gpu", "memory", "cpu"])
+    assert.deepEqual([...Model.movePanel(["gpu", "cpu", "memory"], "gpu", -1)], ["gpu", "cpu", "memory"])
+    assert.deepEqual([...Model.movePanel(["gpu", "cpu", "memory"], "gpu", 5)], ["cpu", "memory", "gpu"])
+    assert.deepEqual([...Model.movePanel(["gpu", "cpu"], "disks", 1)], ["gpu", "cpu"])
+  },
+  "panelOrder lists shown panels first, in their order, then the rest"() {
+    const order = [...Model.panelOrder(["network", "gpu"])]
+    assert.deepEqual(order.slice(0, 3), ["network", "gpu", "igpu"])
+    assert.equal(order.length, Model.STATS_PANELS.length)
+  },
+  "panelsFrom reads a comma list of names or labels, in that order"() {
+    assert.deepEqual([...Model.panelsFrom("CPU, gpu ,Disks")], ["cpu", "gpu", "disks"])
     assert.deepEqual([...Model.panelsFrom("all")], [...Model.STATS_PANELS])
     assert.deepEqual([...Model.panelsFrom("none")], [])
     assert.equal(Model.panelsFrom("gpu,rainbow"), null)
@@ -55,8 +76,10 @@ const tests = {
   },
   "the panel list counts in same and isDefault"() {
     assert.ok(!Model.same(Model.normalize({ panels: ["gpu"] }), Model.normalize({})))
-    assert.ok(Model.same(Model.normalize({ panels: ["cpu", "gpu", "memory", "network"] }), Model.normalize({})))
-    assert.ok(!Model.isDefault({ panels: ["fans"] }))
+    assert.ok(Model.same(Model.normalize({ panels: ["gpu", "cpu", "memory", "network"] }), Model.normalize({})))
+    // The order is the user's, so another order is another dashboard.
+    assert.ok(!Model.same(Model.normalize({ panels: ["cpu", "gpu", "memory", "network"] }), Model.normalize({})))
+    assert.ok(!Model.isDefault({ panels: ["temps"] }))
   },
   "the stats dashboard goes on one edge like the clock"() {
     const entry = Model.normalize({ top: 660, bottom: 100, fill: "stats" })
