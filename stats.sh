@@ -59,6 +59,40 @@ sensors() {
   done
 }
 
+# Each AMD and Intel card's marketing name, looked up once: sysfs gives
+# only PCI ids. libdrm's amdgpu.ids has AMD's names by device and revision
+# (as btop and nvtop use it); hwdata's pci.ids names the rest, with the
+# product in brackets ("Granite Ridge [Radeon 610M]"). Both are optional.
+declare -A gpu_names
+amdgpu_ids=${STATS_AMDGPU_IDS:-/usr/share/libdrm/amdgpu.ids}
+pci_ids=${STATS_PCI_IDS:-/usr/share/hwdata/pci.ids}
+for card in /sys/class/drm/card*; do
+  id=${card##*/}
+  [[ $id == *-* ]] && continue
+  vendor="" device="" revision=""
+  { read -r vendor < "$card/device/vendor"; read -r device < "$card/device/device"; read -r revision < "$card/device/revision"; } 2>/dev/null
+  vendor=${vendor#0x} device=${device#0x} revision=${revision#0x}
+  [[ $vendor == 1002 || $vendor == 8086 ]] || continue
+  name=""
+  if [[ $vendor == 1002 && -r $amdgpu_ids ]]; then
+    want="${device^^},"$'\t'"${revision^^},"$'\t'
+    while IFS= read -r line; do
+      [[ $line == "$want"* ]] && { name=${line#"$want"}; break; }
+    done < "$amdgpu_ids"
+  fi
+  if [[ -z $name && -r $pci_ids ]]; then
+    in_vendor=0
+    while IFS= read -r line; do
+      if [[ $line == "$vendor  "* ]]; then in_vendor=1; continue; fi
+      (( in_vendor )) || continue
+      [[ $line == $'\t'* ]] || break
+      [[ $line == $'\t'"$device  "* ]] && { name=${line#$'\t'"$device  "}; break; }
+    done < "$pci_ids"
+    [[ $name == *"["*"]"* ]] && { name=${name##*\[}; name=${name%%]*}; }
+  fi
+  [[ -n $name ]] && gpu_names[$id]=$name
+done
+
 # A pipe nobody writes to, for sleeping with read -t instead of forking
 # sleep on every frame.
 exec {sleeper}<> <(:)
@@ -193,6 +227,7 @@ while :; do
     { while IFS=: read -r key value; do
         [[ $key == "model name"* ]] && { printf 'cpu\t%s\n' "${value# }"; break; }
       done < /proc/cpuinfo; } 2>/dev/null
+    for id in "${!gpu_names[@]}"; do printf 'gpu_name_%s\t%s\n' "$id" "${gpu_names[$id]}"; done
     # Intel's hybrid CPUs list their performance and efficient cores apart
     # (cpu_core, cpu_atom), as CPU ranges like 0-15.
     for kind in cpu_core cpu_atom; do

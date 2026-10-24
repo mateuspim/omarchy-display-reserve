@@ -196,7 +196,6 @@ Item {
             lineWidth: Math.max(1.5, card.unit / 9)
           }
           Text {
-            id: graphLabel
             textFormat: Text.PlainText
             visible: parent.modelData.label !== ""
             x: Math.round(card.unit * 0.3)
@@ -206,21 +205,6 @@ Item {
             font.family: card.fontFamily
             font.pixelSize: Math.round(card.unit * 0.85)
             font.bold: true
-            style: Text.Outline
-            styleColor: "black"
-          }
-          // What the top of a self-scaling graph stands for, where it
-          // fits beside the graph's own label rather than over it.
-          Text {
-            textFormat: Text.PlainText
-            visible: !!parent.modelData.peak
-              && parent.width >= (graphLabel.visible ? graphLabel.x + graphLabel.implicitWidth : 0) + implicitWidth + card.unit
-            anchors.right: parent.right
-            y: Math.round(card.unit * 0.1)
-            text: parent.modelData.peak ? "peak " + parent.modelData.peak : ""
-            color: card.theme.subtle
-            font.family: card.fontFamily
-            font.pixelSize: Math.round(card.unit * 0.7)
             style: Text.Outline
             styleColor: "black"
           }
@@ -290,11 +274,14 @@ Item {
       }
     }
 
-    // The details: label, meter and value rows, then ranked lists.
+    // The details: label, meter and value rows, then ranked lists. No
+    // wider than this: across a very wide card a label and its value
+    // drift too far apart to read as one.
     ColumnLayout {
       Layout.fillWidth: true
       Layout.fillHeight: card.wide
       Layout.preferredWidth: 3
+      Layout.maximumWidth: card.unit * 40
       Layout.alignment: Qt.AlignTop
       spacing: Math.round(card.unit * 0.35)
       visible: card.shown.rows.length > 0 || card.shown.lists.length > 0

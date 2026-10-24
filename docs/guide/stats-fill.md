@@ -4,7 +4,7 @@ A live, btop-style system dashboard on one reserved edge.
 
 <p align="center">
   <img src="../stats.png" width="540"
-       alt="The top 660 pixels of a portrait monitor showing four btop-style boxes: GPU with a load graph and VRAM, temperature, power and clock meters; CPU with a bar per thread, power against its limit, temperature and load average; memory as one bar of used and cached memory keyed by its rows, with available and swap; and network download and upload graphs, each naming its peak, with the totals since boot">
+       alt="The top 660 pixels of a portrait monitor showing four btop-style boxes: GPU with a load graph and VRAM, temperature, power and clock meters; CPU with a bar per thread, power against its limit, temperature and load average; memory as one bar of used and cached memory keyed by its rows, with available and swap; and network download and upload graphs above rows for the rates, the peaks and the totals since boot">
 </p>
 
 The Stats fill shows live system numbers on one edge, as rounded boxes
@@ -13,14 +13,14 @@ with history graphs and meters:
 | Panel | Shows | From |
 | --- | --- | --- |
 | GPU | The discrete GPU: load, video memory, temperature, power against its limit, clock, fan, video encode/decode while busy | `nvidia-smi` for NVIDIA, sysfs for AMD and Intel |
-| iGPU | The integrated GPU beside it, read the same way | sysfs |
+| iGPU | The integrated GPU beside it, read the same way; on a machine with one GPU it takes no card | sysfs |
 | CPU | Load and clock with a bar per thread (performance and efficient cores apart on a hybrid Intel CPU), power draw against the CPU's limit, temperature, load average, and how long tasks stalled waiting for the CPU while they do | `/proc/stat`, the CPU's hwmon sensor, RAPL, cpufreq, `/proc/pressure` |
 | Memory | One bar of used and cached memory, available, swap, and how long tasks stalled waiting for memory while they do | `/proc/meminfo`, `/proc/pressure` |
-| Network | Download and upload graphs, each with the peak its top stands for, and totals since boot, on the interface of the default route | `/proc/net/dev`, `/proc/net/route` |
-| Disks | Read and write per disk with the peak of the last minute, NVMe temperatures, and how long tasks stalled on I/O while they do | `/proc/diskstats`, NVMe hwmon, `/proc/pressure` |
+| Network | Download and upload graphs, with the rates, the peak each graph's top stands for and the totals since boot as rows, on the interface of the default route | `/proc/net/dev`, `/proc/net/route` |
+| Disks | Read and write per disk with the peak of the last minute, NVMe temperatures (unless Sensors is shown), and how long tasks stalled on I/O while they do | `/proc/diskstats`, NVMe hwmon, `/proc/pressure` |
 | Processes | The busiest programs by CPU, processes of one name added up, and the apps using the most video memory | `/proc/<pid>/stat`, `nvidia-smi` |
-| Sensors | The CPU and its dies, the GPUs, NVMe drives and memory modules, each against its own limit, then every fan and the GPU's | hwmon, sysfs, `nvidia-smi` |
-| Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse or Bluetooth headphones | `/sys/class/power_supply`, the shell's UPower devices |
+| Sensors | The temperatures no other panel on the dashboard shows (the CPU and its dies, the GPUs, NVMe drives, memory modules), each against its own limit, led by the hottest for its limit, then the fans | hwmon, sysfs, `nvidia-smi` |
+| Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse or Bluetooth headphones; without a battery it takes no card | `/sys/class/power_supply`, the shell's UPower devices |
 | Now playing | The track playing, with its cover and progress | the shell's MPRIS players |
 | System | Like fastfetch: Omarchy's icon beside the uptime, OS, Omarchy version and update channel, host, kernel, CPU, GPUs, memory, packages, shell, desktop, theme, load and threads | `/proc`, `/sys`, `/etc/os-release`, pacman's database |
 
@@ -47,14 +47,25 @@ at a glance, from a distance:
   reports (Intel's TjMax, a memory module's or NVMe drive's limit, an AMD
   GPU's), or else where such parts throttle (95 °C for AMD's CPUs, 90 °C
   for NVIDIA's GPUs, which nvidia-smi does not report for every driver).
-  The Sensors headline names the CPU's limit.
+  The Sensors card names its leading sensor's limit.
 - **A warning color.** A card's outline and title turn red while one of
   its sensors is within 5 °C of its limit, memory is 90% used, video
   memory 95%, tasks stall 10% of the time, or a laptop's battery is at
   15% and draining.
-- **Graphs that name their scale.** The Network and Disks graphs scale
-  to the busiest second of the last minute, which the top right names
-  ("peak 3.3 MiB/s"), so a quiet minute does not look like a busy one.
+- **Graphs that name their scale, and carry no text.** The Network and
+  Disks graphs scale to the busiest second of the last minute, which the
+  Network card's Peak row and the Disks card's title corner name, so a
+  quiet minute does not look like a busy one. Text over a spiky graph is
+  unreadable, so the rates are rows, keyed to their graph by color.
+- **Each reading once.** The CPU, GPU and iGPU panels keep their own
+  temperatures beside their load; the Sensors panel leaves those out
+  while they are on the same dashboard, and the System panel leaves out
+  memory and load beside the Memory and CPU panels. A reading that only
+  makes a flat line over a minute (a temperature, a battery's level) gets
+  no graph.
+- **GPU names.** AMD and Intel GPUs are named by model ("Radeon 610M"),
+  looked up once in libdrm's `amdgpu.ids` and hwdata's `pci.ids`, since
+  the kernel reports only their PCI ids.
 - **The load average** names its 1, 5 and 15 minutes where the card is
   wide enough, and its meter is the last minute's load per thread.
 - **Stalls** (pressure stall information) show on the CPU, Memory and

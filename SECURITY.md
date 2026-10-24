@@ -27,7 +27,8 @@ This is what it does with that access:
   and their arguments are fixed; none is built from settings or IPC input.
 - **Reads:** `/proc` and `/sys` counters for the stats fill (sensors of a
   device the kernel put to sleep are skipped, since reading wakes it),
-  pacman's database and `/etc/os-release` for the System panel, the
+  pacman's database and `/etc/os-release` for the System panel, libdrm's
+  `amdgpu.ids` and hwdata's `pci.ids` for GPU names, the
   wallpaper through `~/.local/state/omarchy/current/background`, the
   theme's `colors.toml`, Omarchy's `logo.svg` and `icon.txt`, and the
   shell's MPRIS players and UPower devices. The Now playing panel shows

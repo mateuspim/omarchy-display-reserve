@@ -134,7 +134,16 @@ function stallRow(value, g) {
 }
 
 // Units of width from which the load average names its minutes.
-var LOAD_LABEL_SPAN = 26
+var LOAD_LABEL_SPAN = 22
+// Units of width under which the CPU's clock leaves the headline's
+// caption ("load · 5.30 GHz") for a row of its own.
+var CLOCK_CAPTION_SPAN = 24
+
+// The units of width a card's rows get: all of it in a stacked card, the
+// rows' three fifths of it beside the headline in a wide one.
+function rowSpan(span, wide) {
+  return wide ? Math.floor(span * 0.6) : span
+}
 
 // The 1, 5 and 15 minute load averages, a meter for the first against the
 // number of threads, where a load of one per thread is a busy CPU.
@@ -161,14 +170,15 @@ function graphMax(values, floor) {
 
 // What one panel shows, ready to draw: a title with an icon and the box's
 // color, an optional big value with a caption, graphs (each with an
-// optional label and `peak`, the text for its top), per-core bars (a
-// `gap` entry splits them into groups), a stacked bar of `stack` parts,
-// label/value rows with meters and ranked lists. `alert` asks for the
-// card's warning color. `empty` replaces the
+// optional label), per-core bars (a `gap` entry splits them into groups),
+// a stacked bar of `stack` parts, label/value rows with meters and ranked
+// lists. `alert` asks for the card's warning color. `empty` replaces the
 // content with a message. `room` is how many rows the card has space for,
-// for panels whose lists can grow to fill it, and `wide` whether its rows
-// sit beside the headline rather than under it.
-function view(panel, state, palette, room, wide, span) {
+// for panels whose lists can grow to fill it, `wide` whether its rows sit
+// beside the headline rather than under it, `span` its width in units,
+// and `shown` the other panels on the same dashboard, so a reading one of
+// them carries is not repeated here.
+function view(panel, state, palette, room, wide, span, shown) {
   var g = palette.gradients
   var result = {
     title: TITLES[panel] || panel, icon: ICONS[panel] || "", color: palette.boxes[panel] || palette.accent,
@@ -176,9 +186,25 @@ function view(panel, state, palette, room, wide, span) {
     graphs: [], bars: [], stack: [], rows: [], lists: [], empty: "", logo: false, alert: false
   }
   var build = VIEWS[panel]
-  if (build) build(result, state, palette, g, room, wide, span)
+  if (build) build(result, state, palette, g, room, wide, span, shown || [])
   if (room !== undefined) result.rows = result.rows.slice(0, rowsThatFit(result, room, wide))
   return result
+}
+
+// Whether `panel` has anything to show on this machine, once the sampler
+// has reported: a dashboard leaves out an iGPU panel without a second GPU
+// and a Battery panel without a battery rather than give them a card that
+// only says so. Before the first frame every panel counts.
+function available(panel, state) {
+  if (!state || state.time === null) return true
+  if (panel === "igpu") return Stats.gpuRoles(state).integrated !== null
+  if (panel === "battery") return state.power.length > 0
+  return true
+}
+
+// The panels of `panels` that have something to show, in their order.
+function availablePanels(panels, state) {
+  return panels.filter(function(panel) { return available(panel, state) })
 }
 
 // Rows' room each part of a stacked card's headline takes: the big value,
@@ -260,7 +286,7 @@ var VIEWS = {
     // The clock rides beside the load, so the power draw can have its row;
     // beside the rows of a wide card the headline is too narrow for both,
     // and the clock takes a row there instead.
-    var clockRow = wide && cpu.frequency !== null
+    var clockRow = cpu.frequency !== null && (wide || span < CLOCK_CAPTION_SPAN)
     v.caption = cpu.frequency !== null && !clockRow ? "load · " + Stats.formatFrequency(cpu.frequency) : "load"
     v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
     function bar(load) { return { fraction: load / 100, color: Stats.gradientAt(g.cpu, load / 100), gap: false } }
@@ -286,7 +312,7 @@ var VIEWS = {
       if (hot(cpu.temp, cpu.tempLimit)) v.alert = true
     }
     if (clockRow) v.rows.push(row("Clock", Stats.formatFrequency(cpu.frequency), null))
-    if (cpu.loadavg.length) v.rows.push(loadRow(cpu.loadavg, cpu.threads, g, span))
+    if (cpu.loadavg.length) v.rows.push(loadRow(cpu.loadavg, cpu.threads, g, rowSpan(span, wide)))
     var stall = state.pressure && state.pressure.cpu
     if (stall !== null && stall !== undefined && stall >= STALL_SHOWN) {
       v.rows.push(stallRow(stall, g))
@@ -328,26 +354,35 @@ var VIEWS = {
     var n = state.network
     if (!n.interface) { v.empty = "No network"; return }
     v.info = n.interface
-    // Each graph scales to its own peak, which its top names: otherwise
-    // 30 KiB/s and 1 GiB/s draw the same mountain.
+    // The graphs carry no text: over a spiky graph it is unreadable. The
+    // rates are rows keyed to their graph's color, and each graph scales to
+    // its own peak, which a row names: otherwise 30 KiB/s and 1 GiB/s draw
+    // the same mountain.
     var rxMax = graphMax(state.history.rx, 10240), txMax = graphMax(state.history.tx, 10240)
-    v.graphs.push({ values: state.history.rx, max: rxMax, stops: g.download, label: "↓ " + Stats.formatRate(n.rx), peak: Stats.formatRate(rxMax) })
-    v.graphs.push({ values: state.history.tx, max: txMax, stops: g.upload, label: "↑ " + Stats.formatRate(n.tx), peak: Stats.formatRate(txMax) })
+    v.graphs.push({ values: state.history.rx, max: rxMax, stops: g.download, label: "" })
+    v.graphs.push({ values: state.history.tx, max: txMax, stops: g.upload, label: "" })
+    v.rows.push(keyRow("Down", Stats.formatRate(n.rx), g.download[1]))
+    v.rows.push(keyRow("Up", Stats.formatRate(n.tx), g.upload[1]))
+    v.rows.push(row("Peak", "↓ " + Stats.formatShort(rxMax) + "  ↑ " + Stats.formatShort(txMax), null))
     // Totals since boot, a row each: one row for both is cut off beside
     // the graphs of a wide card.
     v.rows.push(row("Received", Stats.formatBytes(n.rxTotal), null))
     v.rows.push(row("Sent", Stats.formatBytes(n.txTotal), null))
   },
 
-  disks: function(v, state, palette, g, room, wide, span) {
+  disks: function(v, state, palette, g, room, wide, span, shown) {
     if (!state.disks.length) { v.empty = "No disks"; return }
-    v.info = state.disks.length === 1 ? "1 disk" : state.disks.length + " disks"
+    // The graph of every disk's reads and writes scales to its busiest
+    // second, which the title's corner names beside the disk count.
     var diskMax = graphMax(state.history.disk, 1048576)
-    v.graphs.push({ values: state.history.disk, max: diskMax, stops: g.process, label: "I/O", peak: Stats.formatRate(diskMax) })
+    v.info = (state.disks.length > 1 ? state.disks.length + " disks · " : "") + "peak " + Stats.formatShort(diskMax) + "/s"
+    v.graphs.push({ values: state.history.disk, max: diskMax, stops: g.process, label: "" })
+    var sensors = shown.indexOf("temps") !== -1
     v.rows = state.disks.map(function(disk) {
       var text = "R " + Stats.formatShort(disk.read) + "  W " + Stats.formatShort(disk.write)
-      // A narrow card has no room for it; the Sensors panel has it.
-      if (disk.temp !== null && !(span < DISK_TEMP_SPAN)) text += "  " + Stats.formatTemp(disk.temp)
+      // A narrow card has no room for it, and beside a Sensors panel it
+      // would be there twice.
+      if (disk.temp !== null && !sensors && !(rowSpan(span, wide) < DISK_TEMP_SPAN)) text += "  " + Stats.formatTemp(disk.temp)
       if (hot(disk.temp, disk.tempLimit)) v.alert = true
       return row(disk.name, text, null)
     })
@@ -382,45 +417,47 @@ var VIEWS = {
   },
 
 
-  // Every sensor: the CPU's and its dies', the GPUs', NVMe drives' and
-  // memory modules' temperatures, each against its own limit, then the
-  // fans.
-  temps: function(v, state, palette, g, room, wide) {
-    function temp(name, value, limit) {
-      if (hot(value, limit)) v.alert = true
-      return heatRow(name, value, limit, g)
-    }
+  // Every sensor the other panels on the dashboard do not show: the CPU's
+  // and its dies', the GPUs', NVMe drives' and memory modules'
+  // temperatures, each against its own limit, then the fans. The hottest
+  // for its limit leads; a graph of it would be a flat line.
+  temps: function(v, state, palette, g, room, wide, span, shown) {
+    function has(panel) { return shown.indexOf(panel) !== -1 }
     var roles = Stats.gpuRoles(state)
-    // The CPU's own sensor is the headline, so it gets no row as well.
-    var headline = state.cpu.temp !== null
-    var cpu = state.temps.filter(function(t) { return !/^DIMM /.test(t.name) && !(headline && t.name === "CPU") })
-    var dimms = state.temps.filter(function(t) { return /^DIMM /.test(t.name) })
-    v.rows = cpu.map(function(t) { return temp(t.name, t.temp, t.limit) })
-    if (roles.main && roles.main.temp !== null) v.rows.push(temp("GPU", roles.main.temp, roles.main.tempLimit))
-    if (roles.integrated && roles.integrated.temp !== null) v.rows.push(temp("iGPU", roles.integrated.temp, roles.integrated.tempLimit))
+    var temps = []
+    function add(name, temp, limit) { if (temp !== null && temp !== undefined) temps.push({ name: name, temp: temp, limit: limit }) }
+    state.temps.filter(function(t) { return !/^DIMM /.test(t.name) }).forEach(function(t) {
+      // The CPU panel shows the CPU's own sensor; its dies are only here.
+      if (!(t.name === "CPU" && has("cpu"))) add(t.name, t.temp, t.limit)
+    })
+    if (roles.main && !has("gpu")) add("GPU", roles.main.temp, roles.main.tempLimit)
+    if (roles.integrated && !has("igpu")) add("iGPU", roles.integrated.temp, roles.integrated.tempLimit)
     Object.keys(state.nvmeTemps).sort().forEach(function(controller) {
       var disk = state.disks.filter(function(d) { return d.name.indexOf(controller + "n") === 0 })[0]
-      v.rows.push(temp(disk ? disk.name : controller, state.nvmeTemps[controller], (state.nvmeLimits || {})[controller]))
+      add(disk ? disk.name : controller, state.nvmeTemps[controller], (state.nvmeLimits || {})[controller])
     })
-    dimms.forEach(function(t) { v.rows.push(temp(t.name, t.temp, t.limit)) })
+    state.temps.filter(function(t) { return /^DIMM /.test(t.name) }).forEach(function(t) { add(t.name, t.temp, t.limit) })
+    temps.forEach(function(t) { if (hot(t.temp, t.limit)) v.alert = true })
+
+    var lead = null
+    temps.forEach(function(t) { if (!lead || Stats.heat(t.temp, t.limit) > Stats.heat(lead.temp, lead.limit)) lead = t })
+    if (lead) {
+      v.value = Stats.formatTemp(lead.temp)
+      v.valueColor = Stats.gradientAt(g.level, Stats.heat(lead.temp, lead.limit))
+      // Its name beside it, or in a wide card, where the headline is too
+      // narrow for a caption, in the title's corner with its limit.
+      var limit = lead.limit ? "max " + Stats.formatTemp(lead.limit) : ""
+      v.caption = wide ? "" : lead.name
+      v.info = wide ? [lead.name, limit].filter(Boolean).join(" ") : limit
+    }
+    v.rows = temps.filter(function(t) { return t !== lead }).map(function(t) { return heatRow(t.name, t.temp, t.limit, g) })
     // Fans against 3000 RPM, about as fast as a desktop's case and CPU
-    // fans spin, and the GPU's in percent.
+    // fans spin, and the GPU's in percent unless its panel has it.
     state.fans.forEach(function(fan) {
       v.rows.push(row(fan.name, fan.rpm + " RPM", fan.rpm / 3000, Stats.gradientAt(g.level, fan.rpm / 3000)))
     })
-    if (roles.main && roles.main.fan !== null) v.rows.push(row("GPU fan", Stats.formatPercent(roles.main.fan), roles.main.fan / 100, Stats.gradientAt(g.level, roles.main.fan / 100)))
-    if (state.cpu.temp !== null) {
-      var level = Stats.heat(state.cpu.temp, state.cpu.tempLimit)
-      if (hot(state.cpu.temp, state.cpu.tempLimit)) v.alert = true
-      v.value = Stats.formatTemp(state.cpu.temp)
-      v.valueColor = Stats.gradientAt(g.level, level)
-      v.caption = "CPU"
-      // In the title's corner, where the headline's narrow caption would
-      // cut it off.
-      if (state.cpu.tempLimit) v.info = "CPU max " + Stats.formatTemp(state.cpu.tempLimit)
-      v.graphs.push({ values: state.history.temp, max: state.cpu.tempLimit || 100, stops: g.level, label: "" })
-    }
-    if (!v.rows.length) v.empty = "No sensors"
+    if (roles.main && roles.main.fan !== null && !has("gpu")) v.rows.push(row("GPU fan", Stats.formatPercent(roles.main.fan), roles.main.fan / 100, Stats.gradientAt(g.level, roles.main.fan / 100)))
+    if (!lead && !v.rows.length) v.empty = shown.length ? "Every sensor is on its own panel" : "No sensors"
   },
 
   battery: function(v, state, palette, g) {
@@ -434,7 +471,6 @@ var VIEWS = {
       v.value = Stats.formatPercent(lead.capacity)
       v.valueColor = Stats.gradientAt(g.level, 1 - lead.capacity / 100)
       v.caption = lead.name
-      v.graphs.push({ values: state.history.battery, max: 100, stops: g.used, label: "" })
     }
     if (laptop) {
       var cap = laptop.capacity
@@ -444,7 +480,6 @@ var VIEWS = {
       if (laptop.status === "Discharging" && laptop.power > 0 && laptop.energy !== null) v.caption = hours(laptop.energy / laptop.power) + " left"
       else if (laptop.status === "Charging" && laptop.power > 0 && laptop.full !== null) v.caption = hours((laptop.full - laptop.energy) / laptop.power) + " to full"
       else v.caption = String(laptop.status || "").toLowerCase()
-      v.graphs.push({ values: state.history.battery, max: 100, stops: g.used, label: "" })
       if (laptop.power !== null) v.rows.push(row("Power", laptop.power.toFixed(1) + " W", null))
       if (laptop.energy !== null && laptop.full) v.rows.push(row("Energy", laptop.energy.toFixed(1) + " / " + laptop.full.toFixed(1) + " Wh", null))
     }
@@ -475,7 +510,7 @@ var VIEWS = {
     }
   },
 
-  system: function(v, state, palette, g, room, wide, span) {
+  system: function(v, state, palette, g, room, wide, span, shown) {
     var system = state.system
     if (!system) { v.empty = "Waiting for data"; return }
     var info = state.sysinfo || {}
@@ -496,7 +531,9 @@ var VIEWS = {
     var roles = Stats.gpuRoles(state)
     if (roles.main) add("GPU", roles.main.name)
     if (roles.integrated) add("iGPU", roles.integrated.name)
-    if (state.memory && state.memory.total) add("Memory", Stats.formatPair(state.memory.used, state.memory.total))
+    // Live numbers another panel on the dashboard already shows are left
+    // to it.
+    if (state.memory && state.memory.total && shown.indexOf("memory") === -1) add("Memory", Stats.formatPair(state.memory.used, state.memory.total))
     var packages = []
     if (Number(info.packages) > 0) packages.push(info.packages + " pacman")
     if (Number(info.flatpaks) > 0) packages.push(info.flatpaks + " flatpak")
@@ -504,7 +541,7 @@ var VIEWS = {
     add("Shell", info.shell)
     add("Desktop", info.desktop)
     add("Theme", Stats.themeName(info.theme))
-    if (state.cpu.loadavg.length) v.rows.push(loadRow(state.cpu.loadavg, state.cpu.threads, g, span))
+    if (state.cpu.loadavg.length && shown.indexOf("cpu") === -1) v.rows.push(loadRow(state.cpu.loadavg, state.cpu.threads, g, rowSpan(span, wide)))
     if (state.threads !== null) v.rows.push(row("Threads", String(state.threads), null))
   }
 }

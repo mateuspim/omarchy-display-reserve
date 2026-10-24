@@ -20,6 +20,9 @@
   as two groups of bars, and the CPU card counts each.
 - **Same on every monitor** on the Fill page, which right-click alone
   used to do.
+- **GPU names:** AMD and Intel GPUs show their model ("Radeon 610M"
+  rather than "Radeon Graphics"), looked up once in libdrm's `amdgpu.ids`
+  and hwdata's `pci.ids`.
 
 ### Changed
 
@@ -30,8 +33,19 @@
 - **Memory card:** one bar of used and cached memory keyed by its rows,
   in place of a flat graph and meters for Used and Available, which said
   the same thing twice.
-- **Network and Disks graphs** name the peak their top stands for; the
-  Network totals are one Since boot row.
+- **Network and Disks graphs** carry no text, which was unreadable over
+  a spiky graph: the rates and the peak each graph's top stands for are
+  rows, and the Disks peak is in its title.
+- **Each reading once:** the Sensors panel leaves out the temperatures
+  of the CPU, GPU and iGPU panels on the same dashboard and leads with
+  the hottest sensor for its limit; the Disks panel leaves NVMe
+  temperatures to Sensors, and System leaves memory and load to their
+  panels. Sensors and Battery drop graphs that were flat lines.
+- **No empty cards:** an iGPU panel without a second GPU and a Battery
+  panel without a battery take no room on the dashboard.
+- **Small cards:** in a narrow or wide card the CPU's clock and the load
+  average's minutes move or shorten instead of being cut off, and a wide
+  System card puts Omarchy's logo beside the facts.
 - **Load average** names its minutes where the card is wide enough, with
   a meter for the load per thread.
 - **One meter color rule:** every meter that measures closeness to a

@@ -415,6 +415,16 @@ const tests = {
     // A card that gives a critical temperature is measured against it.
     assert.equal(Stats.drmGpus({ card1: { driver: "amdgpu", status: "active", temp: 70000, temp_crit: 110000 } }, {}, 0)[0].tempLimit, 110)
   },
+  "drmGpus names a card by the marketing name stats.sh looked up"() {
+    const card = { card2: { driver: "amdgpu", status: "active", busy: 5 } }
+    // From pci.ids, the bracketed product; from amdgpu.ids, without "AMD".
+    assert.equal(Stats.drmGpus(card, {}, 0, {}, [], { gpu_name_card2: "Radeon 610M" })[0].name, "Radeon 610M")
+    assert.equal(Stats.drmGpus(card, {}, 0, {}, [], { gpu_name_card2: "AMD Radeon 780M Graphics" })[0].name, "Radeon 780M")
+    assert.equal(Stats.drmGpus({ card0: { driver: "i915", freq_mhz: 300 } }, {}, 0, {}, [], { gpu_name_card0: "UHD Graphics 770" })[0].name, "Intel UHD Graphics 770")
+    assert.equal(Stats.drmGpus(card, {}, 0, {}, [], { gpu_name_card2: "AMD Radeon Graphics" })[0].name, "Radeon Graphics")
+    // Without one, by vendor and kind.
+    assert.equal(Stats.drmGpus(card, {}, 0, {}, [], {})[0].name, "Radeon Graphics")
+  },
   "Intel load is the share of time the GPU was not idle"() {
     const now = { card0: { driver: "i915", freq_mhz: 1300, idle_ms: 5750 } }
     const [intel] = Stats.drmGpus(now, { card0: 5000 }, 1)
@@ -613,7 +623,7 @@ ALL_PANELS.forEach(panel => {
     assert.ok(view.title && view.icon, panel)
     assert.match(view.color, /^#[0-9a-f]{6}$/)
     assert.equal(view.empty, "", panel + " should have data")
-    assert.ok(view.rows.length + view.lists.length + view.bars.length + view.graphs.length + (view.media ? 1 : 0) > 0, panel)
+    assert.ok(view.rows.length + view.lists.length + view.bars.length + view.graphs.length + (view.media ? 1 : 0) + (view.value ? 1 : 0) > 0, panel)
     for (const row of view.rows) assert.ok(row.fraction === null || (row.fraction >= 0 && row.fraction <= 1), JSON.stringify(row))
     const empty = Views.view(panel, Stats.empty(), palette)
     assert.equal(empty.title, view.title)
@@ -705,9 +715,9 @@ Object.assign(tests, {
     assert.equal(wide.rows.find(row => row.label === "Uptime").text, stacked.value)
   },
   "the load average names its minutes where there is room, against the threads"() {
-    const narrow = Views.view("cpu", full, palette, undefined, false, 24).rows.find(row => row.label === "Load")
+    const narrow = Views.view("cpu", full, palette, undefined, false, 20).rows.find(row => row.label === "Load")
     assert.equal(narrow.text, "0.52  0.61  0.70")
-    const wide = Views.view("cpu", full, palette, undefined, false, 26).rows.find(row => row.label === "Load")
+    const wide = Views.view("cpu", full, palette, undefined, false, 22).rows.find(row => row.label === "Load")
     assert.equal(wide.text, "1m 0.52  5m 0.61  15m 0.70")
     // The frame has two threads: a load of 0.52 is about a quarter busy.
     assert.equal(wide.fraction, 0.26)
@@ -727,7 +737,8 @@ Object.assign(tests, {
     assert.equal(Views.view("cpu", full, palette).alert, false)
     const hotCpu = Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { temp: 92, tempLimit: 95 }) })
     assert.equal(Views.view("cpu", hotCpu, palette).alert, true)
-    assert.equal(Views.view("temps", hotCpu, palette).alert, true)
+    const hotSensor = Object.assign({}, full, { temps: full.temps.map(t => t.name === "CPU" ? Object.assign({}, t, { temp: 92 }) : t) })
+    assert.equal(Views.view("temps", hotSensor, palette).alert, true)
     const fullMemory = Object.assign({}, full, { memory: Object.assign({}, full.memory, { used: full.memory.total * 0.95 }) })
     assert.equal(Views.view("memory", fullMemory, palette).alert, true)
     const stalled = Object.assign({}, full, { pressure: { cpu: 0, memory: 0, io: 25 } })
@@ -746,13 +757,20 @@ Object.assign(tests, {
     // Used and available already add up: no meters for them.
     assert.equal(view.rows[2].fraction, null)
   },
-  "the network graphs name the peak their top stands for"() {
+  "the network rates are rows keyed to their graphs, which carry no text"() {
     const view = Views.view("network", full, palette)
-    assert.equal(view.graphs[0].peak, Stats.formatRate(view.graphs[0].max))
-    assert.equal(view.graphs[1].peak, Stats.formatRate(view.graphs[1].max))
-    // A row each: one row for both was cut off beside a wide card's graphs.
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Received", "Sent"])
-    assert.equal(Views.view("disks", full, palette).graphs[0].peak, Stats.formatRate(Views.view("disks", full, palette).graphs[0].max))
+    // Text over a spiky graph is unreadable.
+    assert.ok(view.graphs.every(graph => graph.label === ""))
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Down", "Up", "Peak", "Received", "Sent"])
+    assert.equal(view.rows[0].text, Stats.formatRate(full.network.rx))
+    assert.ok(view.rows[0].swatch && view.rows[1].swatch)
+    assert.equal(view.rows[0].color, palette.gradients.download[1])
+    // The peak each graph's top stands for.
+    assert.equal(view.rows[2].text, "↓ " + Stats.formatShort(view.graphs[0].max) + "  ↑ " + Stats.formatShort(view.graphs[1].max))
+    // The disks graph's peak sits in the title's corner.
+    const disks = Views.view("disks", full, palette)
+    assert.equal(disks.info, "2 disks · peak " + Stats.formatShort(disks.graphs[0].max) + "/s")
+    assert.equal(disks.graphs[0].label, "")
   },
   "the processes view lists CPU and GPU apps"() {
     const view = Views.view("processes", full, palette)
@@ -760,30 +778,63 @@ Object.assign(tests, {
     assert.equal(view.lists[0].items[0].name, "game")
     assert.equal(view.lists[0].items[0].text, "50%")
   },
-  "the sensors view gathers every sensor, then the fans"() {
+  "the sensors view leads with the hottest sensor for its limit, then the rest and the fans"() {
     const view = Views.view("temps", full, palette)
     assert.equal(view.title, "Sensors")
+    // The CPU, 67 °C of 95, is nearest its limit; it has no row as well,
+    // and its limit sits in the title's corner, clear of the caption.
     assert.equal(view.value, "67°C")
-    // The headline is the CPU, so it has no row of its own, and its limit
-    // sits in the title's corner, clear of the narrow caption.
     assert.equal(view.caption, "CPU")
-    assert.equal(view.info, "CPU max 95°C")
+    assert.equal(view.info, "max 95°C")
+    // A wide card's headline is too narrow for a caption: the name joins
+    // the limit in the title's corner.
+    const wide = Views.view("temps", full, palette, undefined, true)
+    assert.equal(wide.caption, "")
+    assert.equal(wide.info, "CPU max 95°C")
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2", "CPU fan", "GPU fan"])
     assert.equal(view.rows.find(row => row.label === "GPU").text, "54°C")
     assert.equal(view.rows.find(row => row.label === "GPU fan").text, "30%")
     // Each against its own limit: NVIDIA's slowdown, a DIMM's critical.
     assert.equal(view.rows.find(row => row.label === "GPU").fraction, Stats.heat(54, 90))
-    assert.deepEqual(plain(view.graphs[0].values), [67.375, 67.375])
-    assert.equal(view.graphs[0].max, 95)
+    // A graph of a temperature over a minute is a flat line.
+    assert.equal(view.graphs.length, 0)
     // Rows past the card's room are left out: beside the headline in a
-    // wide card, under it in a stacked one, where the value and graph take
-    // about three rows' room.
+    // wide card, under it in a stacked one, where the value takes about
+    // two rows' room.
     assert.equal(Views.view("temps", full, palette, 6, true).rows.length, 6)
-    assert.equal(Views.view("temps", full, palette, 6, false).rows.length, 2)
-    // Without a CPU sensor there is no headline, just the fans.
+    assert.equal(Views.view("temps", full, palette, 6, false).rows.length, 3)
+    // Without a temperature there is no headline, just the fans.
     const bare = Object.assign(Stats.empty(), { fans: [{ name: "CPU fan", rpm: 900 }] })
     assert.equal(Views.view("temps", bare, palette).value, "")
     assert.deepEqual(plain(Views.view("temps", bare, palette).rows.map(row => row.label)), ["CPU fan"])
+  },
+  "the sensors view leaves out what the other panels on the dashboard show"() {
+    const view = Views.view("temps", full, palette, undefined, false, 30, ["gpu", "igpu", "cpu", "temps"])
+    // The CPU, GPU and iGPU panels have their own temperatures and the
+    // GPU's fan; the CPU's dies are only here, and the hottest leads.
+    assert.equal(view.caption, "CCD 1")
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["nvme0n1", "nvme1", "DIMM 1", "DIMM 2", "CPU fan"])
+    // Beside a Sensors panel the disks leave their temperatures to it.
+    const disks = Views.view("disks", full, palette, undefined, false, 40, ["disks", "temps"])
+    assert.ok(disks.rows.every(row => !/°C/.test(row.text)))
+    assert.ok(Views.view("disks", full, palette, undefined, false, 40, ["disks"]).rows.some(row => /°C/.test(row.text)))
+    // Every sensor elsewhere: the card says so.
+    const covered = Object.assign(Stats.empty(), { time: 1, temps: [{ name: "CPU", temp: 50, limit: 95 }] })
+    assert.equal(Views.view("temps", covered, palette, undefined, false, 30, ["cpu", "temps"]).empty, "Every sensor is on its own panel")
+  },
+  "the system view leaves live numbers to the panels that show them"() {
+    const alone = Views.view("system", full, palette).rows.map(row => row.label)
+    assert.ok(alone.includes("Memory") && alone.includes("Load"))
+    const beside = Views.view("system", full, palette, undefined, false, 30, ["cpu", "memory", "system"]).rows.map(row => row.label)
+    assert.ok(!beside.includes("Memory") && !beside.includes("Load"))
+  },
+  "a panel with nothing to show on this machine takes no card"() {
+    // The fixture has an RTX 4080 and a Radeon iGPU, and a wireless mouse.
+    assert.deepEqual(plain(Views.availablePanels(["gpu", "igpu", "battery"], full)), ["gpu", "igpu", "battery"])
+    const desktop = Object.assign({}, full, { drm: [], power: [] })
+    assert.deepEqual(plain(Views.availablePanels(["gpu", "igpu", "cpu", "battery"], desktop)), ["gpu", "cpu"])
+    // Before the first frame, every panel.
+    assert.deepEqual(plain(Views.availablePanels(["igpu", "battery"], Stats.empty())), ["igpu", "battery"])
   },
   "the system view leads with the uptime"() {
     const view = Views.view("system", full, palette)
@@ -824,12 +875,12 @@ Object.assign(tests, {
     assert.deepEqual(plain(Views.view("system", state, palette, 6, false).rows.map(row => row.label)), ["OS", "Channel", "Host"])
   },
   "the battery view shows a laptop battery and peripherals"() {
-    // Without a laptop battery the first peripheral leads, with its history.
+    // Without a laptop battery the first peripheral leads. A battery's
+    // level over a minute is a flat line, so there is no graph.
     const mouseOnly = Views.view("battery", full, palette)
     assert.equal(mouseOnly.value, "64%")
     assert.equal(mouseOnly.caption, "G502 X LIGHTSPEED")
-    // The history moves with step; the fixture's first frame is ingest's.
-    assert.deepEqual(plain(mouseOnly.graphs[0].values), [64])
+    assert.equal(mouseOnly.graphs.length, 0)
     // It is not listed again below.
     assert.deepEqual(plain(mouseOnly.rows), [])
     const twoMice = Object.assign({}, full, { power: full.power.concat([
@@ -1025,10 +1076,9 @@ Object.assign(tests, {
     const view = Views.view("battery", state, palette)
     assert.equal(view.caption, "G502 X LIGHTSPEED")
     assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["EDIFIER W830NB", "70%"]])
-    // A headset alone leads, with its history.
+    // A headset alone leads.
     const alone = Stats.step(Stats.empty(), frame(10, [0]).replace(/@power[\s\S]*?@drm/, "@power\n@drm"), [], undefined, extra.slice(1))
     assert.equal(Views.view("battery", alone, palette).value, "70%")
-    assert.deepEqual(plain(alone.history.battery), [70])
     // Without the list (the panel is not shown), the kernel's batteries only.
     assert.equal(Stats.step(Stats.empty(), frame(10, [0]), []).power.length, 1)
   },

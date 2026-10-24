@@ -550,7 +550,7 @@ function empty() {
     power: [],
     // The track playing, from the shell's MPRIS players; see step.
     media: null,
-    history: { cpu: [], gpu: [], igpu: [], rx: [], tx: [], disk: [], temp: [], battery: [] }
+    history: { cpu: [], gpu: [], igpu: [], rx: [], tx: [], disk: [] }
   }
 }
 
@@ -666,14 +666,13 @@ function ingest(state, frame) {
   next.temps = sensors.temps
   next.nvmeTemps = sensors.nvme
   next.nvmeLimits = sensors.nvmeLimits
-  if (sensors.cpuTemp !== null) history.temp = pushHistory(history.temp, sensors.cpuTemp)
   next.system = frame.system ? parseSystem(frame.system) : null
   next.sysinfo = frame.sysinfo ? parseSysinfo(frame.sysinfo) : state.sysinfo
   var tasks = next.cpu.loadavg.length && frame.loadavg[0].split(" ")[3]
   next.threads = tasks ? Number(tasks.split("/")[1]) : null
   next.power = parsePower(frame.power || [])
   next.drmKinds = Object.assign({}, state.drmKinds)
-  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds, state.drm)
+  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds, state.drm, next.sysinfo)
 
   if (frame.procs) {
     var procs = parseProcs(frame.procs)
@@ -724,6 +723,15 @@ function parseDrm(lines) {
   return cards
 }
 
+// A card's name for its panel: the marketing name without the vendor's
+// prefix ("AMD Radeon 780M" reads "Radeon 780M"), or a generic one.
+function drmName(name, amd, discrete) {
+  // "Graphics" goes only after a model: "AMD Radeon Graphics" stays whole.
+  name = String(name || "").replace(/^AMD\s+/, "").replace(/^(Radeon\s+\S.*?)\s+Graphics$/, "$1").trim()
+  if (name) return amd || /^Intel /.test(name) ? name : "Intel " + name
+  return amd ? (discrete ? "Radeon" : "Radeon Graphics") : (discrete ? "Intel Arc" : "Intel Graphics")
+}
+
 // Intel cards with this much VRAM or more are discrete. AMD's tell: a
 // discrete card's memory has a vendor (`dedicated`), while an integrated
 // one's is a share of system memory, however large.
@@ -737,8 +745,10 @@ var DISCRETE_VRAM = 4 * 1073741824
 // `kinds` holds each card's kind as last seen awake, and is kept current:
 // a sleeping card reports no VRAM, and keeps the kind it had.
 // A resting card (stats.sh leaves an idle one alone so it can sleep) keeps
-// its readings from `previous`, the GPUs before.
-function drmGpus(cards, idleBefore, seconds, kinds, previous) {
+// its readings from `previous`, the GPUs before. `sysinfo` carries each
+// card's marketing name as stats.sh looked it up (gpu_name_card2); without
+// one, a card is named by vendor and kind.
+function drmGpus(cards, idleBefore, seconds, kinds, previous, sysinfo) {
   kinds = kinds || {}
   return Object.keys(cards).sort().map(function(id) {
     var c = cards[id]
@@ -754,7 +764,7 @@ function drmGpus(cards, idleBefore, seconds, kinds, previous) {
     var gpu = {
       id: id,
       vendor: amd ? "AMD" : "Intel",
-      name: amd ? (discrete ? "Radeon" : "Radeon Graphics") : (discrete ? "Intel Arc" : "Intel Graphics"),
+      name: drmName((sysinfo || {})["gpu_name_" + id], amd, discrete),
       kind: discrete ? "discrete" : "integrated",
       asleep: c.status === "suspended",
       resting: false,
@@ -839,9 +849,6 @@ function step(state, text, gpuLine, media, batteries) {
     for (var b = 0; b < batteries.length; b++) if (known.indexOf(batteries[b].id) === -1) power.push(batteries[b])
     next.power = power
   }
-  // The battery panel's headline: the laptop's, or else a peripheral's.
-  var lead = leadBattery(next.power)
-  if (lead && lead.capacity !== null) next.history.battery = pushHistory(next.history.battery, lead.capacity)
   var updated = ingestGpu(next, gpuLine)
   if (updated !== next) {
     next = updated
