@@ -27,11 +27,11 @@ Item {
   readonly property bool wide: width > height * Views.WIDE_CARD
   // Omarchy's icon beside a view that asks for it (System), as fastfetch
   // shows the distro's: as tall as the body, when that leaves the rows
-  // room enough.
+  // room enough (a label and a short value, about 13 units).
   readonly property real bodyHeight: height - Math.round(unit * 1.6) - unit
   readonly property real logoSize: Math.min(bodyHeight, width * 0.3)
   readonly property bool showsLogo: shown.logo === true && Reserve.ReserveState.iconArt !== null
-    && logoSize >= unit * 4 && width - 3 * unit - logoSize >= unit * 20
+    && logoSize >= unit * 4 && width - 3 * unit - logoSize >= unit * 13
   readonly property int line: Math.max(1, Math.round(unit / 12))
   // A view that asks for attention trades its hue for the warning color,
   // in a thicker, solid outline and title.
@@ -196,6 +196,7 @@ Item {
             lineWidth: Math.max(1.5, card.unit / 9)
           }
           Text {
+            id: graphLabel
             textFormat: Text.PlainText
             visible: parent.modelData.label !== ""
             x: Math.round(card.unit * 0.3)
@@ -208,10 +209,12 @@ Item {
             style: Text.Outline
             styleColor: "black"
           }
-          // What the top of a self-scaling graph stands for.
+          // What the top of a self-scaling graph stands for, where it
+          // fits beside the graph's own label rather than over it.
           Text {
             textFormat: Text.PlainText
             visible: !!parent.modelData.peak
+              && parent.width >= (graphLabel.visible ? graphLabel.x + graphLabel.implicitWidth : 0) + implicitWidth + card.unit
             anchors.right: parent.right
             y: Math.round(card.unit * 0.1)
             text: parent.modelData.peak ? "peak " + parent.modelData.peak : ""

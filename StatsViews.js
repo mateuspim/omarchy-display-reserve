@@ -257,8 +257,11 @@ var VIEWS = {
       : cpu.threads + " threads"
     v.value = Stats.formatPercent(cpu.total)
     v.valueColor = Stats.gradientAt(g.cpu, (cpu.total || 0) / 100)
-    // The clock rides beside the load, so the power draw can have its row.
-    v.caption = cpu.frequency !== null ? "load · " + Stats.formatFrequency(cpu.frequency) : "load"
+    // The clock rides beside the load, so the power draw can have its row;
+    // beside the rows of a wide card the headline is too narrow for both,
+    // and the clock takes a row there instead.
+    var clockRow = wide && cpu.frequency !== null
+    v.caption = cpu.frequency !== null && !clockRow ? "load · " + Stats.formatFrequency(cpu.frequency) : "load"
     v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
     function bar(load) { return { fraction: load / 100, color: Stats.gradientAt(g.cpu, load / 100), gap: false } }
     if (groups) {
@@ -282,6 +285,7 @@ var VIEWS = {
       v.rows.push(heatRow("Temp", cpu.temp, cpu.tempLimit, g))
       if (hot(cpu.temp, cpu.tempLimit)) v.alert = true
     }
+    if (clockRow) v.rows.push(row("Clock", Stats.formatFrequency(cpu.frequency), null))
     if (cpu.loadavg.length) v.rows.push(loadRow(cpu.loadavg, cpu.threads, g, span))
     var stall = state.pressure && state.pressure.cpu
     if (stall !== null && stall !== undefined && stall >= STALL_SHOWN) {
@@ -329,7 +333,10 @@ var VIEWS = {
     var rxMax = graphMax(state.history.rx, 10240), txMax = graphMax(state.history.tx, 10240)
     v.graphs.push({ values: state.history.rx, max: rxMax, stops: g.download, label: "↓ " + Stats.formatRate(n.rx), peak: Stats.formatRate(rxMax) })
     v.graphs.push({ values: state.history.tx, max: txMax, stops: g.upload, label: "↑ " + Stats.formatRate(n.tx), peak: Stats.formatRate(txMax) })
-    v.rows.push(row("Since boot", "↓ " + Stats.formatBytes(n.rxTotal) + "  ↑ " + Stats.formatBytes(n.txTotal), null))
+    // Totals since boot, a row each: one row for both is cut off beside
+    // the graphs of a wide card.
+    v.rows.push(row("Received", Stats.formatBytes(n.rxTotal), null))
+    v.rows.push(row("Sent", Stats.formatBytes(n.txTotal), null))
   },
 
   disks: function(v, state, palette, g, room, wide, span) {
@@ -384,7 +391,9 @@ var VIEWS = {
       return heatRow(name, value, limit, g)
     }
     var roles = Stats.gpuRoles(state)
-    var cpu = state.temps.filter(function(t) { return !/^DIMM /.test(t.name) })
+    // The CPU's own sensor is the headline, so it gets no row as well.
+    var headline = state.cpu.temp !== null
+    var cpu = state.temps.filter(function(t) { return !/^DIMM /.test(t.name) && !(headline && t.name === "CPU") })
     var dimms = state.temps.filter(function(t) { return /^DIMM /.test(t.name) })
     v.rows = cpu.map(function(t) { return temp(t.name, t.temp, t.limit) })
     if (roles.main && roles.main.temp !== null) v.rows.push(temp("GPU", roles.main.temp, roles.main.tempLimit))
@@ -405,7 +414,10 @@ var VIEWS = {
       if (hot(state.cpu.temp, state.cpu.tempLimit)) v.alert = true
       v.value = Stats.formatTemp(state.cpu.temp)
       v.valueColor = Stats.gradientAt(g.level, level)
-      v.caption = state.cpu.tempLimit ? "CPU · max " + Stats.formatTemp(state.cpu.tempLimit) : "CPU"
+      v.caption = "CPU"
+      // In the title's corner, where the headline's narrow caption would
+      // cut it off.
+      if (state.cpu.tempLimit) v.info = "CPU max " + Stats.formatTemp(state.cpu.tempLimit)
       v.graphs.push({ values: state.history.temp, max: state.cpu.tempLimit || 100, stops: g.level, label: "" })
     }
     if (!v.rows.length) v.empty = "No sensors"
@@ -469,10 +481,13 @@ var VIEWS = {
     var info = state.sysinfo || {}
     v.info = info.user ? info.user + "@" + system.hostname : system.hostname
     v.logo = true
-    if (system.uptime !== null) { v.value = Stats.formatUptime(system.uptime); v.caption = "up" }
-    v.valueColor = palette.accent
     // In fastfetch's order, the most telling first: a small card keeps those.
     function add(label, text) { if (text) v.rows.push(row(label, text, null)) }
+    // A wide card is fastfetch's shape, the logo beside the facts: the
+    // uptime joins the facts rather than taking the logo's column.
+    if (system.uptime !== null && wide) add("Uptime", Stats.formatUptime(system.uptime))
+    else if (system.uptime !== null) { v.value = Stats.formatUptime(system.uptime); v.caption = "up" }
+    v.valueColor = palette.accent
     add("OS", [info.os, info.omarchy].filter(Boolean).join(" "))
     add("Channel", info.channel && info.channel !== "unknown" ? info.channel : "")
     add("Host", Stats.hostName(info))

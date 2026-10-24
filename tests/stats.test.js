@@ -688,6 +688,22 @@ Object.assign(tests, {
     assert.equal(temp.text, "67°C")
     assert.equal(temp.fraction, Stats.heat(67.375, 95))
   },
+  "a wide CPU card moves the clock from its narrow headline to a row"() {
+    const stacked = Views.view("cpu", full, palette, undefined, false)
+    assert.equal(stacked.caption, "load · 5.10 GHz")
+    assert.ok(!stacked.rows.some(row => row.label === "Clock"))
+    const wide = Views.view("cpu", full, palette, undefined, true)
+    assert.equal(wide.caption, "load")
+    assert.equal(wide.rows.find(row => row.label === "Clock").text, "5.10 GHz")
+  },
+  "a wide system card lists the uptime with the facts, leaving the logo its column"() {
+    const stacked = Views.view("system", full, palette, undefined, false)
+    assert.notEqual(stacked.value, "")
+    const wide = Views.view("system", full, palette, undefined, true)
+    assert.equal(wide.value, "")
+    assert.equal(wide.logo, true)
+    assert.equal(wide.rows.find(row => row.label === "Uptime").text, stacked.value)
+  },
   "the load average names its minutes where there is room, against the threads"() {
     const narrow = Views.view("cpu", full, palette, undefined, false, 24).rows.find(row => row.label === "Load")
     assert.equal(narrow.text, "0.52  0.61  0.70")
@@ -734,8 +750,8 @@ Object.assign(tests, {
     const view = Views.view("network", full, palette)
     assert.equal(view.graphs[0].peak, Stats.formatRate(view.graphs[0].max))
     assert.equal(view.graphs[1].peak, Stats.formatRate(view.graphs[1].max))
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Since boot"])
-    assert.match(view.rows[0].text, /^↓ .+  ↑ .+$/)
+    // A row each: one row for both was cut off beside a wide card's graphs.
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Received", "Sent"])
     assert.equal(Views.view("disks", full, palette).graphs[0].peak, Stats.formatRate(Views.view("disks", full, palette).graphs[0].max))
   },
   "the processes view lists CPU and GPU apps"() {
@@ -748,8 +764,11 @@ Object.assign(tests, {
     const view = Views.view("temps", full, palette)
     assert.equal(view.title, "Sensors")
     assert.equal(view.value, "67°C")
-    assert.equal(view.caption, "CPU · max 95°C")
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU", "CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2", "CPU fan", "GPU fan"])
+    // The headline is the CPU, so it has no row of its own, and its limit
+    // sits in the title's corner, clear of the narrow caption.
+    assert.equal(view.caption, "CPU")
+    assert.equal(view.info, "CPU max 95°C")
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2", "CPU fan", "GPU fan"])
     assert.equal(view.rows.find(row => row.label === "GPU").text, "54°C")
     assert.equal(view.rows.find(row => row.label === "GPU fan").text, "30%")
     // Each against its own limit: NVIDIA's slowdown, a DIMM's critical.
@@ -1028,7 +1047,7 @@ Object.assign(tests, {
     assert.equal(Views.view("cpu", full, palette, 3, true).rows.length, 3)
     // The stacked bar takes less room than a graph did.
     assert.equal(Views.view("memory", full, palette, 6, false).rows.length, 3)
-    assert.equal(Views.view("network", full, palette, 5, false).rows.length, 1)
+    assert.equal(Views.view("network", full, palette, 5, false).rows.length, 2)
     // Without a room, every row.
     assert.equal(Views.view("memory", full, palette).rows.length, 5)
   },
