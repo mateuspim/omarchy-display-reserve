@@ -136,6 +136,18 @@ function panelsFrom(text) {
   return panelList(names)
 }
 
+// The panel's pages, in tab order, and their names.
+var PAGES = ["edges", "fill", "stats", "profiles"]
+var PAGE_NAMES = { edges: "Edges", fill: "Fill", stats: "Stats", profiles: "Profiles" }
+
+// The page `direction` steps from `page` (1 next, -1 previous), wrapping
+// around; the first page for one that is not a page.
+function nextPage(page, direction) {
+  var index = PAGES.indexOf(page)
+  if (index === -1) return PAGES[0]
+  return PAGES[(index + direction + PAGES.length) % PAGES.length]
+}
+
 // How many cells share the row of cell `index` in a grid of `count` cells,
 // `columns` to a row: the last row's few stretch across, leaving no gap.
 function rowCells(count, columns, index) {

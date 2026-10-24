@@ -67,6 +67,13 @@ const tests = {
     assert.equal(Model.panelFrom("mem"), "memory")
     assert.equal(Model.panelFrom("rainbow"), "")
   },
+  "nextPage steps through the panel's pages, wrapping around"() {
+    assert.equal(Model.nextPage("edges", 1), "fill")
+    assert.equal(Model.nextPage("profiles", 1), "edges")
+    assert.equal(Model.nextPage("edges", -1), "profiles")
+    assert.equal(Model.nextPage("nope", 1), "edges")
+    assert.deepEqual([...Model.PAGES], ["edges", "fill", "stats", "profiles"])
+  },
   "rowCells stretches a short last row across the grid"() {
     // Seven fills four to a row: four, then three.
     assert.deepEqual([0, 3, 4, 6].map(i => Model.rowCells(7, 4, i)), [4, 4, 3, 3])

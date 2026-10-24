@@ -6,7 +6,6 @@ import qs.Commons
 import qs.Commons as Commons
 import "." as Reserve
 import "Model.js" as Model
-import "StatsViews.js" as Views
 
 // Bar button plus popout for editing reserved display edges. Edits go
 // straight into ReserveState, so the caps, the bar and tiled windows move
@@ -70,6 +69,12 @@ Panel {
   readonly property bool canUndo: undo !== null && (undo.output === undefined || undo.output === output)
   readonly property var profileNames: Model.profileNames(reserve.profiles)
   property bool showKeys: false
+  // The page showing below the preview. It is kept while the shell runs,
+  // so the panel opens where it was left.
+  property string page: Model.PAGES[0]
+  // The profile name being typed on the Profiles page, owned here so that
+  // applying a profile or reopening the panel can set it.
+  property string profileDraft: ""
   // While open on the stats fill, the preview needs live numbers, so the
   // sampler runs even if no monitor shows the dashboard yet.
   readonly property bool previewingStats: opened && edge.fill === "stats"
@@ -173,7 +178,7 @@ Panel {
     pickedAlign = ""
     undo = null
     showKeys = false
-    profileField.text = ""
+    profileDraft = ""
   }
   // The ruler follows the monitor being edited.
   onOutputChanged: {
@@ -238,20 +243,20 @@ Panel {
     var from = reserve.currentProfile
     name = reserve.applyProfile(name)
     if (!name) return
-    profileField.text = name
+    profileDraft = name
     if (Model.sameOutputs(before, reserve.outputs)) return
     undo = { outputs: before, text: "Restore every monitor as before " + name + (from ? ", " + from : "") }
   }
   function applyProfileAt(index) { if (index < profileNames.length) applyProfile(profileNames[index]) }
   function saveProfile(name) {
     if (reserve.saveProfile(name)) undo = null
-    profileField.text = ""
+    profileDraft = ""
   }
   function deleteProfile(name) {
     var entries = reserve.profiles[name]
     var auto = reserve.autoProfiles[name]
     if (!reserve.deleteProfile(name)) return
-    if (Model.profileName(profileField.text) === name) profileField.text = ""
+    if (Model.profileName(profileDraft) === name) profileDraft = ""
     undo = { profile: name, entries: entries, auto: auto, text: "Restore the profile " + name }
   }
   function setFill(fill) {
@@ -281,6 +286,10 @@ Panel {
   function togglePanel(panel) {
     undo = null
     reserve.togglePanel(output, panel)
+  }
+  function movePanel(panel, delta) {
+    undo = null
+    reserve.movePanel(output, panel, delta)
   }
   // Gives every connected monitor this monitor's choice for `panel`,
   // flipped; one undo puts them all back.
@@ -312,6 +321,12 @@ Panel {
     if (align === "end") return vertical ? "󰅀" : "󰅂"
     return vertical ? "󱇌" : "󱇉"
   }
+  // Gives the keys back to the panel after a click or an edit in a field.
+  function refocus() { keySurface.forceActiveFocus() }
+  function focusProfileField() {
+    page = "profiles"
+    profilesPage.focusField()
+  }
   function cycleOutput(direction) {
     if (screenNames.length < 2) return
     var index = screenNames.indexOf(output)
@@ -330,9 +345,13 @@ Panel {
     if (event.text === "?") { showKeys = !showKeys; event.accepted = true; return }
     if (event.key === Qt.Key_Escape && showKeys) { showKeys = false; event.accepted = true; return }
     if (event.key === Qt.Key_Escape || event.text === "q") { root.close(); event.accepted = true; return }
+    if (event.text === "[" || event.text === "]") { page = Model.nextPage(page, event.text === "]" ? 1 : -1); event.accepted = true; return }
     var shift = event.modifiers & Qt.ShiftModifier
     var step = shift ? 100 : (event.modifiers & Qt.ControlModifier ? 1 : 10)
     var key = event.key
+    // The edge keys work on any page, and bring up the edges they move.
+    var edgeKeys = [Qt.Key_Up, Qt.Key_K, Qt.Key_Down, Qt.Key_J, Qt.Key_Left, Qt.Key_H, Qt.Key_Right, Qt.Key_L, Qt.Key_0, Qt.Key_Backspace, Qt.Key_Delete]
+    if (edgeKeys.indexOf(key) !== -1) page = "edges"
     if (key === Qt.Key_Up || key === Qt.Key_K) cursor = Math.max(0, cursor - 1)
     else if (key === Qt.Key_Down || key === Qt.Key_J) cursor = Math.min(reserve.edgeNames.length - 1, cursor + 1)
     else if (key === Qt.Key_Left || key === Qt.Key_H) nudge(cursorEdge, -step)
@@ -348,7 +367,7 @@ Panel {
     else if (key === Qt.Key_R) toggleRuler()
     else if (key === Qt.Key_I) cycleIdle()
     else if (key >= Qt.Key_1 && key <= Qt.Key_9) applyProfileAt(key - Qt.Key_1)
-    else if (key === Qt.Key_S) profileField.forceActiveFocus()
+    else if (key === Qt.Key_S) focusProfileField()
     else return
     event.accepted = true
   }
@@ -400,721 +419,240 @@ Panel {
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) { root.handleKey(event) }
 
-      Column {
-        id: content
-        width: popup.contentWidth - popup.padding * 2
-        spacing: Style.spacing.lg
+      // On a short screen KeyboardPanel caps the card's height; the page
+      // then scrolls rather than losing its bottom rows.
+      Flickable {
+        id: scroller
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: content.implicitHeight
+        interactive: contentHeight > height
+        flickableDirection: Flickable.VerticalFlick
+        boundsBehavior: Flickable.StopAtBounds
+        clip: interactive
 
-        PanelHero {
-          width: parent.width
-          title: "OmaReach"
-          meta: (root.reserve.currentProfile ? root.reserve.currentProfile + "  ·  " : "") + Model.shortSummary(root.edge)
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          iconComponent: Component {
-            Reserve.ReserveIcon {
-              iconSize: Style.font.display * 1.25
-              color: root.reserve.isActive(root.output) ? Commons.Color.accent : root.foreground
-              reserved: root.reserved
-              paused: root.reserved && !root.edge.enabled
-            }
-          }
-          trailingControl: Component {
-            ToggleSwitch {
-              checked: root.reserve.isActive(root.output)
-              interactive: root.reserved
-              opacity: root.reserved ? 1 : 0.4
-              foreground: root.foreground
-              onToggled: { root.toggleEnabled(root.output); keySurface.forceActiveFocus() }
-            }
-          }
-        }
-
-        // Equal-width monitor buttons. Every button carries an icon so they
-        // share one height; as on the bar, a crossed-out monitor is paused.
-        Row {
-          id: monitorRow
-          visible: root.screenNames.length > 1
-          width: parent.width
-          spacing: Style.spacing.md
-          Repeater {
-            model: root.screenNames
-            Button {
-              required property string modelData
-              width: (monitorRow.width - monitorRow.spacing * (root.screenNames.length - 1)) / root.screenNames.length
-              text: modelData
-              iconText: root.reserve.isReserved(modelData) && !root.reserve.edges(modelData).enabled ? "󰶐" : "󰍹"
-              tooltipText: modelData + "  ·  " + Model.summary(root.reserve.edges(modelData))
-              selected: modelData === root.output
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              onClicked: { root.pickedOutput = modelData; keySurface.forceActiveFocus() }
-            }
-          }
-        }
-
-        MonitorPreview {
-          width: parent.width
-          height: Style.space(200)
-        }
-
-        // What the reserved edges show. Black is the only safe choice on
-        // OLED panels; the others hold a static image in place.
         Column {
-          width: parent.width
-          spacing: Style.spacing.sm
-          PanelSectionHeader {
-            text: "FILL"
+          id: content
+          width: popup.contentWidth - popup.padding * 2
+          spacing: Style.spacing.lg
+
+          PanelHero {
+            width: parent.width
+            title: "OmaReach"
+            meta: (root.reserve.currentProfile ? root.reserve.currentProfile + "  ·  " : "") + Model.shortSummary(root.edge)
             foreground: root.foreground
             fontFamily: root.fontFamily
-          }
-          // A Flow, not a Grid: a Grid would widen every row to the
-          // stretched last one.
-          Flow {
-            id: fillGrid
-            width: parent.width
-            property int columns: 4
-            spacing: Style.spacing.md
-            Repeater {
-              model: [
-                { fill: "black", icon: "󰝤", tip: "Plain black, safe on OLED panels" },
-                { fill: "theme", icon: "󰏘", tip: "The theme's background color" },
-                { fill: "logo", icon: "󰣇", tip: "The Omarchy logo on black: stacked with its icon on the sides" },
-                { fill: "wallpaper", icon: "󰋩", tip: "The slice of the wallpaper under the edge" },
-                { fill: "dim", icon: "󰃞", tip: "The wallpaper slice, darkened" },
-                { fill: "clock", icon: "󰥔", tip: "A 24-hour clock on the largest edge; the others stay black" },
-                { fill: "stats", icon: "󰨇", tip: "A btop-style dashboard of GPU, CPU, memory and more on the largest edge; it stays up beside fullscreen games" }
-              ]
-              Button {
-                required property var modelData
-                required property int index
-                // A short last row stretches across: no empty cell.
-                readonly property int cells: Model.rowCells(Model.FILLS.length, fillGrid.columns, index)
-                width: Math.floor((fillGrid.width - fillGrid.spacing * (cells - 1)) / cells)
-                text: Model.fillName(modelData.fill)
-                iconText: modelData.icon
-                // Four to a row: "Wallpaper" needs the room.
-                horizontalPadding: Style.spacing.sm
-                tooltipText: modelData.tip + "\nRight click for every monitor"
-                selected: root.edge.fill === modelData.fill
-                bordered: true
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                onClicked: { root.setFill(modelData.fill); keySurface.forceActiveFocus() }
-                onRightClicked: { root.setFillEverywhere(modelData.fill); keySurface.forceActiveFocus() }
+            iconComponent: Component {
+              Reserve.ReserveIcon {
+                iconSize: Style.font.display * 1.25
+                color: root.reserve.isActive(root.output) ? Commons.Color.accent : root.foreground
+                reserved: root.reserved
+                paused: root.reserved && !root.edge.enabled
               }
             }
-          }
-          // Only for the dimmed fill: how dark it is.
-          Item {
-            visible: root.edge.fill === "dim"
-            width: parent.width
-            height: dimSlider.implicitHeight
-            Text {
-              id: dimLabel
-              textFormat: Text.PlainText
-              width: Style.space(58)
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Dim"
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-            PanelSlider {
-              id: dimSlider
-              bar: root.bar
-              anchors.left: dimLabel.right
-              anchors.right: dimValue.left
-              anchors.rightMargin: Style.spacing.md
-              anchors.verticalCenter: parent.verticalCenter
-              minimum: Model.DIM_MIN
-              maximum: Model.DIM_MAX
-              step: 5
-              integer: true
-              value: root.edge.dim
-              fillColor: root.foreground
-              knobColor: fillColor
-              onMoved: function(value) { root.setDim(value) }
-              onReleased: keySurface.forceActiveFocus()
-            }
-            Text {
-              id: dimValue
-              textFormat: Text.PlainText
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(40)
-              horizontalAlignment: Text.AlignRight
-              text: root.edge.dim + "%"
-              color: root.subtle
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-            }
-          }
-          // Only for the clock and the stats: which edge shows them.
-          Row {
-            id: clockRow
-            visible: Model.SINGLE_FILLS.indexOf(root.edge.fill) !== -1
-            width: parent.width
-            spacing: Style.spacing.md
-            Repeater {
-              model: [
-                { clockEdge: "largest", icon: "󰩨", text: "Largest edge", tip: "The " + Model.fillName(root.edge.fill).toLowerCase() + " goes on the largest reserved edge" },
-                { clockEdge: "topBottom", icon: "󰹹", text: "Top or bottom", tip: "The " + Model.fillName(root.edge.fill).toLowerCase() + " goes on the larger of the top and bottom edges, if either is reserved" }
-              ]
-              Button {
-                required property var modelData
-                width: (clockRow.width - clockRow.spacing) / 2
-                text: modelData.text
-                iconText: modelData.icon
-                tooltipText: modelData.tip
-                selected: root.edge.clockEdge === modelData.clockEdge
-                bordered: true
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                onClicked: { root.setClockEdge(modelData.clockEdge); keySurface.forceActiveFocus() }
-              }
-            }
-          }
-          // Only for the stats: which panels the dashboard shows. Panels
-          // that do not fit the strip are left off from the end.
-          Column {
-            visible: root.edge.fill === "stats"
-            width: parent.width
-            spacing: Style.spacing.sm
-            PanelSectionHeader {
-              text: "PANELS  ·  " + root.edge.panels.length + " OF " + Model.STATS_PANELS.length
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-            Flow {
-              id: panelGrid
-              width: parent.width
-              property int columns: 3
-              spacing: Style.spacing.md
-              Repeater {
-                model: Model.STATS_PANELS
-                Button {
-                  required property string modelData
-                  required property int index
-                  readonly property int cells: Model.rowCells(Model.STATS_PANELS.length, panelGrid.columns, index)
-                  width: Math.floor((panelGrid.width - panelGrid.spacing * (cells - 1)) / cells)
-                  text: Model.panelName(modelData)
-                  iconText: Views.ICONS[modelData]
-                  horizontalPadding: Style.spacing.sm
-                  tooltipText: (selected ? "Hide " : "Show ") + Model.panelName(modelData).toLowerCase() + " on the dashboard\nRight click for every monitor"
-                  selected: root.edge.panels.indexOf(modelData) !== -1
-                  bordered: true
+            // The switch says what it does: it pauses the reservation.
+            trailingControl: Component {
+              Row {
+                spacing: Style.spacing.sm
+                opacity: root.reserved ? 1 : 0.4
+                Text {
+                  textFormat: Text.PlainText
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: !root.reserved ? "Nothing reserved" : root.edge.enabled ? "On" : "Paused"
+                  color: root.subtle
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+                ToggleSwitch {
+                  anchors.verticalCenter: parent.verticalCenter
+                  checked: root.reserve.isActive(root.output)
+                  interactive: root.reserved
                   foreground: root.foreground
-                  fontFamily: root.fontFamily
-                  onClicked: { root.togglePanel(modelData); keySurface.forceActiveFocus() }
-                  onRightClicked: { root.togglePanelEverywhere(modelData); keySurface.forceActiveFocus() }
+                  onToggled: { root.toggleEnabled(root.output); keySurface.forceActiveFocus() }
                 }
               }
             }
-            // Session-wide: how smoothly every dashboard moves, against how
-            // often it redraws.
-            Button {
-              width: parent.width
-              text: "Animation  ·  " + Model.paceName(root.reserve.statsPace)
-              iconText: "󰔛"
-              selected: root.reserve.statsPace !== 1
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              tooltipText: "How often the graphs and meters move on every monitor, which is how often the dashboard redraws.\nClick to cycle: display rate, 60, 30, 15 fps, no animation"
-              onClicked: { root.reserve.setStatsPace(Model.nextPace(root.reserve.statsPace)); keySurface.forceActiveFocus() }
-            }
-            // The CPU's power draw needs its energy counter, which is root's
-            // until a udev rule opens it; hidden where there is none.
-            Button {
-              width: parent.width
-              visible: root.reserve.cpuPower === "locked" || root.reserve.cpuPower === "on"
-              text: "CPU power  ·  " + (root.reserve.cpuPower === "on" ? "On" : "Enable")
-              iconText: "󱐋"
-              selected: root.reserve.cpuPower === "on"
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              tooltipText: root.reserve.cpuPower === "on"
-                ? "The CPU panel shows the CPU's power draw.\nClick to lock its energy counter to root again: a terminal shows the commands and asks first"
-                : "The CPU's energy counter is root's, so the CPU panel cannot show its power draw.\nClick to open it with a udev rule: a terminal shows the commands and asks first"
-              onClicked: { root.reserve.changeCpuPower(root.reserve.cpuPower === "on" ? "disable" : "enable"); keySurface.forceActiveFocus() }
-            }
           }
-        }
 
-        Column {
-          width: parent.width
-          spacing: Style.spacing.sm
-          PanelSectionHeader {
-            text: root.outputScale === 1 ? "EDGES  ·  PIXELS"
-              : "EDGES  ·  LOGICAL PIXELS  ·  " + Number(root.outputScale.toFixed(2)) + "× SCALE"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
-          Repeater {
-            model: root.reserve.edgeNames
-            EdgeRow { width: parent.width }
-          }
-          // Presets that leave a reachable area of a given shape, and where
-          // it goes.
+          // Equal-width monitor buttons. Every button carries an icon so they
+          // share one height; as on the bar, a crossed-out monitor is paused.
           Row {
-            id: aspectRow
+            id: monitorRow
+            visible: root.screenNames.length > 1
             width: parent.width
             spacing: Style.spacing.md
-            readonly property real buttonWidth: (width - spacing * Model.ASPECTS.length) / (Model.ASPECTS.length + 1)
             Repeater {
-              model: Model.ASPECTS
+              model: root.screenNames
               Button {
                 required property string modelData
-                width: aspectRow.buttonWidth
+                width: (monitorRow.width - monitorRow.spacing * (root.screenNames.length - 1)) / root.screenNames.length
                 text: modelData
-                tooltipText: "Reserve edges so the reachable area is " + modelData
-                selected: root.aspect === modelData
+                iconText: root.reserve.isReserved(modelData) && !root.reserve.edges(modelData).enabled ? "󰶐" : "󰍹"
+                tooltipText: modelData + "  ·  " + Model.summary(root.reserve.edges(modelData))
+                selected: modelData === root.output
                 bordered: true
                 foreground: root.foreground
                 fontFamily: root.fontFamily
-                onClicked: { root.applyAspect(modelData); keySurface.forceActiveFocus() }
+                onClicked: { root.pickedOutput = modelData; keySurface.forceActiveFocus() }
               }
             }
-            Button {
-              width: aspectRow.buttonWidth
-              text: Model.alignName(root.align, root.screenWidth, root.screenHeight)
-              iconText: root.alignIcon(root.align)
-              tooltipText: "Where a preset puts the reachable area; the other edge of the pair gets the rest"
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              onClicked: { root.cycleAlign(); keySurface.forceActiveFocus() }
-            }
           }
-        }
 
-        // Named snapshots of every monitor. A chip applies one; the one on
-        // screen is selected.
-        Column {
-          width: parent.width
-          spacing: Style.spacing.sm
-          PanelSectionHeader {
-            text: "PROFILES"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
+          Reserve.PanelPreview {
+            panel: root
+            width: parent.width
+            height: Style.space(200)
           }
-          Flow {
-            visible: root.profileNames.length > 0
+
+          // One page at a time below the preview, which stays in view on
+          // every page so each edit shows where it lands.
+          Row {
+            id: pageRow
             width: parent.width
             spacing: Style.spacing.md
             Repeater {
-              model: root.profileNames
+              model: Model.PAGES
               Button {
+                required property string modelData
+                width: (pageRow.width - pageRow.spacing * (Model.PAGES.length - 1)) / Model.PAGES.length
+                text: Model.PAGE_NAMES[modelData]
+                horizontalPadding: Style.spacing.sm
+                tooltipText: Model.PAGE_NAMES[modelData] + "  ·  [ and ] switch pages"
+                selected: root.page === modelData
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: { root.page = modelData; keySurface.forceActiveFocus() }
+              }
+            }
+          }
+
+          Reserve.PanelEdgesPage {
+            visible: root.page === "edges"
+            panel: root
+            width: parent.width
+          }
+          Reserve.PanelFillPage {
+            visible: root.page === "fill"
+            panel: root
+            width: parent.width
+          }
+          Reserve.PanelStatsPage {
+            visible: root.page === "stats"
+            panel: root
+            width: parent.width
+          }
+          Reserve.PanelProfilesPage {
+            id: profilesPage
+            visible: root.page === "profiles"
+            panel: root
+            width: parent.width
+          }
+
+          // Shortcut sheet, toggled with ?.
+          Grid {
+            visible: root.showKeys
+            width: parent.width
+            columns: 2
+            columnSpacing: Style.spacing.lg
+            rowSpacing: Style.spacing.xs
+            Repeater {
+              model: [
+                "[ / ]", "Previous / next page",
+                "J / K", "Select edge",
+                "H / L", "Shrink / grow 10 px  ·  ⇧ 100  ·  Ctrl 1",
+                "0 / ⌫", "Zero edge",
+                "U / Ctrl Z", "Undo clear or zero",
+                "Space / P", "Pause monitor",
+                "F", "Next fill",
+                "C", "Clock or stats on the largest edge / top or bottom",
+                "A", "Move the reachable area of an aspect preset",
+                "R", "Ruler on the monitor",
+                "I", "Black when idle: off, 30 s, 1 min, 5 min",
+                "1 – 9", "Apply a profile",
+                "S", "Name a profile to save",
+                "Tab / ⇧ Tab", "Next / previous monitor",
+                "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
+                "Scroll", "Move an edge 10 px  ·  ⇧ 100",
+                "Esc / Q", "Close"
+              ]
+              Text {
                 required property string modelData
                 required property int index
+                textFormat: Text.PlainText
                 text: modelData
-                iconText: index < 9 ? String(index + 1) : ""
-                tooltipText: "Apply " + modelData + " to every monitor" + (index < 9 ? "  ·  " + (index + 1) : "")
-                  + (root.reserve.autoProfiles[modelData] ? "\nApplied by itself with " + root.reserve.autoProfiles[modelData].join(", ") : "")
-                  + "\nRight click to delete"
-                selected: root.reserve.currentProfile === modelData
-                bordered: true
-                foreground: root.foreground
-                fontFamily: root.fontFamily
-                onClicked: { root.applyProfile(modelData); keySurface.forceActiveFocus() }
-                onRightClicked: { root.deleteProfile(modelData); keySurface.forceActiveFocus() }
+                color: index % 2 === 0 ? root.foreground : root.subtle
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: index % 2 === 0
               }
             }
           }
+
           Item {
             width: parent.width
-            height: Math.max(profileField.implicitHeight, saveProfileButton.implicitHeight)
-            TextField {
-              id: profileField
-              anchors.left: parent.left
-              anchors.right: autoButton.left
-              anchors.rightMargin: Style.spacing.md
-              anchors.verticalCenter: parent.verticalCenter
-              placeholderText: root.reserve.currentProfile || "Profile name"
-              foreground: root.foreground
-              font.family: root.fontFamily
-              maximumLength: 32
-              onAccepted: { root.saveProfile(text); keySurface.forceActiveFocus() }
-            }
-            // Ties the named profile to the monitors connected now.
-            Button {
-              id: autoButton
-              readonly property string existing: Model.findProfile(root.reserve.profiles, profileField.text)
-              anchors.right: saveProfileButton.left
-              anchors.rightMargin: Style.spacing.md
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Auto"
-              iconText: "󰁪"
-              enabled: existing !== ""
-              opacity: enabled ? 1 : 0.4
-              selected: enabled && root.reserve.isAuto(existing)
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              tooltipText: !enabled ? "Name a saved profile to apply it by itself when these monitors connect"
-                : selected ? existing + " applies by itself whenever exactly these monitors connect. Click to stop"
-                : "Apply " + existing + " by itself whenever exactly these monitors connect: " + root.screenNames.join(", ")
-              onClicked: { root.reserve.setAuto(existing, !selected); keySurface.forceActiveFocus() }
-            }
-            Button {
-              id: saveProfileButton
-              readonly property string name: Model.profileName(profileField.text)
-              readonly property string existing: Model.findProfile(root.reserve.profiles, name)
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              text: existing ? "Update" : "Save"
-              iconText: "󰆓"
-              enabled: name !== ""
-              opacity: enabled ? 1 : 0.4
-              bordered: true
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-              tooltipText: existing ? "Save every monitor as it is now over " + existing : "Save every monitor as it is now under this name"
-              onClicked: { root.saveProfile(profileField.text); keySurface.forceActiveFocus() }
-            }
-          }
-        }
-
-        // Shortcut sheet, toggled with ?.
-        Grid {
-          visible: root.showKeys
-          width: parent.width
-          columns: 2
-          columnSpacing: Style.spacing.lg
-          rowSpacing: Style.spacing.xs
-          Repeater {
-            model: [
-              "J / K", "Select edge",
-              "H / L", "Shrink / grow 10 px  ·  ⇧ 100  ·  Ctrl 1",
-              "0 / ⌫", "Zero edge",
-              "U / Ctrl Z", "Undo clear or zero",
-              "Space / P", "Pause monitor",
-              "F", "Next fill",
-              "C", "Clock or stats on the largest edge / top or bottom",
-              "A", "Move the reachable area of an aspect preset",
-              "R", "Ruler on the monitor",
-              "I", "Black when idle: off, 30 s, 1 min, 5 min",
-              "1 – 9", "Apply a profile",
-              "S", "Name a profile to save",
-              "Tab / ⇧ Tab", "Next / previous monitor",
-              "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
-              "Scroll", "Move an edge 10 px  ·  ⇧ 100",
-              "Esc / Q", "Close"
-            ]
+            height: clearButton.implicitHeight
             Text {
-              required property string modelData
-              required property int index
               textFormat: Text.PlainText
-              text: modelData
-              color: index % 2 === 0 ? root.foreground : root.subtle
+              anchors.left: parent.left
+              anchors.right: idleButton.left
+              anchors.rightMargin: Style.spacing.md
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.showKeys ? "? hide shortcuts" : "? shortcuts"
+              color: root.subtle
+              elide: Text.ElideRight
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
-              font.bold: index % 2 === 0
             }
-          }
-        }
-
-        Item {
-          width: parent.width
-          height: clearButton.implicitHeight
-          Text {
-            textFormat: Text.PlainText
-            anchors.left: parent.left
-            anchors.right: idleButton.left
-            anchors.rightMargin: Style.spacing.md
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.showKeys ? "? hide shortcuts" : "? shortcuts"
-            color: root.subtle
-            elide: Text.ElideRight
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-          // Session-wide, unlike everything above it.
-          Button {
-            id: idleButton
-            anchors.right: rulerButton.left
-            anchors.rightMargin: Style.spacing.md
-            text: Model.idleName(root.reserve.idleBlack)
-            iconText: "󰒲"
-            selected: root.reserve.idleBlack > 0
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            tooltipText: root.reserve.idleBlack > 0
-              ? "Every edge on every monitor goes black after " + Model.idleName(root.reserve.idleBlack) + " without input"
-              : "Black when idle: off. Click to black out every edge after a while without input"
-            onClicked: { root.cycleIdle(); keySurface.forceActiveFocus() }
-          }
-          Button {
-            id: rulerButton
-            anchors.right: clearButton.left
-            anchors.rightMargin: Style.spacing.md
-            text: "Ruler"
-            iconText: "󰑭"
-            selected: root.reserve.ruler === root.output
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            tooltipText: "Show a ruler on " + root.output + " to read how much of each edge is hidden"
-            onClicked: { root.toggleRuler(); keySurface.forceActiveFocus() }
-          }
-          Button {
-            id: clearButton
-            anchors.right: parent.right
-            // Turns into Undo right after it (or a zeroed edge) discards values.
-            text: root.canUndo ? "Undo" : "Clear"
-            iconText: root.canUndo ? "󰕌" : "󰅖"
-            enabled: root.canUndo || root.reserved
-            opacity: enabled ? 1 : 0.4
-            bordered: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            tooltipText: root.canUndo ? root.undo.text : "Remove every reserved edge on " + root.output
-            onClicked: {
-              if (root.canUndo) root.undoLast()
-              else root.clearOutput()
-              keySurface.forceActiveFocus()
+            // Session-wide, unlike everything above it.
+            Button {
+              id: idleButton
+              anchors.right: rulerButton.left
+              anchors.rightMargin: Style.spacing.md
+              text: "Idle  ·  " + Model.idleName(root.reserve.idleBlack)
+              iconText: "󰒲"
+              selected: root.reserve.idleBlack > 0
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              tooltipText: root.reserve.idleBlack > 0
+                ? "Every edge on every monitor goes black after " + Model.idleName(root.reserve.idleBlack) + " without input"
+                : "Black when idle: off. Click to black out every edge after a while without input"
+              onClicked: { root.cycleIdle(); keySurface.forceActiveFocus() }
+            }
+            Button {
+              id: rulerButton
+              anchors.right: clearButton.left
+              anchors.rightMargin: Style.spacing.md
+              text: "Ruler"
+              iconText: "󰑭"
+              selected: root.reserve.ruler === root.output
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              tooltipText: "Show a ruler on " + root.output + " to read how much of each edge is hidden"
+              onClicked: { root.toggleRuler(); keySurface.forceActiveFocus() }
+            }
+            Button {
+              id: clearButton
+              anchors.right: parent.right
+              // Turns into Undo right after it (or a zeroed edge) discards values.
+              text: root.canUndo ? "Undo" : "Clear"
+              iconText: root.canUndo ? "󰕌" : "󰅖"
+              enabled: root.canUndo || root.reserved
+              opacity: enabled ? 1 : 0.4
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              tooltipText: root.canUndo ? root.undo.text : "Remove every reserved edge on " + root.output
+              onClicked: {
+                if (root.canUndo) root.undoLast()
+                else root.clearOutput()
+                keySurface.forceActiveFocus()
+              }
             }
           }
         }
       }
-    }
-  }
-
-  // One edge: name, a slider for quick moves and a field for exact pixels.
-  component EdgeRow: Item {
-    id: row
-    required property string modelData
-    required property int index
-    readonly property bool selected: root.cursor === index
-    readonly property int value: root.edge[modelData]
-    implicitHeight: Math.max(field.implicitHeight, slider.implicitHeight)
-
-    Text {
-      id: label
-      textFormat: Text.PlainText
-      width: Style.space(58)
-      anchors.verticalCenter: parent.verticalCenter
-      text: Model.title(row.modelData)
-      color: row.selected ? Commons.Color.accent : (row.value > 0 ? root.foreground : root.subtle)
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      font.bold: true
-    }
-    PanelSlider {
-      id: slider
-      bar: root.bar
-      anchors.left: label.right
-      anchors.right: field.left
-      anchors.rightMargin: Style.spacing.md
-      anchors.verticalCenter: parent.verticalCenter
-      minimum: 0
-      maximum: root.limit(row.modelData)
-      step: 10
-      integer: true
-      value: row.value
-      fillColor: row.selected ? Commons.Color.accent : root.foreground
-      knobColor: fillColor
-      onMoved: function(value) { root.cursor = row.index; root.setEdge(row.modelData, value) }
-      onDraggingChanged: root.reserve.hold(dragging)
-      onReleased: keySurface.forceActiveFocus()
-    }
-    NumberField {
-      id: field
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      fieldWidth: Style.space(96)
-      from: 0
-      to: root.limit(row.modelData)
-      stepSize: 10
-      value: row.value
-      hasCursor: row.selected
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-      onModified: function(value) { root.cursor = row.index; root.setEdge(row.modelData, value) }
-    }
-    // The field being typed in is the selected edge, so the keys that end
-    // the edit and the highlight refer to the same row.
-    Connections {
-      target: field.field
-      function onActiveFocusChanged() { if (field.field.activeFocus) root.cursor = row.index }
-    }
-  }
-
-  // The selected monitor to scale: black reserved edges, the reachable area,
-  // where the bar will sit, and a draggable handle on every edge.
-  component MonitorPreview: Item {
-    id: preview
-    readonly property real screenWidth: root.outputScreen ? root.outputScreen.width : 16
-    readonly property real screenHeight: root.outputScreen ? root.outputScreen.height : 9
-    readonly property real ratio: Math.min(width / screenWidth, (height - caption.height - Style.spacing.sm) / screenHeight)
-    readonly property bool paused: !root.edge.enabled
-    readonly property real reachWidth: screenWidth - root.edge.left - root.edge.right
-    readonly property real reachHeight: screenHeight - root.edge.top - root.edge.bottom
-    readonly property Item monitorItem: monitor
-
-    Rectangle {
-      id: monitor
-      anchors.horizontalCenter: parent.horizontalCenter
-      width: Math.round(preview.screenWidth * preview.ratio)
-      height: Math.round(preview.screenHeight * preview.ratio)
-      color: Style.hoverFillFor(root.foreground, Commons.Color.accent)
-      border.color: root.subtle
-      border.width: 1
-      clip: true
-
-      // Bar strip where Hyprland puts it: inside the reachable area, or at
-      // the screen edge while the monitor is paused.
-      Rectangle {
-        readonly property real thickness: Math.max(3, Math.round(root.barThickness * preview.ratio))
-        readonly property bool horizontal: root.barHorizontal
-        x: root.barPosition === "right" ? monitor.width - root.activeEdge.right * preview.ratio - thickness : root.activeEdge.left * preview.ratio
-        y: root.barPosition === "bottom" ? monitor.height - root.activeEdge.bottom * preview.ratio - thickness : root.activeEdge.top * preview.ratio
-        width: horizontal ? monitor.width - (root.activeEdge.left + root.activeEdge.right) * preview.ratio : thickness
-        height: horizontal ? thickness : monitor.height - (root.activeEdge.top + root.activeEdge.bottom) * preview.ratio
-        color: root.foreground
-        opacity: 0.55
-      }
-
-      Repeater {
-        model: root.reserve.edgeNames
-        Reserve.ReserveFill {
-          required property string modelData
-          side: modelData
-          mode: Model.edgeFill(root.edge, modelData)
-          dim: root.edge.dim / 100
-          panels: root.edge.panels
-          pixelRatio: preview.ratio
-          size: root.edge[modelData] * preview.ratio
-          screenWidth: monitor.width
-          screenHeight: monitor.height
-          logoColor: root.foreground
-          visible: size > 0
-          x: modelData === "right" ? monitor.width - size : 0
-          y: modelData === "bottom" ? monitor.height - size : 0
-          width: horizontal ? monitor.width : size
-          height: horizontal ? size : monitor.height
-          opacity: preview.paused ? 0.45 : 1
-          // Only over plain black: it would sit on top of the logo, and the
-          // fields below show the same number.
-          Text {
-            textFormat: Text.PlainText
-            anchors.centerIn: parent
-            visible: parent.mode === "black" && (parent.horizontal ? parent.height >= font.pixelSize + 4 : parent.width >= implicitWidth + 6)
-            text: root.edge[parent.modelData]
-            color: root.subtle
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-        }
-      }
-    }
-
-    // An edge drags from anywhere in its black strip, or from the thin
-    // handle on its boundary, which sits outside the clipped monitor so an
-    // edge at 0 stays grabbable. Handles come second, so a boundary wins
-    // where it crosses another edge's strip.
-    Repeater {
-      model: root.reserve.edgeNames
-      EdgeDrag {
-        view: preview
-        readonly property real size: root.edge[modelData] * preview.ratio
-        visible: size > 0
-        x: monitor.x + (modelData === "right" ? monitor.width - size : 0)
-        y: monitor.y + (modelData === "bottom" ? monitor.height - size : 0)
-        width: horizontal ? monitor.width : size
-        height: horizontal ? size : monitor.height
-      }
-    }
-    Repeater {
-      model: root.reserve.edgeNames
-      EdgeDrag {
-        id: handle
-        view: preview
-        readonly property real boundary: {
-          var size = root.edge[modelData] * preview.ratio
-          if (modelData === "top") return monitor.y + size
-          if (modelData === "bottom") return monitor.y + monitor.height - size
-          if (modelData === "left") return monitor.x + size
-          return monitor.x + monitor.width - size
-        }
-        readonly property int grab: Style.space(10)
-        x: horizontal ? monitor.x : boundary - grab / 2
-        y: horizontal ? boundary - grab / 2 : monitor.y
-        width: horizontal ? monitor.width : grab
-        height: horizontal ? grab : monitor.height
-
-        Rectangle {
-          anchors.centerIn: parent
-          width: handle.horizontal ? parent.width : Math.max(2, Style.space(2))
-          height: handle.horizontal ? Math.max(2, Style.space(2)) : parent.height
-          color: Commons.Color.accent
-          visible: handle.lit
-        }
-      }
-    }
-
-    Text {
-      id: caption
-      textFormat: Text.PlainText
-      anchors.bottom: parent.bottom
-      anchors.horizontalCenter: parent.horizontalCenter
-      text: preview.paused
-        ? "Paused  ·  reservation kept, not applied"
-        : Math.round(preview.screenWidth) + " × " + Math.round(preview.screenHeight)
-          + "  →  " + Math.max(0, Math.round(preview.reachWidth)) + " × " + Math.max(0, Math.round(preview.reachHeight)) + " reachable"
-      color: root.subtle
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-    }
-  }
-
-  // Drags and scrolls one edge of a MonitorPreview. Drags are relative to the
-  // press, so grabbing anywhere neither moves nor snaps the edge until the
-  // pointer does, and the screen holds still until release.
-  component EdgeDrag: MouseArea {
-    id: drag
-    required property string modelData
-    required property int index
-    required property Item view
-    readonly property Item monitor: view.monitorItem
-    readonly property bool horizontal: Model.isHorizontal(modelData)
-    readonly property bool lit: pressed || containsMouse || root.cursor === index
-    hoverEnabled: true
-    preventStealing: true
-    cursorShape: horizontal ? Qt.SizeVerCursor : Qt.SizeHorCursor
-
-    property int startValue: 0
-    property point startPoint: Qt.point(0, 0)
-    property real wheelRest: 0
-
-    onPressed: function(mouse) {
-      root.reserve.hold(true)
-      root.cursor = index
-      startValue = root.edge[modelData]
-      startPoint = mapToItem(monitor, mouse.x, mouse.y)
-    }
-    onPositionChanged: function(mouse) {
-      if (!pressed) return
-      var point = mapToItem(monitor, mouse.x, mouse.y)
-      var grid = mouse.modifiers & Qt.ControlModifier ? 1 : 10
-      root.setEdge(modelData, Model.fromDrag(modelData, startValue, point.x - startPoint.x, point.y - startPoint.y, view.ratio, grid, root.limit(modelData)))
-    }
-    onReleased: { root.reserve.hold(false); keySurface.forceActiveFocus() }
-    onCanceled: root.reserve.hold(false)
-    onWheel: function(wheel) {
-      root.cursor = index
-      wheelRest += wheel.angleDelta.y
-      var steps = Model.notches(wheelRest)
-      if (!steps) return
-      wheelRest -= steps * 120
-      // Scrolling down moves the boundary down or right.
-      var inward = modelData === "top" || modelData === "left" ? 1 : -1
-      root.nudge(modelData, -steps * 10 * inward * (wheel.modifiers & Qt.ShiftModifier ? 10 : 1))
     }
   }
 }

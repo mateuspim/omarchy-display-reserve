@@ -7,3 +7,8 @@ StatsCard 1.0 StatsCard.qml
 StatsGraph 1.0 StatsGraph.qml
 StatsEase 1.0 StatsEase.qml
 ReserveIcon 1.0 ReserveIcon.qml
+PanelPreview 1.0 PanelPreview.qml
+PanelEdgesPage 1.0 PanelEdgesPage.qml
+PanelFillPage 1.0 PanelFillPage.qml
+PanelStatsPage 1.0 PanelStatsPage.qml
+PanelProfilesPage 1.0 PanelProfilesPage.qml
