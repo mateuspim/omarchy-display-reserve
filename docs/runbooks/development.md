@@ -156,7 +156,8 @@ FloatingWindow {
 ```
 
 `shell.qml` draws the stats fill of a 660 px top edge on a 1080 px wide
-monitor, or opens the panel, depending on `CAPTURE`:
+monitor, or opens the panel, depending on `CAPTURE`. `PANELS` (a comma
+list) picks the dashboard's panels and `PAGE` the panel's page:
 
 ```qml
 import QtQuick
@@ -177,7 +178,7 @@ ShellRoot {
       side: "top"
       mode: "stats"
       dim: 0.6
-      panels: ["gpu", "cpu", "memory", "network"]
+      panels: (Quickshell.env("PANELS") || "gpu,cpu,memory,network").split(",")
       size: 660
       screenWidth: 1080
       screenHeight: 1920
@@ -201,7 +202,7 @@ ShellRoot {
       source: "plugin/Panel.qml"
       onLoaded: openTimer.start()
     }
-    Timer { id: openTimer; interval: 1500; onTriggered: panelLoader.item.open() }
+    Timer { id: openTimer; interval: 1500; onTriggered: { panelLoader.item.page = Quickshell.env("PAGE") || "edges"; panelLoader.item.open() } }
   }
 }
 ```
@@ -282,14 +283,16 @@ own `HOME`):
 S=$(cd "$(dirname "$0")" && pwd)
 env -i PATH="$S/bin:/usr/bin" HOME="$S/home" XDG_RUNTIME_DIR="$S/runtime" \
   XDG_STATE_HOME="$S/home/.local/state" XDG_CONFIG_HOME="$S/home/.config" \
-  CPU_POWER_SYSFS="$S/powercap" CAPTURE="$1" OUT="$2" \
+  CPU_POWER_SYSFS="$S/powercap" CAPTURE="$1" OUT="$2" PANELS="$PANELS" HOT="$HOT" PAGE="$PAGE" \
   QT_QPA_PLATFORM="offscreen:configfile=$S/screens.json" QT_SCALE_FACTOR=2 \
   timeout 40 quickshell -p "$S" 2>&1 | grep -v "^  " | tail -25
 ```
 
 ```bash
-$H/run.sh stats $H/out/stats.png   # 2160×1320: 1080×660 at 2x
-$H/run.sh panel $H/out/panel.png   # 860×2132: the whole panel at 2x
+$H/run.sh stats $H/out/stats.png               # 2160×1320: 1080×660 at 2x
+PAGE=stats $H/run.sh panel $H/out/panel.png    # 860 wide, as tall as the page, at 2x
+PANELS=gpu,cpu,memory,network,disks,processes,temps,system HOT=1 \
+  $H/run.sh stats $H/out/hot.png               # eight panels, with warnings
 ```
 
 Shaders (`MultiEffect`) draw nothing offscreen, and Hyprland, MPRIS and
@@ -339,9 +342,12 @@ while :; do
   rd=$(( rd + 2000 + n % 5 * 900 )); wr=$(( wr + 1500 + n % 4 * 700 ))
   printf '@disk\n 259 0 nvme0n1 1000 0 %d 100 1000 0 %d 100 0 0 0\n' $rd $wr
   printf '@model\nnvme0n1\tSample NVMe SSD 2TB\n'
-  printf '@psi\ncpu some avg10=1.20 avg60=1.00 avg300=0.90 total=1\nmemory some avg10=0.00 avg60=0.00 avg300=0.00 total=1\nio some avg10=0.40 avg60=0.30 avg300=0.20 total=1\n'
-  printf '@hwmon\nk10temp\ttemp1\tTctl\t%d\nk10temp\ttemp3\tTccd1\t%d\nk10temp\ttemp4\tTccd2\t%d\nnct6799\tfan1\tCPU fan\t%d\n' $(( 59000 + n%5*500 )) 57000 55000 1180
-  if (( n % 5 == 0 )); then printf '@slowhwmon\n@nvme\nnvme0\t41850\n'; fi
+  # HOT=1 runs the CPU near its limit and stalls I/O, to show warnings.
+  io=0.40; [ -n "$HOT" ] && io=12.40
+  printf '@psi\ncpu some avg10=1.20 avg60=1.00 avg300=0.90 total=1\nmemory some avg10=0.00 avg60=0.00 avg300=0.00 total=1\nio some avg10=%s avg60=0.30 avg300=0.20 total=1\n' $io
+  tctl=$(( ${HOT:+34000} + 59000 + n%5*500 ))
+  printf '@hwmon\nk10temp\ttemp1\tTctl\t%d\t\nk10temp\ttemp3\tTccd1\t%d\t\nk10temp\ttemp4\tTccd2\t%d\t\nspd5118\ttemp1\t\t51000\t85000\nnct6799\tfan1\tCPU fan\t%d\t\nnct6799\tfan2\tCase fan\t%d\t\n' $tctl 57000 55000 1180 860
+  if (( n % 5 == 0 )); then printf '@slowhwmon\n@nvme\nnvme0\t41850\t84850\n'; fi
   energy=$(( energy + 82000000 + (n % 6) * 3000000 ))
   printf '@rapl\nintel-rapl:0\t%d\t65532610987\t\n' $energy
   printf '@freq\n'; for i in $(seq 0 23); do echo 5300000; done
@@ -394,7 +400,7 @@ offscreen captures:
 | Capture | From |
 | --- | --- |
 | `docs/brand/captures/stats.png` | `run.sh stats` with the fake sampler |
-| `docs/brand/captures/panel.png` | `run.sh panel` with the fake sampler |
+| `docs/brand/captures/panel.png` | `PAGE=stats run.sh panel` with the fake sampler |
 
 The monitor frame, bar, terminal and placeholder window around the stats
 capture are drawn in the SVG. To refresh:
@@ -416,9 +422,17 @@ chip icons are its glyphs. The current `preview.png` was rendered with
 librsvg 2.63.3 with that font installed. Other fonts change spacing and
 drop the icons, so inspect the output after rendering.
 
-The guides' smaller images, `docs/panel.png` and `docs/stats.png`, are
-renders of the same two components; refresh them the same way when the
-panel or the dashboard changes.
+The guides' smaller images are renders of the same two components:
+`docs/stats.png` as above, `docs/panel.png` the panel's Edges page, and
+`docs/panel-pages.png` its four pages side by side:
+
+```bash
+for p in edges fill stats profiles; do PAGE=$p $H/run.sh panel $H/out/panel-$p.png; done
+cd $H/out && magick panel-edges.png panel-fill.png panel-stats.png panel-profiles.png \
+  -gravity north -background '#0a0e13' -splice 24x0 +append -chop 24x0 +repage panel-pages.png
+```
+
+Refresh them the same way when the panel or the dashboard changes.
 
 ## Release
 

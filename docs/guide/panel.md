@@ -7,7 +7,26 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
 
 <p align="center">
   <img src="../panel.png" width="360"
-       alt="The OmaReach panel for DP-4 with the Desk profile: a to-scale preview of a portrait monitor with the stats dashboard on its top 660 pixels, the seven fill buttons with Stats selected, the clock-edge choice, the thirteen stats panels with GPU, CPU, Memory and Network on, the Animation and CPU power buttons, and a slider and pixel field for each edge">
+       alt="The OmaReach panel for DP-4 with the Desk profile on its Edges page: the header with the On switch, the DP-4 and DP-5 buttons, a to-scale preview of a portrait monitor with the stats dashboard on its top 660 pixels, the Edges, Fill, Stats and Profiles tabs, a slider and pixel field for each edge, the aspect presets, and the Idle, Ruler and Clear buttons">
+</p>
+
+The header, the monitor buttons and the preview stay at the top; below
+them, one page at a time:
+
+| Page | What it sets | Described in |
+| --- | --- | --- |
+| **Edges** | Each edge in pixels, and the aspect presets | below |
+| **Fill** | What the edges show, the dim amount, which edge the clock or the stats go on | [Fills](fills.md) |
+| **Stats** | The dashboard's panels and their order, its animation and CPU power | [The stats fill](stats-fill.md) |
+| **Profiles** | Named snapshots of every monitor | [Profiles](profiles.md) |
+
+Click a tab or press `[` and `]` to switch pages; the edge keys bring up
+Edges. The panel opens on the page it was left on. On a screen too short
+for a page, the panel scrolls.
+
+<p align="center">
+  <img src="../panel-pages.png"
+       alt="The panel's four pages side by side: Edges with the edge sliders and aspect presets; Fill with the seven fills, Stats selected, where the stats go and Same on every monitor; Stats with GPU, CPU, Memory and Network shown in order with buttons to move them, the panels to add, and the Animation and CPU power buttons; Profiles with the Desk profile, the name field, Auto and Save">
 </p>
 
 - **Preview**: the monitor drawn to scale, with the black edges, the
@@ -28,19 +47,22 @@ bar is on; use the monitor buttons (or Tab) to switch. Changes apply live.
   line left on screen with N px reserved, so for an edge behind a bezel or
   another monitor, reserve about the first tick you can see. Closing the
   panel hides the ruler.
-- **Switch**: pauses a monitor's reservation without forgetting the values.
-  Right-clicking the bar icon does the same for the bar's monitor.
+- **Switch** (top right, labelled On or Paused): pauses a monitor's
+  reservation without forgetting the values. Right-clicking the bar icon
+  does the same for the bar's monitor.
 - **Clear**: removes every reserved edge on the monitor. Right after a
   Clear, or zeroing an edge, the button turns into **Undo**.
 
-The **Fill**, **Panels** and **Idle** controls are described in
-[Fills](fills.md), and **Profiles** in [Profiles](profiles.md).
+The **Fill** page and the **Idle** button are described in
+[Fills](fills.md), the **Stats** page in [The stats fill](stats-fill.md),
+and **Profiles** in [Profiles](profiles.md).
 
 Values are in logical pixels. On a scaled monitor the panel shows the scale
 next to the edges, since a ruler on the screen measures something else.
 
 | Key | Action |
 | --- | --- |
+| `[` / `]` | Previous or next page |
 | `j` / `k`, ↓ / ↑ | Select an edge |
 | `h` / `l`, ← / → | Shrink or grow it by 10 px (Shift: 100, Ctrl: 1) |
 | `0`, Backspace, Delete | Zero the selected edge |

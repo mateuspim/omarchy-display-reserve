@@ -44,9 +44,15 @@ omareach.json ⇄ ReserveState (singleton) ──► Service ──► spacer + 
   windows to the reachable area
   ([ADR 5](adr/0005-fit-fullscreen-to-the-reachable-area.md)), turns every
   edge black while idle, and answers `omarchy-shell pym.omareach …`.
-- **`Panel.qml`** is the bar widget: a to-scale preview, fills, stats
-  panels, edge sliders and fields, aspect presets, profiles, idle, ruler and
-  undo, with keyboard shortcuts. Edits go to `ReserveState`.
+- **`Panel.qml`** is the bar widget: the bar button and its card, with
+  the header, monitor buttons, preview, page tabs, idle, ruler and undo,
+  the edit functions the pages call and the keyboard shortcuts. Edits go
+  to `ReserveState`. **`PanelPreview.qml`** is the to-scale preview with
+  its draggable edges, and the pages are **`PanelEdgesPage.qml`** (edge
+  sliders and fields, aspect presets), **`PanelFillPage.qml`** (fills, dim,
+  the clock's edge), **`PanelStatsPage.qml`** (the dashboard's panels and
+  their order, animation, CPU power) and **`PanelProfilesPage.qml`**. Each
+  takes the Panel as `panel`.
 - **`ReserveFill.qml`** draws one edge's fill (black, theme, wallpaper,
   dimmed, logo, clock or stats) for both the caps and the panel's preview.
   The logo recolors the SVG's text, and the clock is blocks from

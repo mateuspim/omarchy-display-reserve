@@ -2,7 +2,48 @@
 
 ## Unreleased
 
+### Added
+
+- **Panel pages:** the panel keeps its header, monitor buttons and preview
+  on top and shows one page at a time below them: Edges, Fill, Stats and
+  Profiles. Click a tab or press `[` and `]`; the edge keys bring up
+  Edges, and the panel opens where it was left. It scrolls on a screen
+  too short for a page, where the bottom rows used to be cut off.
+- **Panel order:** the Stats page lists a monitor's panels in order, with
+  buttons to move them, and the rest to add. The dashboard lays them out
+  in that order and leaves them off from the end; `panels` over IPC keeps
+  the order given.
+- **Warning color:** a stats card's outline and title turn red while one
+  of its sensors is within 5 °C of its limit, memory is 90% used, video
+  memory 95%, tasks stall 10% of the time, or a laptop battery is low.
+- **Hybrid CPUs:** an Intel CPU's performance and efficient threads show
+  as two groups of bars, and the CPU card counts each.
+- **Same on every monitor** on the Fill page, which right-click alone
+  used to do.
+
 ### Changed
+
+- **Temperatures against their limit:** temperature meters fill from
+  30 °C to the sensor's critical temperature (from hwmon, NVMe and amdgpu,
+  read by `stats.sh`), or to where the part throttles, instead of a 0 to
+  100 °C scale.
+- **Memory card:** one bar of used and cached memory keyed by its rows,
+  in place of a flat graph and meters for Used and Available, which said
+  the same thing twice.
+- **Network and Disks graphs** name the peak their top stands for; the
+  Network totals are one Since boot row.
+- **Load average** names its minutes where the card is wide enough, with
+  a meter for the load per thread.
+- **One meter color rule:** every meter that measures closeness to a
+  limit runs green, yellow, red.
+- **Sensors panel:** Temperatures and Fans are one panel. The Pressure
+  panel's numbers are Stalled rows on the CPU, Memory and Disks cards
+  while tasks stall. Saved panel lists, profiles and IPC names (`fans`)
+  carry over.
+- Labels for what was hidden: the pause switch says On or Paused, the
+  Idle button names itself, the stats fill's edge choice says what it
+  places, and the Profiles page says what Auto does.
+- `Stats.js` is split: the layout and the cards live in `StatsViews.js`.
 
 - The README is a short landing page. The manual moved, word for word, to
   guides in `docs/guide/`: the panel, fills, profiles, the stats fill,
