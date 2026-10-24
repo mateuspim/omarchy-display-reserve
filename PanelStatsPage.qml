@@ -12,8 +12,20 @@ Column {
   // The Panel this page edits: its monitor, edges and edit functions.
   required property var panel
   readonly property var shown: panel.edge.panels
-  readonly property var hidden: Model.panelOrder(shown).slice(shown.length)
+  // What the dashboard will draw, as StatsFill decides it: panels with
+  // nothing to show on this machine take no card, and those that do not
+  // fit the strip are left off from the end.
+  readonly property var samples: panel.reserve.stats.data
+  readonly property var strip: Model.statsStrip(panel.edge, panel.screenWidth, panel.screenHeight)
+  readonly property var dropped: strip ? Views.fit(Views.availablePanels(shown, samples), strip.width, strip.height).dropped : []
+  readonly property var hidden: Model.panelOrder(shown).slice(shown.length).filter(function(p) { return Views.available(p, page.samples) })
+  readonly property int possible: Model.STATS_PANELS.filter(function(p) { return Views.available(p, page.samples) }).length
   readonly property bool active: panel.edge.fill === "stats"
+  // Why a shown panel draws no card, or "".
+  function missing(name) {
+    if (!Views.available(name, samples)) return "not on this machine"
+    return dropped.indexOf(name) !== -1 ? "doesn't fit" : ""
+  }
   spacing: Style.spacing.sm
 
   // --- not the stats fill ----------------------------------------------------
@@ -41,16 +53,16 @@ Column {
   // --- the panels shown, in order -------------------------------------------
   PanelSectionHeader {
     visible: page.active
-    text: "SHOWN  ·  " + page.shown.length + " OF " + Model.STATS_PANELS.length
+    text: "SHOWN  ·  " + page.shown.length + " OF " + page.possible
     foreground: page.panel.foreground
     fontFamily: page.panel.fontFamily
   }
   Text {
-    visible: page.active && page.shown.length > 1
+    visible: page.active && page.shown.length > 0
     width: parent.width
     textFormat: Text.PlainText
     wrapMode: Text.WordWrap
-    text: "In this order; panels that don't fit the edge are left off from the end."
+    text: "In this order: ↑ ↓ move a panel, ✕ hides it. Panels that don't fit the edge are left off from the end."
     color: page.panel.subtle
     font.family: page.panel.fontFamily
     font.pixelSize: Style.font.caption
@@ -63,15 +75,19 @@ Column {
       required property int index
       width: page.width
       height: hideButton.implicitHeight
+      readonly property string missing: page.missing(modelData)
       Button {
         id: hideButton
         anchors.left: parent.left
         anchors.right: upButton.left
         anchors.rightMargin: Style.spacing.md
         leftAlign: true
-        text: (shownRow.index + 1) + "  " + Model.panelName(shownRow.modelData)
+        text: (shownRow.index + 1) + "  " + Model.panelName(shownRow.modelData) + (shownRow.missing ? "  ·  " + shownRow.missing : "")
         iconText: Views.ICONS[shownRow.modelData]
-        selected: true
+        // Dimmed while it draws no card, and not selected: it is chosen
+        // but not on the dashboard.
+        selected: shownRow.missing === ""
+        opacity: shownRow.missing ? 0.55 : 1
         bordered: true
         foreground: page.panel.foreground
         fontFamily: page.panel.fontFamily
@@ -94,7 +110,8 @@ Column {
       }
       Button {
         id: downButton
-        anchors.right: parent.right
+        anchors.right: removeButton.left
+        anchors.rightMargin: Style.spacing.md
         iconText: "󰁅"
         enabled: shownRow.index < page.shown.length - 1
         opacity: enabled ? 1 : 0.4
@@ -103,6 +120,18 @@ Column {
         fontFamily: page.panel.fontFamily
         tooltipText: "Move " + Model.panelName(shownRow.modelData).toLowerCase() + " later, where it is left off first"
         onClicked: { page.panel.movePanel(shownRow.modelData, 1); page.panel.refocus() }
+      }
+      // Clicking the panel hides it too, but nothing on it says so.
+      Button {
+        id: removeButton
+        anchors.right: parent.right
+        iconText: "󰅖"
+        bordered: true
+        foreground: page.panel.foreground
+        fontFamily: page.panel.fontFamily
+        tooltipText: "Hide " + Model.panelName(shownRow.modelData).toLowerCase() + " from the dashboard\nRight click for every monitor"
+        onClicked: { page.panel.togglePanel(shownRow.modelData); page.panel.refocus() }
+        onRightClicked: { page.panel.togglePanelEverywhere(shownRow.modelData); page.panel.refocus() }
       }
     }
   }

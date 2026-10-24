@@ -33,9 +33,38 @@ Item {
   readonly property bool showsLogo: shown.logo === true && Reserve.ReserveState.iconArt !== null
     && logoSize >= unit * 4 && width - 3 * unit - logoSize >= unit * 13
   readonly property int line: Math.max(1, Math.round(unit / 12))
-  // A view that asks for attention trades its hue for the warning color,
-  // in a thicker, solid outline and title.
-  readonly property color outline: shown.alert ? theme.alert : shown.color
+  // A view that asks for attention trades its hue for the caution or
+  // alarm color, in a thicker, solid outline, with a warning mark for its
+  // icon; at CRITICAL the title is filled in as well.
+  readonly property int alert: shown.alert || 0
+  readonly property color outline: alert >= Views.ALERT ? theme.alert : alert === Views.CAUTION ? theme.caution : shown.color
+  readonly property bool critical: alert >= Views.CRITICAL
+
+  // The rows with meters share a label column and a value column, so
+  // their meters start and end together. The value column is as wide as
+  // the longest value that still leaves a meter room (two units): a
+  // longer value ("6.2 / 16.0 GiB" in a narrow card) keeps its text whole
+  // and goes without a meter, rather than squeezing every other meter out.
+  readonly property var meterRows: shown.rows.filter(function(r) { return r.fraction !== null && r.fraction !== undefined })
+  readonly property real labelColumn: Math.min(Math.max(unit * 4, longest(meterRows, "label") * labelGlyph.advanceWidth + unit * 0.6), rowsColumn.width * 0.45)
+  readonly property real valueColumn: {
+    var room = rowsColumn.width - labelColumn - unit * 0.6 * 2 - unit * 2
+    var widest = 0
+    for (var i = 0; i < meterRows.length; i++) {
+      var width = valueWidth(meterRows[i].text)
+      if (width <= room && width > widest) widest = width
+    }
+    return widest
+  }
+  function valueWidth(text) { return String(text || "").length * valueGlyph.advanceWidth }
+  function longest(rows, key) {
+    var most = 0
+    for (var i = 0; i < rows.length; i++) most = Math.max(most, String(rows[i][key] || "").length)
+    return most
+  }
+  // The font is monospaced, so one glyph's advance measures any text.
+  TextMetrics { id: labelGlyph; text: "0"; font.family: card.fontFamily; font.pixelSize: Math.round(card.unit * 0.9) }
+  TextMetrics { id: valueGlyph; text: "0"; font.family: card.fontFamily; font.pixelSize: Math.round(card.unit * 0.9); font.bold: true }
 
   Rectangle {
     anchors.fill: parent
@@ -43,8 +72,8 @@ Item {
     color: "transparent"
     radius: Math.round(card.unit * 0.55)
     border.color: card.outline
-    border.width: card.shown.alert ? card.line * 2 : card.line
-    opacity: card.shown.alert ? 1 : 0.75
+    border.width: card.alert ? card.line * 2 : card.line
+    opacity: card.alert ? 1 : 0.75
   }
 
   // The title, and on the right the panel's detail (a GPU's name, the
@@ -53,22 +82,24 @@ Item {
     x: card.unit
     height: card.unit
     width: titleRow.implicitWidth + card.unit * 0.7
-    color: "black"
+    radius: card.critical ? Math.round(card.unit * 0.3) : 0
+    color: card.critical ? card.outline : "black"
     Row {
       id: titleRow
       anchors.centerIn: parent
       spacing: Math.round(card.unit * 0.4)
       Text {
         textFormat: Text.PlainText
-        text: card.shown.icon
-        color: card.outline
+        // A warning mark for the panel's icon while it asks for attention.
+        text: card.alert ? "\u{f0026}" : card.shown.icon
+        color: card.critical ? "black" : card.outline
         font.family: card.fontFamily
         font.pixelSize: card.unit
       }
       Text {
         textFormat: Text.PlainText
         text: card.shown.title
-        color: card.shown.alert ? card.theme.alert : card.theme.foreground
+        color: card.critical ? "black" : card.alert ? card.outline : card.theme.foreground
         font.family: card.fontFamily
         font.pixelSize: Math.round(card.unit * 0.9)
         font.bold: true
@@ -133,10 +164,13 @@ Item {
     visible: card.shown.empty === ""
     clip: true
 
-    // The headline: the big value, its graphs and the per-core bars.
+    // The headline: the big value, its graphs and the per-core bars. Only
+    // its graphs take the free height in a stacked card; without one, the
+    // rows follow right under the value.
     ColumnLayout {
       Layout.fillWidth: true
-      Layout.fillHeight: true
+      Layout.fillHeight: card.wide || card.shown.graphs.length > 0
+      Layout.alignment: Qt.AlignTop
       // Side by side the rows' text needs more of the width than the graph.
       Layout.preferredWidth: 2
       spacing: Math.round(card.unit * 0.4)
@@ -173,6 +207,19 @@ Item {
           font.family: card.fontFamily
           font.pixelSize: Math.round(card.unit * 0.8)
         }
+      }
+      // What the caption had no room for (a wide card's sensor name), or
+      // how low a battery is, in the warning's color.
+      Text {
+        textFormat: Text.PlainText
+        visible: card.shown.note !== ""
+        Layout.fillWidth: true
+        elide: Text.ElideRight
+        text: card.shown.note
+        color: card.alert ? card.outline : card.theme.subtle
+        font.family: card.fontFamily
+        font.pixelSize: Math.round(card.unit * 0.8)
+        font.bold: card.alert > 0
       }
 
       // Each repeater counts the view's items rather than taking its
@@ -272,12 +319,16 @@ Item {
           }
         }
       }
+      // Beside the rows of a wide card, a headline without a graph keeps to
+      // the top like every other card's, rather than floating in the middle.
+      Item { Layout.fillHeight: true; visible: card.wide && card.shown.graphs.length === 0 }
     }
 
     // The details: label, meter and value rows, then ranked lists. No
     // wider than this: across a very wide card a label and its value
     // drift too far apart to read as one.
     ColumnLayout {
+      id: rowsColumn
       Layout.fillWidth: true
       Layout.fillHeight: card.wide
       Layout.preferredWidth: 3
@@ -462,6 +513,10 @@ Item {
     // A square of barColor before the label: the key to a stacked bar.
     property bool swatch: false
     readonly property bool hasMeter: fraction !== null && fraction !== undefined
+    // A meter row of the card's rows that lines up with the others; one
+    // whose value is too long for the card's value column has no meter.
+    readonly property bool columns: hasMeter && !labelFills && card.valueWidth(text) <= card.valueColumn && card.valueColumn > 0
+    readonly property bool meterless: hasMeter && !labelFills && !columns
     implicitHeight: Math.round(card.unit * 1.25)
 
     Rectangle {
@@ -482,8 +537,9 @@ Item {
       // Never into the value: a long value takes the room of the meter,
       // then of the label, which elides.
       // A long label ("G502 X LIGHTSPEED") takes up to half the row from
-      // the meter.
+      // the meter. A row with a meter uses the card's label column.
       width: statRow.labelFills ? parent.width - value.width - meter.width - card.unit * 1.2
+        : statRow.columns ? card.labelColumn
         : Math.max(0, Math.min(Math.max(statRow.labelWidth, Math.min(implicitWidth + card.unit * 0.6, parent.width * 0.5)),
             parent.width - value.width - card.unit * 0.6))
       text: statRow.label
@@ -495,7 +551,7 @@ Item {
     Rectangle {
       id: meter
       // A meter squeezed to a dot says nothing.
-      visible: statRow.hasMeter && width >= card.unit * 2
+      visible: statRow.hasMeter && !statRow.meterless && width >= card.unit * 2
       anchors.verticalCenter: parent.verticalCenter
       x: statRow.labelFills ? rowLabel.width + card.unit * 0.6 : rowLabel.width
       width: !statRow.hasMeter ? 0 : statRow.labelFills ? statRow.meterWidth : Math.max(0, value.x - x - card.unit * 0.6)
@@ -516,8 +572,11 @@ Item {
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       // Never over the label: it takes the room the label can spare (all
-      // but a short label's own width), and past that it elides.
-      width: Math.min(implicitWidth, parent.width - Math.min(rowLabel.implicitWidth, card.unit * 3) - card.unit * 0.6)
+      // but a short label's own width), and past that it elides. A row
+      // with a meter takes the card's value column, right-aligned in it.
+      width: statRow.columns ? card.valueColumn
+        : Math.min(implicitWidth, parent.width - Math.min(rowLabel.implicitWidth, card.unit * 3) - card.unit * 0.6)
+      horizontalAlignment: Text.AlignRight
       elide: Text.ElideRight
       text: statRow.text
       color: card.theme.foreground

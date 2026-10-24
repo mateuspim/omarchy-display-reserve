@@ -48,10 +48,18 @@ at a glance, from a distance:
   GPU's), or else where such parts throttle (95 °C for AMD's CPUs, 90 °C
   for NVIDIA's GPUs, which nvidia-smi does not report for every driver).
   The Sensors card names its leading sensor's limit.
-- **A warning color.** A card's outline and title turn red while one of
-  its sensors is within 5 °C of its limit, memory is 90% used, video
-  memory 95%, tasks stall 10% of the time, or a laptop's battery is at
-  15% and draining.
+- **A warning color.** A card's outline and title turn red, with a
+  warning mark for its icon, while one of its sensors is within 5 °C of
+  its limit, memory is 90% used, video memory 95%, or tasks stall 10% of
+  the time; the meter that caused it is red too. No card uses red or
+  yellow as its own color, so a warning never looks like a card's normal
+  hue. Batteries step up as they empty while not charging, a laptop's or
+  a peripheral's alike: yellow at 15%, red at 10%, and red with the title
+  filled in at 5%, with "low", "very low" or "critical" under the
+  number.
+- **Aligned rows.** A card's meters start and end together. A value too
+  long to leave its meter room (VRAM's "6.2 / 16.0 GiB" in a narrow card)
+  keeps its text whole and goes without a meter.
 - **Graphs that name their scale, and carry no text.** The Network and
   Disks graphs scale to the busiest second of the last minute, which the
   Network card's Peak row and the Disks card's title corner name, so a
@@ -76,8 +84,12 @@ at a glance, from a distance:
 The **Stats** page of the panel lists the panels this monitor shows, in
 order, with buttons to move each earlier or later; the dashboard lays
 them out in that order and leaves them off from the end when the edge
-runs out of room. Click a shown panel to hide it, or one under **Add** to
-show it last. Right-click either to do the same on every monitor. The
+runs out of room. A shown panel the dashboard does not draw says why:
+"doesn't fit" when the edge runs out of room, "not on this machine" for
+an iGPU panel without a second GPU or a Battery panel without a battery
+(which **Add** leaves out, and the count leaves out too). **✕** (or
+clicking the panel) hides it; click one under **Add** to show it last.
+Right-click either to do the same on every monitor. The
 page's **Every monitor** part sets the Animation and CPU power (below)
 for every dashboard. Without the Stats fill, the page offers to switch
 to it.

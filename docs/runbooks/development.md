@@ -429,8 +429,8 @@ The guides' smaller images are renders of the same two components:
 
 ```bash
 for p in edges fill stats profiles; do PAGE=$p $H/run.sh panel $H/out/panel-$p.png; done
-cd $H/out && magick panel-edges.png panel-fill.png panel-stats.png panel-profiles.png \
-  -gravity north -background '#0a0e13' -splice 24x0 +append -chop 24x0 +repage panel-pages.png
+cd $H/out && magick panel-edges.png \( -size 24x1 xc:'#0a0e13' \) panel-fill.png \( -size 24x1 xc:'#0a0e13' \) panel-stats.png \
+  \( -size 24x1 xc:'#0a0e13' \) panel-profiles.png -background '#0a0e13' -gravity north +append +repage panel-pages.png
 ```
 
 Refresh them the same way when the panel or the dashboard changes.

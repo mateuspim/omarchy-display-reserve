@@ -36,9 +36,9 @@ for a page, the panel scrolls.
   While you type in a field, keys go to the field; Enter, Esc or Tab
   applies the value and returns to the shortcuts below.
 - **Aspect presets** (21:9, 16:9, 4:3, 1:1): reserve the edges that leave a
-  reachable area of that shape. The button after them says where the area
-  goes (Top, Center or Bottom on a portrait monitor, Left, Center or Right
-  on a landscape one) and starts from the edges you have. A preset only
+  reachable area of that shape. The **Area** button after them says where
+  the area goes (Top, Center or Bottom on a portrait monitor, Left, Center
+  or Right on a landscape one) and starts from the edges you have. A preset only
   reserves the pair of edges it cuts; on a portrait 1080×1920 monitor,
   16:9 at the bottom reserves the top 1312 px.
 - **Ruler**: draws a scale from the middle of every edge of the monitor to

@@ -28,12 +28,17 @@ Column {
     id: aspectRow
     width: parent.width
     spacing: Style.spacing.md
-    readonly property real buttonWidth: (width - spacing * Model.ASPECTS.length) / (Model.ASPECTS.length + 1)
+    // The area button names its place ("Area · Bottom"), so it takes about
+    // a third of the row and the presets share the rest.
+    readonly property real alignWidth: Math.round(width * 0.32)
+    readonly property real buttonWidth: (width - alignWidth - spacing * Model.ASPECTS.length) / Model.ASPECTS.length
     Repeater {
       model: Model.ASPECTS
       Button {
         required property string modelData
         width: aspectRow.buttonWidth
+        // As tall as the area button, whose icon makes it taller.
+        height: areaButton.height
         text: modelData
         tooltipText: "Reserve edges so the reachable area is " + modelData
         selected: page.panel.aspect === modelData
@@ -44,8 +49,10 @@ Column {
       }
     }
     Button {
-      width: aspectRow.buttonWidth
-      text: Model.alignName(page.panel.align, page.panel.screenWidth, page.panel.screenHeight)
+      id: areaButton
+      width: aspectRow.alignWidth
+      // "Bottom" alone read as "reserve the bottom".
+      text: "Area · " + Model.alignName(page.panel.align, page.panel.screenWidth, page.panel.screenHeight)
       iconText: page.panel.alignIcon(page.panel.align)
       tooltipText: "Where a preset puts the reachable area; the other edge of the pair gets the rest"
       bordered: true

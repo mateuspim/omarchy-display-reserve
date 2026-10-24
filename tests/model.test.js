@@ -67,6 +67,12 @@ const tests = {
     assert.equal(Model.panelFrom("mem"), "memory")
     assert.equal(Model.panelFrom("rainbow"), "")
   },
+  "statsStrip is the stats fill's edge across the monitor"() {
+    assert.deepEqual({ ...Model.statsStrip(Model.normalize({ fill: "stats", top: 660 }), 1080, 1920) }, { width: 1080, height: 660 })
+    assert.deepEqual({ ...Model.statsStrip(Model.normalize({ fill: "stats", left: 300 }), 2560, 1440) }, { width: 300, height: 1440 })
+    assert.equal(Model.statsStrip(Model.normalize({ fill: "clock", top: 660 }), 1080, 1920), null)
+    assert.equal(Model.statsStrip(Model.normalize({ fill: "stats" }), 1080, 1920), null)
+  },
   "nextPage steps through the panel's pages, wrapping around"() {
     assert.equal(Model.nextPage("edges", 1), "fill")
     assert.equal(Model.nextPage("profiles", 1), "edges")

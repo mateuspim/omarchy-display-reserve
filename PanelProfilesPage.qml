@@ -39,7 +39,8 @@ Column {
       Button {
         required property string modelData
         required property int index
-        text: modelData
+        // Auto shows on the chip, not only in its tooltip.
+        text: modelData + (page.panel.reserve.isAuto(modelData) ? "  ·  auto" : "")
         iconText: index < 9 ? String(index + 1) : ""
         tooltipText: "Apply " + modelData + " to every monitor" + (index < 9 ? "  ·  " + (index + 1) : "")
           + (page.panel.reserve.autoProfiles[modelData] ? "\nApplied by itself with " + page.panel.reserve.autoProfiles[modelData].join(", ") : "")
@@ -62,7 +63,7 @@ Column {
       anchors.right: autoButton.left
       anchors.rightMargin: Style.spacing.md
       anchors.verticalCenter: parent.verticalCenter
-      placeholderText: page.panel.reserve.currentProfile || "Profile name"
+      placeholderText: "Profile name"
       // The Panel owns the name, so applying a profile or reopening the
       // panel can set it.
       text: page.panel.profileDraft

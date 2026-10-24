@@ -952,9 +952,12 @@ function palette(colors, fallback) {
     subtle: mix(foreground, background, 0.35),
     // The dashboard sits on black, so its tracks are mixed from black too.
     meter: mix("#000000", foreground, 0.13),
-    // A card's border and title when something on it needs attention.
+    // A card's border and title when something on it needs attention: a
+    // caution first, then the alarm. No box uses either as its own hue,
+    // so a warning never looks like a card's normal color.
+    caution: yellow,
     alert: red,
-    boxes: { gpu: cyan, igpu: mix(cyan, green, 0.5), temps: mix(yellow, red, 0.5), battery: green, media: mix(magenta, blue, 0.5), system: accent, cpu: magenta, memory: green, network: red, disks: yellow, processes: blue },
+    boxes: { gpu: cyan, igpu: mix(cyan, green, 0.5), temps: mix(yellow, red, 0.5), battery: green, media: mix(magenta, blue, 0.5), system: accent, cpu: magenta, memory: green, network: mix(cyan, blue, 0.5), disks: mix(yellow, green, 0.35), processes: blue },
     // Headlines and graphs run through their box's hues, cool to hot, as
     // in btop. Every meter that measures how close something is to its
     // limit (heat, power, VRAM, swap, load, stalls, fans, battery) uses

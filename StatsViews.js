@@ -104,11 +104,23 @@ function keyRow(label, text, color) {
 // the room: a sensor this many °C from its limit, memory or video memory
 // this full, tasks stalled this share of the last 10 s, a battery this low
 // and draining.
+// How loudly a card asks: CAUTION turns it yellow, ALERT red, and
+// CRITICAL red with its title filled in. Most readings only alert; a
+// battery steps through all three as it empties.
+var CAUTION = 1
+var ALERT = 2
+var CRITICAL = 3
+
+function raise(v, level) {
+  if (level > v.alert) v.alert = level
+}
+
 var ALERT_HEAT_MARGIN = 5
 var ALERT_MEMORY = 0.9
 var ALERT_VRAM = 0.95
 var ALERT_STALL = 10
-var ALERT_BATTERY = 15
+// A battery's levels, low to critical, for CAUTION, ALERT and CRITICAL.
+var BATTERY_LEVELS = [15, 10, 5]
 
 function hot(temp, limit) {
   return temp !== null && temp !== undefined && limit > 0 && temp >= limit - ALERT_HEAT_MARGIN
@@ -126,10 +138,11 @@ function heatRow(label, temp, limit, g) {
 var STALL_SHOWN = 1
 
 // A row for the share of the last 10 s tasks stalled on one resource
-// (pressure stall information). Stalls of a few percent already matter;
-// the square root shows them.
+// (pressure stall information). Its meter reaches the red end of the level
+// scale where the card alerts, ALERT_STALL, so a red card never shows the
+// cause as a green meter.
 function stallRow(value, g) {
-  var level = Math.sqrt(Math.min(100, value) / 100)
+  var level = Math.min(1, value / ALERT_STALL * 0.8)
   return row("Stalled", value.toFixed(1) + "%", level, Stats.gradientAt(g.level, level))
 }
 
@@ -172,7 +185,9 @@ function graphMax(values, floor) {
 // color, an optional big value with a caption, graphs (each with an
 // optional label), per-core bars (a `gap` entry splits them into groups),
 // a stacked bar of `stack` parts, label/value rows with meters and ranked
-// lists. `alert` asks for the card's warning color. `empty` replaces the
+// lists. `note` is a line under the headline, for what its caption has no
+// room for. `alert` asks for the card's warning color, 0 for none to
+// CRITICAL. `empty` replaces the
 // content with a message. `room` is how many rows the card has space for,
 // for panels whose lists can grow to fill it, `wide` whether its rows sit
 // beside the headline rather than under it, `span` its width in units,
@@ -182,8 +197,8 @@ function view(panel, state, palette, room, wide, span, shown) {
   var g = palette.gradients
   var result = {
     title: TITLES[panel] || panel, icon: ICONS[panel] || "", color: palette.boxes[panel] || palette.accent,
-    info: "", value: "", valueColor: palette.foreground, caption: "",
-    graphs: [], bars: [], stack: [], rows: [], lists: [], empty: "", logo: false, alert: false
+    info: "", value: "", valueColor: palette.foreground, caption: "", note: "",
+    graphs: [], bars: [], stack: [], rows: [], lists: [], empty: "", logo: false, alert: 0
   }
   var build = VIEWS[panel]
   if (build) build(result, state, palette, g, room, wide, span, shown || [])
@@ -214,6 +229,7 @@ var VALUE_ROWS = 1.8
 var GRAPH_ROWS = 1
 var BARS_ROWS = 1.4
 var STACK_ROWS = 0.8
+var NOTE_ROWS = 0.8
 var GAP_ROWS = 0.3
 
 // How many of a view's rows fit `room` rows: all of it beside the headline
@@ -221,7 +237,7 @@ var GAP_ROWS = 0.3
 // out, and whatever room is over goes to the graphs.
 function rowsThatFit(v, room, wide) {
   if (wide) return Math.max(0, room)
-  var headline = (v.value ? VALUE_ROWS : 0) + v.graphs.length * GRAPH_ROWS + (v.bars.length ? BARS_ROWS : 0) + (v.stack.length ? STACK_ROWS : 0)
+  var headline = (v.value ? VALUE_ROWS : 0) + (v.note ? NOTE_ROWS : 0) + v.graphs.length * GRAPH_ROWS + (v.bars.length ? BARS_ROWS : 0) + (v.stack.length ? STACK_ROWS : 0)
   if (headline > 0) headline += GAP_ROWS
   return Math.max(0, Math.floor(room - headline + 1e-9))
 }
@@ -238,11 +254,11 @@ function gpuView(v, gpu, history, g, room, wide) {
   if (gpu.memUsed !== null && gpu.memTotal) {
     var vram = gpu.memUsed / gpu.memTotal
     v.rows.push(row("VRAM", Stats.formatPair(gpu.memUsed, gpu.memTotal), vram, Stats.gradientAt(g.level, vram)))
-    if (vram >= ALERT_VRAM) v.alert = true
+    if (vram >= ALERT_VRAM) raise(v, ALERT)
   }
   if (gpu.temp !== null) {
     v.rows.push(heatRow("Temp", gpu.temp, gpu.tempLimit, g))
-    if (hot(gpu.temp, gpu.tempLimit)) v.alert = true
+    if (hot(gpu.temp, gpu.tempLimit)) raise(v, ALERT)
   }
   if (gpu.power !== null) {
     var limit = gpu.powerLimit
@@ -313,14 +329,14 @@ var VIEWS = {
     }
     if (cpu.temp !== null) {
       v.rows.push(heatRow("Temp", cpu.temp, cpu.tempLimit, g))
-      if (hot(cpu.temp, cpu.tempLimit)) v.alert = true
+      if (hot(cpu.temp, cpu.tempLimit)) raise(v, ALERT)
     }
     if (clockRow) v.rows.push(row("Clock", Stats.formatFrequency(cpu.frequency), null))
     if (cpu.loadavg.length) v.rows.push(loadRow(cpu.loadavg, cpu.threads, g, rowSpan(span, wide)))
     var stall = state.pressure && state.pressure.cpu
     if (stall !== null && stall !== undefined && stall >= STALL_SHOWN) {
       v.rows.push(stallRow(stall, g))
-      if (stall >= ALERT_STALL) v.alert = true
+      if (stall >= ALERT_STALL) raise(v, ALERT)
     }
   },
 
@@ -332,7 +348,7 @@ var VIEWS = {
     v.value = Stats.formatPercent(used * 100)
     v.valueColor = Stats.gradientAt(g.used, used)
     v.caption = "used"
-    if (used >= ALERT_MEMORY) v.alert = true
+    if (used >= ALERT_MEMORY) raise(v, ALERT)
     // One bar for the whole of memory: what is used, the cache the kernel
     // would hand back, and what is free. Used and available add up to the
     // total, so separate meters for them said the same thing twice, and a
@@ -350,7 +366,7 @@ var VIEWS = {
     var stall = state.pressure && state.pressure.memory
     if (stall !== null && stall !== undefined && stall >= STALL_SHOWN) {
       v.rows.push(stallRow(stall, g))
-      if (stall >= ALERT_STALL) v.alert = true
+      if (stall >= ALERT_STALL) raise(v, ALERT)
     }
   },
 
@@ -365,13 +381,13 @@ var VIEWS = {
     var rxMax = graphMax(state.history.rx, 10240), txMax = graphMax(state.history.tx, 10240)
     v.graphs.push({ values: state.history.rx, max: rxMax, stops: g.download, label: "" })
     v.graphs.push({ values: state.history.tx, max: txMax, stops: g.upload, label: "" })
-    v.rows.push(keyRow("Down", Stats.formatRate(n.rx), g.download[1]))
-    v.rows.push(keyRow("Up", Stats.formatRate(n.tx), g.upload[1]))
+    // Keyed by the graphs' low color, which a line shows most of the time.
+    v.rows.push(keyRow("Down", Stats.formatRate(n.rx), g.download[0]))
+    v.rows.push(keyRow("Up", Stats.formatRate(n.tx), g.upload[0]))
     v.rows.push(row("Peak", "↓ " + Stats.formatShort(rxMax) + "  ↑ " + Stats.formatShort(txMax), null))
-    // Totals since boot, a row each: one row for both is cut off beside
-    // the graphs of a wide card.
-    v.rows.push(row("Received", Stats.formatBytes(n.rxTotal), null))
-    v.rows.push(row("Sent", Stats.formatBytes(n.txTotal), null))
+    // Both totals since boot on one row, so a card short of rows never
+    // shows one without the other.
+    v.rows.push(row("Total", "↓ " + Stats.formatShort(n.rxTotal) + "  ↑ " + Stats.formatShort(n.txTotal), null))
   },
 
   disks: function(v, state, palette, g, room, wide, span, shown) {
@@ -379,21 +395,31 @@ var VIEWS = {
     // The graph of every disk's reads and writes scales to its busiest
     // second, which the title's corner names beside the disk count.
     var diskMax = graphMax(state.history.disk, 1048576)
-    v.info = (state.disks.length > 1 ? state.disks.length + " disks · " : "") + "peak " + Stats.formatShort(diskMax) + "/s"
     v.graphs.push({ values: state.history.disk, max: diskMax, stops: g.process, label: "" })
     var sensors = shown.indexOf("temps") !== -1
-    v.rows = state.disks.map(function(disk) {
+    if (state.disks.length === 1) {
+      // One disk: its name in the title's corner, and a row each for what
+      // a row per disk crams onto one line.
+      var disk = state.disks[0]
+      v.info = disk.name + " · peak " + Stats.formatShort(diskMax) + "/s"
+      v.rows.push(row("Read", Stats.formatRate(disk.read), null))
+      v.rows.push(row("Write", Stats.formatRate(disk.write), null))
+      if (disk.temp !== null && !sensors) v.rows.push(heatRow("Temp", disk.temp, disk.tempLimit, g))
+      if (hot(disk.temp, disk.tempLimit)) raise(v, ALERT)
+    }
+    else v.info = state.disks.length + " disks · peak " + Stats.formatShort(diskMax) + "/s"
+    if (state.disks.length > 1) v.rows = state.disks.map(function(disk) {
       var text = "R " + Stats.formatShort(disk.read) + "  W " + Stats.formatShort(disk.write)
       // A narrow card has no room for it, and beside a Sensors panel it
       // would be there twice.
       if (disk.temp !== null && !sensors && !(rowSpan(span, wide) < DISK_TEMP_SPAN)) text += "  " + Stats.formatTemp(disk.temp)
-      if (hot(disk.temp, disk.tempLimit)) v.alert = true
+      if (hot(disk.temp, disk.tempLimit)) raise(v, ALERT)
       return row(disk.name, text, null)
     })
     var stall = state.pressure && state.pressure.io
     if (stall !== null && stall !== undefined && stall >= STALL_SHOWN) {
       v.rows.push(stallRow(stall, g))
-      if (stall >= ALERT_STALL) v.alert = true
+      if (stall >= ALERT_STALL) raise(v, ALERT)
     }
   },
 
@@ -424,11 +450,19 @@ var VIEWS = {
     // Each list takes its title and at least one line (an empty one says
     // "Nothing busy"); what room is over goes to the lists in order.
     if (room !== undefined && room < lists.length * 2) {
-      // One line per resource: its top program, named for what it uses.
-      v.lists.push({ title: "", items: lists.map(function(list) {
-        var top = list.items[0]
-        return top ? Object.assign({}, top, { name: list.title + " · " + top.name }) : { name: list.title + " · nothing busy", text: "", fraction: null, color: "" }
-      }) })
+      // One line per resource: its top program, named for what it uses;
+      // lines to spare go round the resources for their next programs.
+      function line(list, i) {
+        var item = list.items[i]
+        return item ? Object.assign({}, item, { name: list.title + " · " + item.name }) : null
+      }
+      var items = lists.map(function(list) { return line(list, 0) || { name: list.title + " · nothing busy", text: "", fraction: null, color: "" } })
+      for (var rank = 1; items.length < room; rank++) {
+        var more = lists.map(function(list) { return line(list, rank) }).filter(Boolean)
+        if (!more.length) break
+        items = items.concat(more.slice(0, room - items.length))
+      }
+      v.lists.push({ title: "", items: items })
       return
     }
     // Spare lines go round the lists one at a time, so a short card ranks
@@ -466,18 +500,22 @@ var VIEWS = {
       add(disk ? disk.name : controller, state.nvmeTemps[controller], (state.nvmeLimits || {})[controller])
     })
     state.temps.filter(function(t) { return /^DIMM /.test(t.name) }).forEach(function(t) { add(t.name, t.temp, t.limit) })
-    temps.forEach(function(t) { if (hot(t.temp, t.limit)) v.alert = true })
+    temps.forEach(function(t) { if (hot(t.temp, t.limit)) raise(v, ALERT) })
 
+    // Beside the CPU panel a die would lead with nearly the CPU's own
+    // reading, so the CPU's sensors lead only when nothing else can.
+    function cpuSensor(t) { return t.name === "CPU" || /^CCD /.test(t.name) }
+    var candidates = has("cpu") && temps.some(function(t) { return !cpuSensor(t) }) ? temps.filter(function(t) { return !cpuSensor(t) }) : temps
     var lead = null
-    temps.forEach(function(t) { if (!lead || Stats.heat(t.temp, t.limit) > Stats.heat(lead.temp, lead.limit)) lead = t })
+    candidates.forEach(function(t) { if (!lead || Stats.heat(t.temp, t.limit) > Stats.heat(lead.temp, lead.limit)) lead = t })
     if (lead) {
       v.value = Stats.formatTemp(lead.temp)
       v.valueColor = Stats.gradientAt(g.level, Stats.heat(lead.temp, lead.limit))
-      // Its name beside it, or in a wide card, where the headline is too
-      // narrow for a caption, in the title's corner with its limit.
+      // Its name and limit beside it; a wide card's headline is too narrow
+      // for that caption, so they go on the line under the value.
       var limit = lead.limit ? "max " + Stats.formatTemp(lead.limit) : ""
-      v.caption = wide ? "" : lead.name
-      v.info = wide ? [lead.name, limit].filter(Boolean).join(" ") : limit
+      if (wide) v.note = [lead.name, limit].filter(Boolean).join(" · ")
+      else { v.caption = lead.name; v.info = limit }
     }
     v.rows = temps.filter(function(t) { return t !== lead }).map(function(t) { return heatRow(t.name, t.temp, t.limit, g) })
     // Fans against 3000 RPM, about as fast as a desktop's case and CPU
@@ -505,8 +543,15 @@ var VIEWS = {
     function draining(b) { return b.status === "Discharging" || (b.device && !charging(b) && !/^Full/.test(b.status)) }
     function color(p) { return Stats.gradientAt(g.level, 1 - (p || 0) / 100) }
     function hours(h) { return Math.floor(h) + "h " + Math.floor(h * 60) % 60 + "m" }
-    // Low and not on a charger: the card asks for attention.
-    state.power.forEach(function(b) { var p = percent(b); if (p !== null && p <= ALERT_BATTERY && draining(b)) v.alert = true })
+    // Low and not on a charger: the card asks for attention, louder as it
+    // empties, the laptop's and every peripheral's alike.
+    var lowest = null
+    state.power.forEach(function(b) {
+      var p = percent(b)
+      if (p === null || !draining(b) || p > BATTERY_LEVELS[0]) return
+      BATTERY_LEVELS.forEach(function(threshold, i) { if (p <= threshold) raise(v, CAUTION + i) })
+      if (!lowest || p < percent(lowest)) lowest = b
+    })
 
     var known = devices.filter(function(b) { return percent(b) !== null })
     var lead = laptop || known.slice().sort(function(a, b) { return percent(a) - percent(b) })[0] || devices[0]
@@ -527,7 +572,13 @@ var VIEWS = {
     } else {
       v.caption = lead.name + (charging(lead) ? "  ·  charging" : "")
       v.info = devices.length > 1 ? devices.length + " devices" : ""
+      // What the device says of itself, where it says anything the caption
+      // does not ("charging").
+      if (lead.status && !/^(Unknown|Charging)$/.test(lead.status)) v.rows.push(row("Status", lead.status.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(), null))
     }
+    // How low the emptiest draining battery is, in words, while the card
+    // warns; named when it is not the one leading the card.
+    if (lowest) v.note = (lowest === lead ? "" : lowest.name + " ") + ["", "low", "very low", "critical"][v.alert]
     devices.forEach(function(d) {
       // The peripheral leading the panel is not listed again.
       if (d === lead) return

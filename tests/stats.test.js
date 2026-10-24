@@ -759,15 +759,15 @@ Object.assign(tests, {
     assert.ok(!Views.view("cpu", full, palette).bars.some(bar => bar.gap))
   },
   "a card asks for its warning color when something nears its limit"() {
-    assert.equal(Views.view("cpu", full, palette).alert, false)
+    assert.equal(Views.view("cpu", full, palette).alert, 0)
     const hotCpu = Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { temp: 92, tempLimit: 95 }) })
-    assert.equal(Views.view("cpu", hotCpu, palette).alert, true)
+    assert.equal(Views.view("cpu", hotCpu, palette).alert, Views.ALERT)
     const hotSensor = Object.assign({}, full, { temps: full.temps.map(t => t.name === "CPU" ? Object.assign({}, t, { temp: 92 }) : t) })
-    assert.equal(Views.view("temps", hotSensor, palette).alert, true)
+    assert.equal(Views.view("temps", hotSensor, palette).alert, Views.ALERT)
     const fullMemory = Object.assign({}, full, { memory: Object.assign({}, full.memory, { used: full.memory.total * 0.95 }) })
-    assert.equal(Views.view("memory", fullMemory, palette).alert, true)
+    assert.equal(Views.view("memory", fullMemory, palette).alert, Views.ALERT)
     const stalled = Object.assign({}, full, { pressure: { cpu: 0, memory: 0, io: 25 } })
-    assert.equal(Views.view("disks", stalled, palette).alert, true)
+    assert.equal(Views.view("disks", stalled, palette).alert, Views.ALERT)
   },
   "the memory view is one stacked bar keyed by its rows"() {
     const view = Views.view("memory", full, palette)
@@ -786,10 +786,13 @@ Object.assign(tests, {
     const view = Views.view("network", full, palette)
     // Text over a spiky graph is unreadable.
     assert.ok(view.graphs.every(graph => graph.label === ""))
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Down", "Up", "Peak", "Received", "Sent"])
+    // Both totals on one row, so a short card never shows only one.
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["Down", "Up", "Peak", "Total"])
+    assert.equal(view.rows[3].text, "↓ " + Stats.formatShort(full.network.rxTotal) + "  ↑ " + Stats.formatShort(full.network.txTotal))
     assert.equal(view.rows[0].text, Stats.formatRate(full.network.rx))
     assert.ok(view.rows[0].swatch && view.rows[1].swatch)
-    assert.equal(view.rows[0].color, palette.gradients.download[1])
+    // Keyed by the low color a quiet graph's line shows.
+    assert.equal(view.rows[0].color, palette.gradients.download[0])
     // The peak each graph's top stands for.
     assert.equal(view.rows[2].text, "↓ " + Stats.formatShort(view.graphs[0].max) + "  ↑ " + Stats.formatShort(view.graphs[1].max))
     // The disks graph's peak sits in the title's corner.
@@ -815,7 +818,8 @@ Object.assign(tests, {
     const small = Views.view("processes", state, palette, 4)
     assert.equal(small.lists.length, 1)
     assert.equal(small.lists[0].title, "")
-    assert.deepEqual(plain(small.lists[0].items.map(item => item.name)), ["CPU · game", "Memory · firefox ×12", "VRAM · game"])
+    // The line to spare goes to the next program.
+    assert.deepEqual(plain(small.lists[0].items.map(item => item.name)), ["CPU · game", "Memory · firefox ×12", "VRAM · game", "Memory · code"])
   },
   "the sensors view leads with the hottest sensor for its limit, then the rest and the fans"() {
     const view = Views.view("temps", full, palette)
@@ -825,11 +829,12 @@ Object.assign(tests, {
     assert.equal(view.value, "67°C")
     assert.equal(view.caption, "CPU")
     assert.equal(view.info, "max 95°C")
-    // A wide card's headline is too narrow for a caption: the name joins
-    // the limit in the title's corner.
+    // A wide card's headline is too narrow for a caption: the name and
+    // limit go on the line under the value.
     const wide = Views.view("temps", full, palette, undefined, true)
     assert.equal(wide.caption, "")
-    assert.equal(wide.info, "CPU max 95°C")
+    assert.equal(wide.info, "")
+    assert.equal(wide.note, "CPU · max 95°C")
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2", "CPU fan", "GPU fan"])
     assert.equal(view.rows.find(row => row.label === "GPU").text, "54°C")
     assert.equal(view.rows.find(row => row.label === "GPU fan").text, "30%")
@@ -850,9 +855,10 @@ Object.assign(tests, {
   "the sensors view leaves out what the other panels on the dashboard show"() {
     const view = Views.view("temps", full, palette, undefined, false, 30, ["gpu", "igpu", "cpu", "temps"])
     // The CPU, GPU and iGPU panels have their own temperatures and the
-    // GPU's fan; the CPU's dies are only here, and the hottest leads.
-    assert.equal(view.caption, "CCD 1")
-    assert.deepEqual(plain(view.rows.map(row => row.label)), ["nvme0n1", "nvme1", "DIMM 1", "DIMM 2", "CPU fan"])
+    // GPU's fan. The CPU's dies are only here, but beside the CPU panel
+    // they would lead with nearly its reading, so another sensor leads.
+    assert.equal(view.caption, "DIMM 1")
+    assert.deepEqual(plain(view.rows.map(row => row.label)), ["CCD 1", "nvme0n1", "nvme1", "DIMM 2", "CPU fan"])
     // Beside a Sensors panel the disks leave their temperatures to it.
     const disks = Views.view("disks", full, palette, undefined, false, 40, ["disks", "temps"])
     assert.ok(disks.rows.every(row => !/°C/.test(row.text)))
@@ -931,7 +937,7 @@ Object.assign(tests, {
     assert.equal(mice.caption, "MX Master 3S  ·  charging")
     assert.equal(mice.info, "2 devices")
     assert.deepEqual(plain(mice.rows.map(row => [row.label, row.text, row.fraction])), [["G502 X LIGHTSPEED", "64%", 0.64]])
-    assert.equal(mice.alert, false)
+    assert.equal(mice.alert, 0)
     const laptop = Object.assign(Stats.empty(), { time: 1, history: Object.assign(Stats.empty().history, { battery: [81] }), power: [
       { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 },
       { id: "hid", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null }
@@ -943,11 +949,22 @@ Object.assign(tests, {
     // A peripheral reporting only a level reads as about that full.
     assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["MX Keys", "20%"]])
     // A low battery that is not charging asks for attention.
-    assert.equal(view.alert, false)
-    const low = Object.assign({}, laptop, { power: [Object.assign({}, laptop.power[0], { capacity: 12 })] })
-    assert.equal(Views.view("battery", low, palette).alert, true)
+    assert.equal(view.alert, 0)
+    // Louder as it empties: 15%, 10% and 5%, laptop or peripheral.
+    const at = capacity => Object.assign({}, laptop, { power: [Object.assign({}, laptop.power[0], { capacity })] })
+    assert.equal(Views.view("battery", at(16), palette).alert, 0)
+    assert.equal(Views.view("battery", at(15), palette).alert, Views.CAUTION)
+    assert.equal(Views.view("battery", at(15), palette).note, "low")
+    assert.equal(Views.view("battery", at(10), palette).alert, Views.ALERT)
+    assert.equal(Views.view("battery", at(5), palette).alert, Views.CRITICAL)
+    assert.equal(Views.view("battery", at(5), palette).note, "critical")
+    const headset = Object.assign({}, laptop, { power: [laptop.power[0], { id: "bt", name: "EDIFIER W830NB", device: true, status: "", capacity: 8, level: "", power: null, energy: null, full: null }] })
+    const loud = Views.view("battery", headset, palette)
+    assert.equal(loud.alert, Views.ALERT)
+    // Named when it is not the battery leading the card.
+    assert.equal(loud.note, "EDIFIER W830NB very low")
     const charging = Object.assign({}, laptop, { power: [Object.assign({}, laptop.power[0], { capacity: 12, status: "Charging" })] })
-    assert.equal(Views.view("battery", charging, palette).alert, false)
+    assert.equal(Views.view("battery", charging, palette).alert, 0)
     // Health and cycles where the battery reports them.
     const worn = Object.assign({}, laptop, { power: [Object.assign({}, laptop.power[0], { health: 82, cycles: 412 })] })
     assert.deepEqual(plain(Views.view("battery", worn, palette).rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["Health", "82%"], ["Cycles", "412"]])

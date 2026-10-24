@@ -178,7 +178,9 @@ Panel {
     pickedAlign = ""
     undo = null
     showKeys = false
-    profileDraft = ""
+    // The profile on screen, ready to update or tie to these monitors; a
+    // placeholder of its name looked typed but left Save and Auto off.
+    profileDraft = reserve.currentProfile
   }
   // The ruler follows the monitor being edited.
   onOutputChanged: {
@@ -561,7 +563,7 @@ Panel {
                 "J / K", "Select edge",
                 "H / L", "Shrink / grow 10 px  ·  ⇧ 100  ·  Ctrl 1",
                 "0 / ⌫", "Zero edge",
-                "U / Ctrl Z", "Undo clear or zero",
+                "U / Ctrl Z", "Undo a clear, zero, preset or profile change",
                 "Space / P", "Pause monitor",
                 "F", "Next fill",
                 "C", "Clock or stats on the largest edge / top or bottom",
@@ -573,7 +575,8 @@ Panel {
                 "Tab / ⇧ Tab", "Next / previous monitor",
                 "Drag", "Move an edge in the preview  ·  Ctrl 1 px",
                 "Scroll", "Move an edge 10 px  ·  ⇧ 100",
-                "Esc / Q", "Close"
+                "?", "Show or hide these shortcuts",
+              "Esc / Q", "Close"
               ]
               Text {
                 required property string modelData

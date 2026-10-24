@@ -243,6 +243,16 @@ function edgeFill(entry, side) {
   return SINGLE_FILLS.indexOf(entry.fill) !== -1 && side !== clockEdge(entry) ? "black" : entry.fill
 }
 
+// The size of the strip the stats fill draws on, for a monitor of
+// `width` by `height` showing `entry` (fitted): the reserved edge it goes
+// on, across the monitor. Null without the stats fill or that edge.
+function statsStrip(entry, width, height) {
+  if (entry.fill !== "stats") return null
+  var side = clockEdge(entry)
+  if (!side || !(entry[side] > 0)) return null
+  return isHorizontal(side) ? { width: width, height: entry[side] } : { width: entry[side], height: height }
+}
+
 // What an edge shows beside a fullscreen window: black, except the stats
 // dashboard, which is most useful while a game runs.
 function fullscreenFill(fill) {
