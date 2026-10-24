@@ -6,7 +6,7 @@ import qs.Commons
 import qs.Commons as Commons
 import "." as Reserve
 import "Model.js" as Model
-import "Stats.js" as Stats
+import "StatsViews.js" as Views
 
 // Bar button plus popout for editing reserved display edges. Edits go
 // straight into ReserveState, so the caps, the bar and tiled windows move
@@ -601,7 +601,7 @@ Panel {
                   readonly property int cells: Model.rowCells(Model.STATS_PANELS.length, panelGrid.columns, index)
                   width: Math.floor((panelGrid.width - panelGrid.spacing * (cells - 1)) / cells)
                   text: Model.panelName(modelData)
-                  iconText: Stats.ICONS[modelData]
+                  iconText: Views.ICONS[modelData]
                   horizontalPadding: Style.spacing.sm
                   tooltipText: (selected ? "Hide " : "Show ") + Model.panelName(modelData).toLowerCase() + " on the dashboard\nRight click for every monitor"
                   selected: root.edge.panels.indexOf(modelData) !== -1

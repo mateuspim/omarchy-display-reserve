@@ -1,11 +1,10 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import vm from "node:vm"
+import { load } from "./qmljs.js"
 
-// Stats.js is a QML `.pragma library` script, loaded like Model.js.
-const source = readFileSync(new URL("../Stats.js", import.meta.url), "utf8").replace(/^\.pragma library\s*/, "")
-const Stats = {}
-vm.runInNewContext(source, Stats)
+// Stats.js and StatsViews.js are QML `.pragma library` scripts, loaded like
+// Model.js; the views import the data script as `Stats`.
+const Stats = load("Stats.js")
+const Views = load("StatsViews.js", { Stats })
 
 // Objects made inside the sandbox have its prototypes; copy them out so
 // strict deep equality compares only their contents.
@@ -407,20 +406,20 @@ const tests = {
   },
   "the pressure view says so on a kernel without pressure stall information"() {
     const state = Stats.step(Stats.empty(), frame(10, [0]).replace(/@psi\n(.*\n)*?@hwmon/, "@psi\n@hwmon"), [])
-    assert.equal(Stats.view("pressure", state, palette).empty, "Not available on this kernel")
+    assert.equal(Views.view("pressure", state, palette).empty, "Not available on this kernel")
     assert.deepEqual(plain(state.history.pressure), [])
   },
   "fit draws nothing on a strip with no size yet"() {
     for (const [w, h] of [[0, 0], [NaN, 100], [100, -5]]) {
-      const grid = Stats.fit(["gpu", "cpu"], w, h)
+      const grid = Views.fit(["gpu", "cpu"], w, h)
       assert.deepEqual(plain(grid.cards), [], w + "x" + h)
       assert.deepEqual(plain(grid.dropped), ["gpu", "cpu"])
     }
   },
   "the disks view fits its rows to the room"() {
     // Under the I/O graph in a stacked card, beside it in a wide one.
-    assert.equal(Stats.view("disks", full, palette, 4).rows.length, 2)
-    assert.equal(Stats.view("disks", full, palette, 2, true).rows.length, 2)
+    assert.equal(Views.view("disks", full, palette, 4).rows.length, 2)
+    assert.equal(Views.view("disks", full, palette, 2, true).rows.length, 2)
   },
   "NVMe temperatures carry over frames that do not read them"() {
     let state = Stats.step(Stats.empty(), frame(10, [0]), [])
@@ -496,69 +495,69 @@ const tests = {
     assert.equal(Stats.formatShort(null), "—")
   },
   "the disks view keeps each row short"() {
-    const view = Stats.view("disks", full, palette)
+    const view = Views.view("disks", full, palette)
     const nvme = view.rows.find(row => row.label === "nvme0n1")
     assert.equal(nvme.text, "R 1.0K  W 0  35°C")
   },
   "the processes view names merged processes with their count"() {
     const state = Object.assign(Stats.empty(), { processes: [{ pid: 2, name: "brave", cpu: 80, count: 3 }] })
-    assert.equal(Stats.view("processes", state, palette).lists[0].items[0].name, "brave ×3")
+    assert.equal(Views.view("processes", state, palette).lists[0].items[0].name, "brave ×3")
   },
   "unitFor sizes the dashboard's text to the strip"() {
-    assert.equal(Stats.unitFor(1440, 660), 18)
-    assert.equal(Stats.unitFor(2560, 96), 12)
-    assert.equal(Stats.unitFor(2560, 40), 9)
+    assert.equal(Views.unitFor(1440, 660), 18)
+    assert.equal(Views.unitFor(2560, 96), 12)
+    assert.equal(Views.unitFor(2560, 40), 9)
   },
   "layout tiles the panels in the grid with the largest cards"() {
     // A 1440x660 top strip fits four panels two by two.
-    const grid = Stats.layout(["gpu", "cpu", "memory", "network"], 1440, 660, 18)
+    const grid = Views.layout(["gpu", "cpu", "memory", "network"], 1440, 660, 18)
     assert.deepEqual(plain(grid.cards.map(card => card.panel)), ["gpu", "cpu", "memory", "network"])
     assert.deepEqual(plain(grid.dropped), [])
     assert.equal(grid.cards[0].y, grid.cards[1].y)
     assert.ok(grid.cards[2].y > grid.cards[0].y)
     // A wide, short strip puts them in one row.
-    const row = Stats.layout(["gpu", "cpu", "memory"], 2560, 160, 14)
+    const row = Views.layout(["gpu", "cpu", "memory"], 2560, 160, 14)
     assert.equal(new Set(row.cards.map(card => card.y)).size, 1)
     // A tall side strip stacks them.
-    const column = Stats.layout(["gpu", "cpu", "memory"], 320, 1600, 16)
+    const column = Views.layout(["gpu", "cpu", "memory"], 320, 1600, 16)
     assert.equal(new Set(column.cards.map(card => card.x)).size, 1)
   },
   "layout keeps cards inside the strip with a margin"() {
-    const grid = Stats.layout(ALL_PANELS, 1440, 660, 18)
+    const grid = Views.layout(ALL_PANELS, 1440, 660, 18)
     for (const card of grid.cards) {
       assert.ok(card.x >= 18 && card.y >= 18, JSON.stringify(card))
       assert.ok(card.x + card.width <= 1440 - 18 + 0.01 && card.y + card.height <= 660 - 18 + 0.01, JSON.stringify(card))
     }
   },
   "layout stretches a short last row across the strip"() {
-    const grid = Stats.layout(["gpu", "cpu", "memory"], 1440, 660, 18)
+    const grid = Views.layout(["gpu", "cpu", "memory"], 1440, 660, 18)
     const last = grid.cards[grid.cards.length - 1]
     if (last.y !== grid.cards[0].y) assert.equal(Math.round(last.x + last.width), 1440 - 18)
   },
   "fit shrinks the text until every card has room for its content"() {
     // Four panels on the 1080x660 strip keep the largest text.
-    assert.equal(Stats.fit(["gpu", "cpu", "memory", "network"], 1080, 660).unit, 18)
+    assert.equal(Views.fit(["gpu", "cpu", "memory", "network"], 1080, 660).unit, 18)
     // Eight panels make a 3x3 grid; the text shrinks to fit stacked cards.
-    const dense = Stats.fit(ALL_PANELS, 1080, 660)
+    const dense = Views.fit(ALL_PANELS, 1080, 660)
     assert.ok(dense.unit < 18)
     assert.equal(dense.cards.length, ALL_PANELS.length)
-    for (const card of dense.cards) assert.ok(card.height >= Stats.CARD_ROOM * dense.unit, JSON.stringify(card))
+    for (const card of dense.cards) assert.ok(card.height >= Views.CARD_ROOM * dense.unit, JSON.stringify(card))
     // A short, wide strip gets wide cards, which need less height.
-    const strip = Stats.fit(["gpu", "cpu", "memory", "network"], 2560, 160)
+    const strip = Views.fit(["gpu", "cpu", "memory", "network"], 2560, 160)
     assert.equal(strip.cards.length, 4)
-    assert.ok(strip.cards[0].width > strip.cards[0].height * Stats.WIDE_CARD)
-    assert.ok(strip.cards[0].height >= Stats.WIDE_ROOM * strip.unit)
+    assert.ok(strip.cards[0].width > strip.cards[0].height * Views.WIDE_CARD)
+    assert.ok(strip.cards[0].height >= Views.WIDE_ROOM * strip.unit)
     // When nothing makes room, the smallest text still shows what fits.
-    const tiny = Stats.fit(ALL_PANELS, 600, 120)
+    const tiny = Views.fit(ALL_PANELS, 600, 120)
     assert.equal(tiny.unit, 9)
     assert.ok(tiny.cards.length > 0)
   },
   "layout drops the last panels when they do not fit"() {
-    const grid = Stats.layout(["gpu", "cpu", "memory", "network", "disks"], 600, 120, 12)
+    const grid = Views.layout(["gpu", "cpu", "memory", "network", "disks"], 600, 120, 12)
     assert.ok(grid.cards.length < 5)
     assert.deepEqual(plain(grid.dropped), ["gpu", "cpu", "memory", "network", "disks"].slice(grid.cards.length))
-    assert.deepEqual(plain(Stats.layout(["gpu"], 50, 50, 9).dropped), ["gpu"])
-    assert.deepEqual(plain(Stats.layout([], 1440, 660, 18).cards), [])
+    assert.deepEqual(plain(Views.layout(["gpu"], 50, 50, 9).dropped), ["gpu"])
+    assert.deepEqual(plain(Views.layout([], 1440, 660, 18).cards), [])
   },
 }
 
@@ -570,20 +569,20 @@ full = Stats.step(full, frame(11, [150, 0, 0, 950, 0, 0, 0, 0, 0, 0], "@procs\n1
   { identity: "Spotify", title: "Song", artist: "Band", album: "Record", art: "", playing: true, position: 10, length: 200 })
 ALL_PANELS.forEach(panel => {
   tests["view of " + panel + " has a title, a box color and content"] = () => {
-    const view = Stats.view(panel, full, palette)
+    const view = Views.view(panel, full, palette)
     assert.ok(view.title && view.icon, panel)
     assert.match(view.color, /^#[0-9a-f]{6}$/)
     assert.equal(view.empty, "", panel + " should have data")
     assert.ok(view.rows.length + view.lists.length + view.bars.length + view.graphs.length + (view.media ? 1 : 0) > 0, panel)
     for (const row of view.rows) assert.ok(row.fraction === null || (row.fraction >= 0 && row.fraction <= 1), JSON.stringify(row))
-    const empty = Stats.view(panel, Stats.empty(), palette)
+    const empty = Views.view(panel, Stats.empty(), palette)
     assert.equal(empty.title, view.title)
   }
 })
 
 Object.assign(tests, {
   "the GPU view shows load, memory, temperature and power"() {
-    const view = Stats.view("gpu", full, palette)
+    const view = Views.view("gpu", full, palette)
     assert.equal(view.value, "55%")
     assert.equal(view.info, "RTX 4080")
     const labels = view.rows.map(row => row.label)
@@ -594,40 +593,40 @@ Object.assign(tests, {
     assert.equal(view.rows.find(row => row.label === "Power").text, "150 / 320 W")
   },
   "the GPU view says so when there is no GPU"() {
-    assert.equal(Stats.view("gpu", Stats.empty(), palette).empty, "Waiting for data")
-    assert.equal(Stats.view("gpu", Object.assign(Stats.empty(), { time: 1, nvidiaMissing: true }), palette).empty, "No GPU found")
+    assert.equal(Views.view("gpu", Stats.empty(), palette).empty, "Waiting for data")
+    assert.equal(Views.view("gpu", Object.assign(Stats.empty(), { time: 1, nvidiaMissing: true }), palette).empty, "No GPU found")
   },
   "the GPU view shows an AMD card the same way"() {
     const state = Stats.step(Stats.empty(), frame(10, [0]), "")
-    const view = Stats.view("gpu", state, palette)
+    const view = Views.view("gpu", state, palette)
     assert.equal(view.info, "Radeon Graphics")
     assert.equal(view.value, "99%")
     assert.equal(view.rows.find(row => row.label === "Power").text, "0.2 W")
     assert.equal(view.rows.find(row => row.label === "VRAM").text, "1.1 / 2.0 GiB")
   },
   "the iGPU view shows the integrated GPU beside a discrete one"() {
-    const view = Stats.view("igpu", full, palette)
+    const view = Views.view("igpu", full, palette)
     assert.equal(view.title, "iGPU")
     assert.equal(view.info, "Radeon Graphics")
     assert.equal(view.value, "99%")
     assert.deepEqual(plain(view.graphs[0].values), [99])
     // Alone, the iGPU is the GPU panel's.
     const alone = Stats.step(Stats.empty(), frame(10, [0]), "")
-    assert.equal(Stats.view("igpu", alone, palette).empty, "Shown as GPU")
-    assert.equal(Stats.view("igpu", Object.assign(Stats.empty(), { time: 1 }), palette).empty, "No integrated GPU")
+    assert.equal(Views.view("igpu", alone, palette).empty, "Shown as GPU")
+    assert.equal(Views.view("igpu", Object.assign(Stats.empty(), { time: 1 }), palette).empty, "No integrated GPU")
   },
   "an asleep GPU says so"() {
     const state = Object.assign(Stats.empty(), { time: 1, drm: Stats.drmGpus({ card1: { driver: "amdgpu", status: "suspended" } }, {}, 0) })
-    assert.equal(Stats.view("gpu", state, palette).empty, "Asleep")
+    assert.equal(Views.view("gpu", state, palette).empty, "Asleep")
   },
   "the CPU view has a bar per core colored by load"() {
-    const view = Stats.view("cpu", full, palette)
+    const view = Views.view("cpu", full, palette)
     assert.equal(view.bars.length, 2)
     assert.equal(view.value, "50%")
     assert.equal(view.info, "2 threads")
   },
   "the CPU view lists its power draw first, with the clock beside the load"() {
-    const view = Stats.view("cpu", full, palette)
+    const view = Views.view("cpu", full, palette)
     assert.equal(view.caption, "load · 5.10 GHz")
     // The Temperatures panel has the temperature too; nothing else has the power.
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["Power", "Temp", "Load"])
@@ -635,24 +634,24 @@ Object.assign(tests, {
     assert.equal(view.rows[0].text, "65 W")
     assert.equal(view.rows[0].fraction, null)
     const unclocked = Object.assign({}, full, { cpu: Object.assign({}, full.cpu, { frequency: null, power: null }) })
-    assert.equal(Stats.view("cpu", unclocked, palette).caption, "load")
-    assert.deepEqual(plain(Stats.view("cpu", unclocked, palette).rows.map(row => row.label)), ["Temp", "Load"])
+    assert.equal(Views.view("cpu", unclocked, palette).caption, "load")
+    assert.deepEqual(plain(Views.view("cpu", unclocked, palette).rows.map(row => row.label)), ["Temp", "Load"])
     // Against the CPU's limit, blue to red, when it is known.
     const ryzen = Object.assign({}, full, { sysinfo: { cpu: "AMD Ryzen 9 9900X 12-Core Processor" } })
-    const power = Stats.view("cpu", ryzen, palette).rows[0]
+    const power = Views.view("cpu", ryzen, palette).rows[0]
     assert.equal(power.text, "65 / 162 W")
     assert.equal(power.fraction, 65 / 162)
     assert.equal(power.color, Stats.gradientAt(palette.gradients.power, 65 / 162))
     assert.deepEqual(plain(palette.gradients.power), ["#81a1c1", "#a3be8c", "#ebcb8b", "#bf616a"])
   },
   "the processes view lists CPU and GPU apps"() {
-    const view = Stats.view("processes", full, palette)
+    const view = Views.view("processes", full, palette)
     assert.deepEqual(plain(view.lists.map(list => list.title)), ["CPU", "VRAM"])
     assert.equal(view.lists[0].items[0].name, "game")
     assert.equal(view.lists[0].items[0].text, "50%")
   },
   "the temperatures view gathers every sensor, hottest colored hottest"() {
-    const view = Stats.view("temps", full, palette)
+    const view = Views.view("temps", full, palette)
     assert.equal(view.value, "67°C")
     assert.equal(view.caption, "CPU")
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU", "CCD 1", "GPU", "iGPU", "nvme0n1", "nvme1", "DIMM 1", "DIMM 2"])
@@ -661,11 +660,11 @@ Object.assign(tests, {
     // Rows past the card's room are left out: beside the headline in a
     // wide card, under it in a stacked one, where the value and graph take
     // about three rows' room.
-    assert.equal(Stats.view("temps", full, palette, 6, true).rows.length, 6)
-    assert.equal(Stats.view("temps", full, palette, 6, false).rows.length, 2)
+    assert.equal(Views.view("temps", full, palette, 6, true).rows.length, 6)
+    assert.equal(Views.view("temps", full, palette, 6, false).rows.length, 2)
   },
   "the system view leads with the uptime"() {
-    const view = Stats.view("system", full, palette)
+    const view = Views.view("system", full, palette)
     assert.equal(view.value, "9h 50m")
     assert.equal(view.caption, "up")
     assert.equal(view.info, "odin")
@@ -680,7 +679,7 @@ Object.assign(tests, {
     let state = Stats.step(Stats.empty(), frame(10, [0], info), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
     // Read every minute only, they stand between reads.
     state = Stats.step(state, frame(11, [0]), ["0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"])
-    const view = Stats.view("system", state, palette)
+    const view = Views.view("system", state, palette)
     assert.equal(view.info, "pym@odin")
     assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [
       ["OS", "Omarchy 4.0.4-1"],
@@ -700,11 +699,11 @@ Object.assign(tests, {
       ["Threads", "1234"]
     ])
     // A small card keeps the first rows, under the uptime.
-    assert.deepEqual(plain(Stats.view("system", state, palette, 6, false).rows.map(row => row.label)), ["OS", "Channel", "Host"])
+    assert.deepEqual(plain(Views.view("system", state, palette, 6, false).rows.map(row => row.label)), ["OS", "Channel", "Host"])
   },
   "the battery view shows a laptop battery and peripherals"() {
     // Without a laptop battery the first peripheral leads, with its history.
-    const mouseOnly = Stats.view("battery", full, palette)
+    const mouseOnly = Views.view("battery", full, palette)
     assert.equal(mouseOnly.value, "64%")
     assert.equal(mouseOnly.caption, "G502 X LIGHTSPEED")
     // The history moves with step; the fixture's first frame is ingest's.
@@ -714,16 +713,16 @@ Object.assign(tests, {
     const twoMice = Object.assign({}, full, { power: full.power.concat([
       { id: "hid2", name: "MX Master 3S", device: true, status: "Discharging", capacity: 40, level: "", power: null, energy: null, full: null }
     ]) })
-    assert.deepEqual(plain(Stats.view("battery", twoMice, palette).rows.map(row => [row.label, row.text])), [["MX Master 3S", "40%"]])
+    assert.deepEqual(plain(Views.view("battery", twoMice, palette).rows.map(row => [row.label, row.text])), [["MX Master 3S", "40%"]])
     const laptop = Object.assign(Stats.empty(), { time: 1, history: Object.assign(Stats.empty().history, { battery: [81] }), power: [
       { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 },
       { id: "hid", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null }
     ] })
-    const view = Stats.view("battery", laptop, palette)
+    const view = Views.view("battery", laptop, palette)
     assert.equal(view.value, "81%")
     assert.equal(view.caption, "3h 12m left")
     assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["MX Keys", "Low"]])
-    assert.equal(Stats.view("battery", Object.assign(Stats.empty(), { time: 1 }), palette).empty, "No batteries")
+    assert.equal(Views.view("battery", Object.assign(Stats.empty(), { time: 1 }), palette).empty, "No batteries")
   },
   "pickPlayer prefers a playing player with a track, then any with one"() {
     const players = [
@@ -742,39 +741,39 @@ Object.assign(tests, {
   "the media view shows the track, with its progress"() {
     const media = { identity: "Spotify", title: "Song", artist: "Band", album: "Record", art: "file:///a.png", playing: true, position: 83, length: 225 }
     const state = Stats.step(Stats.empty(), frame(10, [0]), "", media)
-    const view = Stats.view("media", state, palette)
+    const view = Views.view("media", state, palette)
     assert.equal(view.info, "Spotify")
     assert.equal(view.media.title, "Song")
     assert.equal(view.media.time, "1:23 / 3:45")
     assert.ok(Math.abs(view.media.progress - 83 / 225) < 1e-9)
-    assert.equal(Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", null), palette).empty, "Nothing playing")
+    assert.equal(Views.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", null), palette).empty, "Nothing playing")
     // A player that tells nothing of its track is named instead.
-    const bare = Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { identity: "Brave", title: "", artist: "", album: "", art: "", playing: true, position: null, length: null }), palette)
+    const bare = Views.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { identity: "Brave", title: "", artist: "", album: "", art: "", playing: true, position: null, length: null }), palette)
     assert.equal(bare.media.title, "Brave")
     assert.equal(bare.info, "")
     assert.equal(bare.media.time, "")
   },
   "the media view loads local artwork only"() {
     const media = { identity: "Browser", title: "Song", playing: true, position: null, length: null }
-    const art = url => Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { ...media, art: url }), palette).media.art
+    const art = url => Views.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", { ...media, art: url }), palette).media.art
     assert.equal(art("file:///tmp/cover.png"), "file:///tmp/cover.png")
     for (const url of ["https://example.com/cover.png", "http://127.0.0.1/cover.png", "file://host/cover.png", "file:////host/cover.png", "data:image/png;base64,AAAA", "image://provider/cover"])
       assert.equal(art(url), "", url)
   },
   "the fans view adds the GPU fan"() {
-    const view = Stats.view("fans", full, palette)
+    const view = Views.view("fans", full, palette)
     assert.deepEqual(plain(view.rows.map(row => row.label)), ["CPU fan", "GPU"])
     assert.equal(view.rows[1].text, "30%")
   },
   "the fans view leads with the GPU fan and its history"() {
-    const view = Stats.view("fans", full, palette)
+    const view = Views.view("fans", full, palette)
     assert.equal(view.value, "30%")
     assert.equal(view.caption, "GPU fan")
     assert.equal(view.graphs.length, 1)
     assert.deepEqual(plain(view.graphs[0].values), [30])
     // Without a GPU there is no headline, just the rows.
     const bare = Object.assign(Stats.empty(), { fans: [{ name: "CPU fan", rpm: 900 }] })
-    assert.equal(Stats.view("fans", bare, palette).value, "")
+    assert.equal(Views.view("fans", bare, palette).value, "")
   },
   "the GPU fan history advances with the frames"() {
     const gpuLine = "0, NVIDIA GeForce RTX 4080, 55, 7551, 16376, 54, 149.65, 320.00, 2790, 30, 0, 0"
@@ -787,15 +786,15 @@ Object.assign(tests, {
     const apps = Array.from({ length: 5 }, (_, i) => ({ pid: i + 1, name: "a" + i, memory: 1048576 * (5 - i) }))
     const state = Object.assign(Stats.empty(), { processes: many, gpuApps: apps, nvidia: full.nvidia })
     // Room for 12 rows: two list titles, three apps, seven programs.
-    let view = Stats.view("processes", state, palette, 12)
+    let view = Views.view("processes", state, palette, 12)
     assert.equal(view.lists[0].items.length, 7)
     assert.equal(view.lists[1].items.length, 3)
     // Little room still shows the busiest program and app.
-    view = Stats.view("processes", state, palette, 3)
+    view = Views.view("processes", state, palette, 3)
     assert.equal(view.lists[0].items.length, 1)
     assert.equal(view.lists[1].items.length, 1)
     // Without a room given, the usual five and three.
-    view = Stats.view("processes", state, palette)
+    view = Views.view("processes", state, palette)
     assert.equal(view.lists[0].items.length, 5)
     assert.equal(view.lists[1].items.length, 3)
   },
@@ -817,7 +816,7 @@ Object.assign(tests, {
     assert.equal(card.kind, "discrete")
     assert.equal(card.temp, 45)
     assert.equal(card.load, 0)
-    assert.equal(Stats.view("gpu", state, palette).caption, "idle")
+    assert.equal(Views.view("gpu", state, palette).caption, "idle")
   },
   "NVIDIA cards are left to the NVIDIA panel, not the AMD and Intel list"() {
     const nvidia = "@drm\ncard1\tnvidia\tstatus\tactive\ncard1\tnvidia\tcontrol\ton\n"
@@ -842,7 +841,7 @@ Object.assign(tests, {
     // Its last reading stays, marked resting, rather than going stale.
     for (let t = 20; t <= 40; t++) state = Stats.step(state, frame(t, [0], managed), [])
     assert.equal(state.nvidia.resting, true)
-    assert.equal(Stats.view("gpu", state, palette).caption, "idle")
+    assert.equal(Views.view("gpu", state, palette).caption, "idle")
     // A check that finds it busy brings the loop back.
     state = Stats.step(state, frame(41, [0], managed), ["0, NVIDIA GeForce RTX 4060 Laptop GPU, 35, 900, 8188, 55, 40.0, 80.00, 2100, , 0, 0"])
     assert.equal(Stats.nvidiaPoll(state), "on")
@@ -858,7 +857,7 @@ Object.assign(tests, {
     assert.equal(main.vendor, "NVIDIA")
     assert.equal(main.asleep, true)
     assert.equal(main.name, "RTX 4060 Laptop GPU")
-    assert.equal(Stats.view("gpu", state, palette).empty, "Asleep")
+    assert.equal(Views.view("gpu", state, palette).empty, "Asleep")
     // Asleep from the start, with no name yet.
     const cold = Stats.step(Stats.empty(), frame(10, [0], asleep), [])
     assert.equal(Stats.nvidiaPoll(cold), "off")
@@ -876,11 +875,11 @@ Object.assign(tests, {
   },
   "an idle player with no track shows nothing playing"() {
     const idle = { identity: "Brave", title: "", artist: "", album: "", art: "", playing: false, position: 0, length: null }
-    assert.equal(Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", idle), palette).empty, "Nothing playing")
+    assert.equal(Views.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", idle), palette).empty, "Nothing playing")
   },
   "the media view hides the time when the player gives no length"() {
     const brave = { identity: "Brave", title: "", artist: "", album: "", art: "", playing: true, position: 0, length: null }
-    const view = Stats.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", brave), palette)
+    const view = Views.view("media", Stats.step(Stats.empty(), frame(10, [0]), "", brave), palette)
     assert.equal(view.media.time, "")
     assert.equal(view.media.progress, null)
   },
@@ -922,45 +921,45 @@ Object.assign(tests, {
     ])
     const state = Stats.step(Stats.empty(), frame(10, [0]), [], undefined, extra)
     assert.deepEqual(plain(state.power.map(b => b.name)), ["G502 X LIGHTSPEED", "EDIFIER W830NB"])
-    const view = Stats.view("battery", state, palette)
+    const view = Views.view("battery", state, palette)
     assert.equal(view.caption, "G502 X LIGHTSPEED")
     assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["EDIFIER W830NB", "70%"]])
     // A headset alone leads, with its history.
     const alone = Stats.step(Stats.empty(), frame(10, [0]).replace(/@power[\s\S]*?@drm/, "@power\n@drm"), [], undefined, extra.slice(1))
-    assert.equal(Stats.view("battery", alone, palette).value, "70%")
+    assert.equal(Views.view("battery", alone, palette).value, "70%")
     assert.deepEqual(plain(alone.history.battery), [70])
     // Without the list (the panel is not shown), the kernel's batteries only.
     assert.equal(Stats.step(Stats.empty(), frame(10, [0]), []).power.length, 1)
   },
   "a stacked GPU card keeps only the rows that fit under its headline"() {
-    const rows = Stats.view("gpu", full, palette).rows.length
+    const rows = Views.view("gpu", full, palette).rows.length
     assert.ok(rows >= 5)
-    assert.equal(Stats.view("gpu", full, palette, 7, false).rows.length, 3)
-    assert.equal(Stats.view("gpu", full, palette, 7, true).rows.length, Math.min(rows, 7))
+    assert.equal(Views.view("gpu", full, palette, 7, false).rows.length, 3)
+    assert.equal(Views.view("gpu", full, palette, 7, true).rows.length, Math.min(rows, 7))
     // No room under the headline: no row, rather than half of one.
-    assert.equal(Stats.view("gpu", full, palette, 2, false).rows.length, 0)
+    assert.equal(Views.view("gpu", full, palette, 2, false).rows.length, 0)
   },
   "a stacked card keeps only the rows that fit under its headline"() {
     // The value (about 1.8 rows), each graph (1), the core bars (1.4) and
     // the gap (0.3) come off the room first.
-    assert.equal(Stats.view("cpu", full, palette, 6, false).rows.length, 1)
-    assert.equal(Stats.view("cpu", full, palette, 6, true).rows.length, 3)
-    assert.equal(Stats.view("memory", full, palette, 6, false).rows.length, 2)
-    assert.equal(Stats.view("network", full, palette, 5, false).rows.length, 2)
-    assert.equal(Stats.view("pressure", full, palette, 3, false).rows.length, 1)
+    assert.equal(Views.view("cpu", full, palette, 6, false).rows.length, 1)
+    assert.equal(Views.view("cpu", full, palette, 6, true).rows.length, 3)
+    assert.equal(Views.view("memory", full, palette, 6, false).rows.length, 2)
+    assert.equal(Views.view("network", full, palette, 5, false).rows.length, 2)
+    assert.equal(Views.view("pressure", full, palette, 3, false).rows.length, 1)
     // Without a room, every row.
-    assert.equal(Stats.view("memory", full, palette).rows.length, 4)
+    assert.equal(Views.view("memory", full, palette).rows.length, 4)
   },
   "the processes view counts an empty list's line"() {
     const many = Array.from({ length: 12 }, (_, i) => ({ pid: i + 1, name: "p" + i, cpu: 50 - i, count: 1 }))
     const state = Object.assign(Stats.empty(), { processes: many, gpuApps: [], nvidia: full.nvidia })
     // Two titles and "Nothing busy" leave five rows of programs.
-    assert.equal(Stats.view("processes", state, palette, 8).lists[0].items.length, 5)
+    assert.equal(Views.view("processes", state, palette, 8).lists[0].items.length, 5)
   },
   "a narrow disks card leaves the temperatures to their panel"() {
-    const wide = Stats.view("disks", full, palette, 6, false, 30)
+    const wide = Views.view("disks", full, palette, 6, false, 30)
     assert.ok(wide.rows.some(row => /°C/.test(row.text)))
-    const narrow = Stats.view("disks", full, palette, 6, false, 20)
+    const narrow = Views.view("disks", full, palette, 6, false, 20)
     assert.ok(!narrow.rows.some(row => /°C/.test(row.text)))
   },
 })

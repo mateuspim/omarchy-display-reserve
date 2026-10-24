@@ -40,12 +40,13 @@ omarchy plugin validate .    # the manifest, as the marketplace checks it
 | Test | Covers |
 | --- | --- |
 | `model.test.js` | `Model.js`: normalizing, keys, budgets, presets, profiles, fills, clock, fullscreen fitting. |
-| `stats.test.js` | `Stats.js`: parsing frames, rates, palette, tiling, each panel's rows. |
+| `stats.test.js` | `Stats.js` and `StatsViews.js`: parsing frames, rates, palette, tiling, each panel's rows. |
 | `sampler.test.js` | Runs the real `stats.sh` on this machine and parses its frames ([spec](../specs/stats-frames.md)). |
 | `cpupower.test.js` | `cpu-power.sh` against a made-up powercap tree (`CPU_POWER_SYSFS`); never needs root. |
 | `qml.test.js` | Every plugin `Text` renders plain text, so metadata and names can't load images through markup. |
 
-Put logic that can live without QML in `Model.js` or `Stats.js` and test
+Put logic that can live without QML in `Model.js`, `Stats.js` or
+`StatsViews.js` and test
 it there. A bug fix gets a regression test.
 
 ## Make a change

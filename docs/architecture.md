@@ -67,9 +67,11 @@ omareach.json ⇄ ReserveState (singleton) ──► Service ──► spacer + 
   previews it, pauses while idle, lets an idle dGPU rest
   ([ADR 7](adr/0007-let-an-idle-dgpu-rest.md)), and adds the shell's MPRIS
   players and UPower devices. Its clock ticks at the animation pace.
-- **`Stats.js`** is the pure side: parsing frames, counters into rates,
-  history, the theme's palette from `colors.toml`, how panels tile a strip
-  (`Stats.fit`) and the rows each panel shows at a given size.
+- **`Stats.js`** is the pure data side: parsing frames, counters into
+  rates, history, the theme's palette from `colors.toml` and the text form
+  of numbers. **`StatsViews.js`**, which imports it, is the pure drawing
+  side: how panels tile a strip (`Views.fit`) and the rows each panel shows
+  at a given size.
 - **`StatsFill.qml`** lays out the grid; **`StatsCard.qml`** draws one
   panel; **`StatsGraph.qml`** the scrolling history graphs;
   **`StatsEase.qml`** eases meters between samples.
@@ -92,7 +94,7 @@ theme's `colors.toml`.
 ## Tests
 
 `npm test` runs the Node tests in `tests/`: `model.test.js` (Model.js),
-`stats.test.js` and `sampler.test.js` (Stats.js and stats.sh frames) and
+`stats.test.js` and `sampler.test.js` (Stats.js, StatsViews.js and stats.sh frames) and
 `cpupower.test.js` (cpu-power.sh against a fake sysfs). GitHub Actions runs
 the same on every push. UI is checked in an offscreen harness, never on the
 live screens ([ADR 4](adr/0004-offscreen-render-harness.md)).

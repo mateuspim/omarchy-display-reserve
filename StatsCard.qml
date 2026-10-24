@@ -3,10 +3,11 @@ import QtQuick.Layouts
 import qs.Commons
 import "." as Reserve
 import "Stats.js" as Stats
+import "StatsViews.js" as Views
 
 // One panel of the stats dashboard, drawn the way btop draws its boxes: a
 // thin rounded outline in the panel's color with the title cut into its
-// top edge, over black. `view` is Stats.view's description of the panel.
+// top edge, over black. `view` is Views.view's description of the panel.
 // A wide card puts its value and graphs on the left and its rows on the
 // right; a narrow one stacks them.
 // Text stays plain: MPRIS metadata and device/process names can be supplied
@@ -16,14 +17,14 @@ Item {
   // Blank until set: a delegate's own bindings can run before these are
   // given, and would read undefined.
   property var view: blank
-  readonly property var blank: Stats.view("", Stats.empty(), Stats.palette({}, {}))
+  readonly property var blank: Views.view("", Stats.empty(), Stats.palette({}, {}))
   // What the card draws: `view`, or blank while a binding gives none.
   readonly property var shown: view || blank
   // Not `palette`: that would hide Item.palette.
   property var theme: Stats.palette({}, {})
   required property int unit
   property string fontFamily: Style.font.family
-  readonly property bool wide: width > height * Stats.WIDE_CARD
+  readonly property bool wide: width > height * Views.WIDE_CARD
   // Omarchy's icon beside a view that asks for it (System), as fastfetch
   // shows the distro's: as tall as the body, when that leaves the rows
   // room enough.
