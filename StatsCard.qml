@@ -309,8 +309,10 @@ Item {
           readonly property var modelData: card.shown.lists[index] || ({ title: "", items: [] })
           Layout.fillWidth: true
           spacing: Math.round(card.unit * 0.3)
+          // A list of one line per resource has no title.
           Text {
             textFormat: Text.PlainText
+            visible: text !== ""
             text: list.modelData.title
             color: card.shown.color
             font.family: card.fontFamily

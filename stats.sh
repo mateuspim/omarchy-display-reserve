@@ -93,6 +93,11 @@ for card in /sys/class/drm/card*; do
   [[ -n $name ]] && gpu_names[$id]=$name
 done
 
+# The page size, for the processes' resident memory, which /proc/<pid>/stat
+# gives in pages: 4 KiB on x86, but 16 or 64 KiB on some ARM kernels.
+# Asked once, so no frame starts a process for it.
+page_size=$(getconf PAGESIZE 2>/dev/null)
+
 # A pipe nobody writes to, for sleeping with read -t instead of forking
 # sleep on every frame.
 exec {sleeper}<> <(:)
@@ -228,6 +233,7 @@ while :; do
         [[ $key == "model name"* ]] && { printf 'cpu\t%s\n' "${value# }"; break; }
       done < /proc/cpuinfo; } 2>/dev/null
     for id in "${!gpu_names[@]}"; do printf 'gpu_name_%s\t%s\n' "$id" "${gpu_names[$id]}"; done
+    [[ -n $page_size ]] && printf 'page_size\t%s\n' "$page_size"
     # Intel's hybrid CPUs list their performance and efficient cores apart
     # (cpu_core, cpu_atom), as CPU ranges like 0-15.
     for kind in cpu_core cpu_atom; do
@@ -245,7 +251,7 @@ while :; do
   printf '@power\n'
   for supply in /sys/class/power_supply/*; do
     [[ -d $supply ]] || continue
-    for key in type scope status capacity capacity_level model_name power_now current_now voltage_now energy_now energy_full charge_now charge_full; do
+    for key in type scope status capacity capacity_level model_name power_now current_now voltage_now energy_now energy_full energy_full_design charge_now charge_full charge_full_design cycle_count; do
       [[ -r $supply/$key ]] || continue
       value=""
       { read -r value < "$supply/$key"; } 2>/dev/null && printf '%s\t%s\t%s\n' "${supply##*/}" "$key" "$value"

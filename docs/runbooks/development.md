@@ -357,7 +357,8 @@ while :; do
   fi
   printf '@power\n@drm\n'
   if (( ${2:-0} > 0 && n % ${2:-3} == 0 )); then
-    printf '@procs\n1001 (firefox) S 1 0 0 0 0 0 0 0 0 0 %d 10 0 0\n1002 (Hyprland) S 1 0 0 0 0 0 0 0 0 0 %d 10 0 0\n' $(( n*30 )) $(( n*12 ))
+    printf '@procs\n1001 (firefox) S 1 0 0 0 0 0 0 0 0 0 %d 10 0 0 20 0 1 0 100 0 610000\n1003 (firefox) S 1 0 0 0 0 0 0 0 0 0 %d 10 0 0 20 0 1 0 100 0 240000\n1002 (Hyprland) S 1 0 0 0 0 0 0 0 0 0 %d 10 0 0 20 0 1 0 100 0 98000\n1004 (code) S 1 0 0 0 0 0 0 0 0 0 %d 10 0 0 20 0 1 0 100 0 352000\n' $(( n*30 )) $(( n*8 )) $(( n*12 )) $(( n*5 ))
+    printf '@gpuapps\n1001, /usr/lib/firefox/firefox, 610\n4242, starwars.exe, 6340\n'
   fi
   printf '@end\n'
   n=$(( n + 1 ))

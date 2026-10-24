@@ -285,9 +285,18 @@ function parsePower(lines) {
     if (energy === null && volts !== null && s.charge_now !== undefined) energy = Number(s.charge_now) / 1e6 * volts
     var full = number(s.energy_full, 1e6)
     if (full === null && volts !== null && s.charge_full !== undefined) full = Number(s.charge_full) / 1e6 * volts
+    // What the battery held new, against what it holds full now: its
+    // health. Both in energy or both in charge, so the ratio holds.
+    var design = number(s.energy_full_design, 1)
+    var held = number(s.energy_full, 1)
+    if (design === null || held === null) { design = number(s.charge_full_design, 1); held = number(s.charge_full, 1) }
+    var cycles = number(s.cycle_count, 1)
     result.push({
       id: id, name: s.model_name || id, device: s.scope === "Device", status: s.status || "",
-      capacity: number(s.capacity, 1), level: s.capacity_level || "", power: power, energy: energy, full: full
+      capacity: number(s.capacity, 1), level: s.capacity_level || "", power: power, energy: energy, full: full,
+      health: design > 0 && held !== null ? Math.min(100, held / design * 100) : null,
+      // Batteries that do not count their cycles report 0.
+      cycles: cycles > 0 ? cycles : null
     })
   }
   return result
@@ -308,7 +317,8 @@ function upowerBatteries(devices) {
     if (!d || d.powerSupply || !d.nativePath || d.type === "Unknown" || d.type === "LinePower") continue
     result.push({
       id: String(d.nativePath), name: String(d.model || d.type), device: true, status: d.state === "Unknown" ? "" : String(d.state || ""),
-      capacity: Math.round(Number(d.percentage || 0) * 100), level: "", power: null, energy: null, full: null
+      capacity: Math.round(Number(d.percentage || 0) * 100), level: "", power: null, energy: null, full: null,
+      health: null, cycles: null
     })
   }
   return result
@@ -423,6 +433,27 @@ function parseGpu(line) {
   }
 }
 
+// The programs holding the most memory in one process sample, by name as
+// topProcesses adds them up, in bytes: their resident sets of `page`
+// bytes a page (4096 without one). Pages two processes share count for
+// each, as in top's RES.
+function topMemory(procs, page, count) {
+  page = page > 0 ? page : 4096
+  var byName = {}
+  for (var pid in procs) {
+    var p = procs[pid]
+    if (!(p.rss > 0)) continue
+    var entry = byName[p.name] || (byName[p.name] = { pid: Number(pid), name: p.name, memory: 0, count: 0, most: 0 })
+    entry.memory += p.rss * page
+    entry.count++
+    if (p.rss > entry.most) { entry.most = p.rss; entry.pid = Number(pid) }
+  }
+  return Object.keys(byName).map(function(name) {
+    var entry = byName[name]
+    return { pid: entry.pid, name: entry.name, memory: entry.memory, count: entry.count }
+  }).sort(function(a, b) { return b.memory - a.memory }).slice(0, count)
+}
+
 // A process's short name: its file name without a Windows .exe, as Proton
 // games report a full Windows path.
 function shortName(path) {
@@ -454,7 +485,8 @@ function parseProcs(lines) {
     if (open < 0 || close < open) continue
     var f = line.slice(close + 2).split(" ")
     if (f.length < 13) continue
-    result[line.slice(0, open)] = { name: line.slice(open + 2, close), ticks: Number(f[11]) + Number(f[12]) }
+    // Field 24, the resident set in pages, where the line has it.
+    result[line.slice(0, open)] = { name: line.slice(open + 2, close), ticks: Number(f[11]) + Number(f[12]), rss: f.length > 21 ? Number(f[21]) || 0 : 0 }
   }
   return result
 }
@@ -517,6 +549,8 @@ function empty() {
     pressure: null,
     fans: [],
     processes: [],
+    // The programs holding the most memory, from the same samples.
+    memoryProcesses: [],
     processSample: null,
     // The NVIDIA GPU from nvidia-smi, and AMD and Intel GPUs from sysfs
     // (drmGpus); gpuRoles picks which panel shows which. `gpuKey` is the
@@ -679,6 +713,7 @@ function ingest(state, frame) {
     var last = state.processSample
     var elapsed = last ? frame.time - last.time : 0
     if (last && elapsed > 0 && elapsed <= PROCESS_GAP) next.processes = topProcesses(last.procs, procs, elapsed, 10)
+    next.memoryProcesses = topMemory(procs, Number((next.sysinfo || {}).page_size), 10)
     next.processSample = { time: frame.time, procs: procs }
   }
   if (frame.gpuapps) next.gpuApps = parseGpuApps(frame.gpuapps)

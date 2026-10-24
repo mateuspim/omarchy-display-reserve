@@ -210,12 +210,25 @@ const tests = {
       "hidpp_battery_0\ttype\tBattery", "hidpp_battery_0\tscope\tDevice", "hidpp_battery_0\tcapacity_level\tLow", "hidpp_battery_0\tmodel_name\tMX Keys"
     ])
     assert.deepEqual(plain(supplies.map(s => s.id)), ["BAT0", "BAT1", "hidpp_battery_0"])
-    assert.deepEqual(plain(supplies[0]), { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 })
+    assert.deepEqual(plain(supplies[0]), { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50, health: null, cycles: null })
     // Charge and current, as some batteries report, times the voltage.
     assert.equal(supplies[1].power, 24)
     assert.equal(supplies[1].energy, 24)
     assert.equal(supplies[1].full, 48)
-    assert.deepEqual(plain(supplies[2]), { id: "hidpp_battery_0", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null })
+    assert.deepEqual(plain(supplies[2]), { id: "hidpp_battery_0", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null, health: null, cycles: null })
+  },
+  "parsePower reads a battery's health and cycles"() {
+    const [energy, charge, uncounted] = Stats.parsePower([
+      "BAT0\ttype\tBattery", "BAT0\tenergy_full\t45000000", "BAT0\tenergy_full_design\t50000000", "BAT0\tcycle_count\t312",
+      "BAT1\ttype\tBattery", "BAT1\tcharge_full\t3600000", "BAT1\tcharge_full_design\t4000000",
+      "BAT2\ttype\tBattery", "BAT2\tcycle_count\t0"
+    ])
+    assert.equal(energy.health, 90)
+    assert.equal(energy.cycles, 312)
+    assert.equal(charge.health, 90)
+    // A battery that does not count its cycles reports 0.
+    assert.equal(uncounted.cycles, null)
+    assert.equal(uncounted.health, null)
   },
   "formatDuration and formatUptime"() {
     assert.equal(Stats.formatDuration(83), "1:23")
@@ -255,7 +268,19 @@ const tests = {
       "77 (a) b) R 1 2 3 4 5 6 7 8 9 10 5 5 0 0 20 0 1 0",
       "garbage"
     ])
-    assert.deepEqual(plain(procs), { 1234: { name: "Web Content", ticks: 350 }, 77: { name: "a) b", ticks: 10 } })
+    // Lines this short carry no resident set.
+    assert.deepEqual(plain(procs), { 1234: { name: "Web Content", ticks: 350, rss: 0 }, 77: { name: "a) b", ticks: 10, rss: 0 } })
+    // Field 24 is the resident set, in pages.
+    const full = Stats.parseProcs(["5 (game) S 1 2 3 4 5 6 7 8 9 10 300 50 0 0 20 0 1 0 100 4096000 2500"])
+    assert.equal(full[5].rss, 2500)
+  },
+  "topMemory adds up the resident memory of processes of one name"() {
+    const procs = { 1: { name: "firefox", rss: 1000 }, 2: { name: "firefox", rss: 3000 }, 3: { name: "bash", rss: 100 }, 4: { name: "zombie", rss: 0 } }
+    const top = plain(Stats.topMemory(procs, 4096, 10))
+    assert.deepEqual(top.map(p => [p.name, p.memory, p.count, p.pid]), [["firefox", 4000 * 4096, 2, 2], ["bash", 100 * 4096, 1, 3]])
+    // Pages of another size, as on some ARM kernels; 4 KiB without one.
+    assert.equal(Stats.topMemory(procs, 16384, 1)[0].memory, 4000 * 16384)
+    assert.equal(Stats.topMemory(procs, NaN, 1)[0].memory, 4000 * 4096)
   },
   "topProcesses ranks CPU use since the last sample, as top does"() {
     const before = { 1: { name: "game", ticks: 100 }, 2: { name: "idle", ticks: 5 }, 3: { name: "gone", ticks: 1 } }
@@ -774,9 +799,23 @@ Object.assign(tests, {
   },
   "the processes view lists CPU and GPU apps"() {
     const view = Views.view("processes", full, palette)
-    assert.deepEqual(plain(view.lists.map(list => list.title)), ["CPU", "VRAM"])
+    assert.deepEqual(plain(view.lists.map(list => list.title)), ["CPU", "Memory", "VRAM"])
     assert.equal(view.lists[0].items[0].name, "game")
     assert.equal(view.lists[0].items[0].text, "50%")
+  },
+  "the processes view ranks memory, and keeps one line per resource when small"() {
+    const state = Object.assign({}, full, {
+      memoryProcesses: [{ pid: 2, name: "firefox", memory: 4 * 1073741824, count: 12 }, { pid: 3, name: "code", memory: 1073741824, count: 1 }]
+    })
+    const memory = Views.view("processes", state, palette).lists[1]
+    assert.deepEqual(plain(memory.items.map(item => [item.name, item.text])), [["firefox ×12", "4.0 GiB"], ["code", "1.0 GiB"]])
+    assert.equal(memory.items[0].fraction, 4 * 1073741824 / full.memory.total)
+    // Too little room for a title and a line per list: the top of each,
+    // named for what it uses, in one list without a title.
+    const small = Views.view("processes", state, palette, 4)
+    assert.equal(small.lists.length, 1)
+    assert.equal(small.lists[0].title, "")
+    assert.deepEqual(plain(small.lists[0].items.map(item => item.name)), ["CPU · game", "Memory · firefox ×12", "VRAM · game"])
   },
   "the sensors view leads with the hottest sensor for its limit, then the rest and the fans"() {
     const view = Views.view("temps", full, palette)
@@ -881,12 +920,18 @@ Object.assign(tests, {
     assert.equal(mouseOnly.value, "64%")
     assert.equal(mouseOnly.caption, "G502 X LIGHTSPEED")
     assert.equal(mouseOnly.graphs.length, 0)
-    // It is not listed again below.
+    // A bar of its level under the headline, and it is not listed again.
+    assert.deepEqual(plain(mouseOnly.stack.map(part => part.fraction)), [0.64])
     assert.deepEqual(plain(mouseOnly.rows), [])
+    // With several peripherals the emptiest leads; the rest are rows.
     const twoMice = Object.assign({}, full, { power: full.power.concat([
-      { id: "hid2", name: "MX Master 3S", device: true, status: "Discharging", capacity: 40, level: "", power: null, energy: null, full: null }
+      { id: "hid2", name: "MX Master 3S", device: true, status: "Charging", capacity: 40, level: "", power: null, energy: null, full: null }
     ]) })
-    assert.deepEqual(plain(Views.view("battery", twoMice, palette).rows.map(row => [row.label, row.text])), [["MX Master 3S", "40%"]])
+    const mice = Views.view("battery", twoMice, palette)
+    assert.equal(mice.caption, "MX Master 3S  ·  charging")
+    assert.equal(mice.info, "2 devices")
+    assert.deepEqual(plain(mice.rows.map(row => [row.label, row.text, row.fraction])), [["G502 X LIGHTSPEED", "64%", 0.64]])
+    assert.equal(mice.alert, false)
     const laptop = Object.assign(Stats.empty(), { time: 1, history: Object.assign(Stats.empty().history, { battery: [81] }), power: [
       { id: "BAT0", name: "BAT0", device: false, status: "Discharging", capacity: 81, level: "", power: 12.5, energy: 40, full: 50 },
       { id: "hid", name: "MX Keys", device: true, status: "", capacity: null, level: "Low", power: null, energy: null, full: null }
@@ -894,7 +939,18 @@ Object.assign(tests, {
     const view = Views.view("battery", laptop, palette)
     assert.equal(view.value, "81%")
     assert.equal(view.caption, "3h 12m left")
-    assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["MX Keys", "Low"]])
+    assert.equal(view.info, "on battery")
+    // A peripheral reporting only a level reads as about that full.
+    assert.deepEqual(plain(view.rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["MX Keys", "20%"]])
+    // A low battery that is not charging asks for attention.
+    assert.equal(view.alert, false)
+    const low = Object.assign({}, laptop, { power: [Object.assign({}, laptop.power[0], { capacity: 12 })] })
+    assert.equal(Views.view("battery", low, palette).alert, true)
+    const charging = Object.assign({}, laptop, { power: [Object.assign({}, laptop.power[0], { capacity: 12, status: "Charging" })] })
+    assert.equal(Views.view("battery", charging, palette).alert, false)
+    // Health and cycles where the battery reports them.
+    const worn = Object.assign({}, laptop, { power: [Object.assign({}, laptop.power[0], { health: 82, cycles: 412 })] })
+    assert.deepEqual(plain(Views.view("battery", worn, palette).rows.map(row => [row.label, row.text])), [["Power", "12.5 W"], ["Energy", "40.0 / 50.0 Wh"], ["Health", "82%"], ["Cycles", "412"]])
     assert.equal(Views.view("battery", Object.assign(Stats.empty(), { time: 1 }), palette).empty, "No batteries")
   },
   "pickPlayer prefers a playing player with a track, then any with one"() {
@@ -937,18 +993,21 @@ Object.assign(tests, {
     const many = Array.from({ length: 12 }, (_, i) => ({ pid: i + 1, name: "p" + i, cpu: 50 - i, count: 1 }))
     const apps = Array.from({ length: 5 }, (_, i) => ({ pid: i + 1, name: "a" + i, memory: 1048576 * (5 - i) }))
     const state = Object.assign(Stats.empty(), { processes: many, gpuApps: apps, nvidia: full.nvidia })
-    // Room for 12 rows: two list titles, three apps, seven programs.
+    // Room for 12 rows: three list titles, "Nothing busy" for memory (no
+    // sample yet), three apps, and the rest for programs.
     let view = Views.view("processes", state, palette, 12)
-    assert.equal(view.lists[0].items.length, 7)
-    assert.equal(view.lists[1].items.length, 3)
-    // Little room still shows the busiest program and app.
-    view = Views.view("processes", state, palette, 3)
-    assert.equal(view.lists[0].items.length, 1)
-    assert.equal(view.lists[1].items.length, 1)
+    assert.deepEqual(plain(view.lists.map(list => list.items.length)), [5, 0, 3])
+    view = Views.view("processes", state, palette, 14)
+    assert.deepEqual(plain(view.lists.map(list => list.items.length)), [7, 0, 3])
+    // A short card ranks a few of each, not many programs and no apps.
+    view = Views.view("processes", state, palette, 8)
+    assert.deepEqual(plain(view.lists.map(list => list.items.length)), [2, 0, 2])
+    // Room for a title and a line per list keeps the top of each.
+    view = Views.view("processes", state, palette, 6)
+    assert.deepEqual(plain(view.lists.map(list => list.items.length)), [1, 0, 1])
     // Without a room given, the usual five and three.
     view = Views.view("processes", state, palette)
-    assert.equal(view.lists[0].items.length, 5)
-    assert.equal(view.lists[1].items.length, 3)
+    assert.deepEqual(plain(view.lists.map(list => list.items.length)), [5, 0, 3])
   },
   "an AMD card is discrete by its own memory, not by how much VRAM it has"() {
     // A big APU (Strix Halo) carves out a lot of system memory, but has no
@@ -1104,8 +1163,8 @@ Object.assign(tests, {
   "the processes view counts an empty list's line"() {
     const many = Array.from({ length: 12 }, (_, i) => ({ pid: i + 1, name: "p" + i, cpu: 50 - i, count: 1 }))
     const state = Object.assign(Stats.empty(), { processes: many, gpuApps: [], nvidia: full.nvidia })
-    // Two titles and "Nothing busy" leave five rows of programs.
-    assert.equal(Views.view("processes", state, palette, 8).lists[0].items.length, 5)
+    // Three titles and two "Nothing busy" lines leave three rows of programs.
+    assert.equal(Views.view("processes", state, palette, 8).lists[0].items.length, 3)
   },
   "a narrow disks card leaves the temperatures to their panel"() {
     const wide = Views.view("disks", full, palette, 6, false, 30)

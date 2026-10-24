@@ -18,9 +18,9 @@ with history graphs and meters:
 | Memory | One bar of used and cached memory, available, swap, and how long tasks stalled waiting for memory while they do | `/proc/meminfo`, `/proc/pressure` |
 | Network | Download and upload graphs, with the rates, the peak each graph's top stands for and the totals since boot as rows, on the interface of the default route | `/proc/net/dev`, `/proc/net/route` |
 | Disks | Read and write per disk with the peak of the last minute, NVMe temperatures (unless Sensors is shown), and how long tasks stalled on I/O while they do | `/proc/diskstats`, NVMe hwmon, `/proc/pressure` |
-| Processes | The busiest programs by CPU, processes of one name added up, and the apps using the most video memory | `/proc/<pid>/stat`, `nvidia-smi` |
+| Processes | The programs using the most CPU, memory and video memory, processes of one name added up; a small card keeps the top one of each | `/proc/<pid>/stat`, `nvidia-smi` |
 | Sensors | The temperatures no other panel on the dashboard shows (the CPU and its dies, the GPUs, NVMe drives, memory modules), each against its own limit, led by the hottest for its limit, then the fans | hwmon, sysfs, `nvidia-smi` |
-| Battery | A laptop's battery with the time left, and peripherals' such as a wireless mouse or Bluetooth headphones; without a battery it takes no card | `/sys/class/power_supply`, the shell's UPower devices |
+| Battery | A laptop's battery with the time left, a bar of its level, its draw, energy, health and charge cycles; peripherals such as a wireless mouse or Bluetooth headphones, the emptiest leading when there is no laptop battery, each with its meter and a mark while it charges; without a battery it takes no card | `/sys/class/power_supply`, the shell's UPower devices |
 | Now playing | The track playing, with its cover and progress | the shell's MPRIS players |
 | System | Like fastfetch: Omarchy's icon beside the uptime, OS, Omarchy version and update channel, host, kernel, CPU, GPUs, memory, packages, shell, desktop, theme, load and threads | `/proc`, `/sys`, `/etc/os-release`, pacman's database |
 

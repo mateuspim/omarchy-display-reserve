@@ -20,6 +20,13 @@
   as two groups of bars, and the CPU card counts each.
 - **Same on every monitor** on the Fill page, which right-click alone
   used to do.
+- **Processes by memory:** the Processes panel ranks programs by memory
+  as well as CPU and video memory; a small card keeps the top program of
+  each, on a line that names its resource.
+- **Battery panel:** a bar of the leading battery's level, the emptiest
+  peripheral leading without a laptop battery, a meter and a charging
+  mark for each device, a laptop battery's health and cycle count, and
+  the warning color for any battery low and draining.
 - **GPU names:** AMD and Intel GPUs show their model ("Radeon 610M"
   rather than "Radeon Graphics"), looked up once in libdrm's `amdgpu.ids`
   and hwdata's `pci.ids`.

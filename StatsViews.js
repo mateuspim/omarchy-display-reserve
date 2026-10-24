@@ -255,6 +255,10 @@ function gpuView(v, gpu, history, g, room, wide) {
   if (gpu.decoder) v.rows.push(row("Decode", Stats.formatPercent(gpu.decoder), gpu.decoder / 100, Stats.gradientAt(g.cpu, gpu.decoder / 100)))
 }
 
+// After a battery's level while it charges: a lightning bolt in the Nerd
+// Font every Omarchy font setup has.
+var CHARGING = "\u{f140b}"
+
 // Units of width under which a disk's row leaves out its temperature.
 var DISK_TEMP_SPAN = 26
 
@@ -393,29 +397,54 @@ var VIEWS = {
     }
   },
 
+  // The programs using the most CPU, memory and video memory, each list
+  // led by the busiest. A card with room for a title and a program per
+  // list ranks them; a smaller one keeps the top program of each, on a
+  // line that names its resource.
   processes: function(v, state, palette, g, room) {
-    // The busiest five programs and three GPU apps, or as many as fill
-    // `room`, which also holds a title per list; always one of each.
-    var vram = state.nvidia || state.gpuApps.length
-    var apps = Math.min(state.gpuApps.length, 3)
-    var programs = 5
-    if (room !== undefined) {
-      // An empty list still takes a line, for "Nothing busy".
-      if (vram) apps = Math.min(apps, Math.max(1, room - 3))
-      programs = Math.max(1, room - (vram ? 2 + Math.max(1, apps) : 1))
+    function cpu(p) { return { name: name(p), text: Stats.formatPercent(p.cpu), fraction: Math.min(1, p.cpu / 100), color: Stats.gradientAt(g.process, Math.min(1, p.cpu / 100)) } }
+    var memTotal = state.memory && state.memory.total
+    function memory(p) {
+      var share = memTotal ? p.memory / memTotal : null
+      return { name: name(p), text: Stats.formatBytes(p.memory), fraction: share, color: Stats.gradientAt(g.used, share || 0) }
     }
-    v.lists.push({ title: "CPU", items: state.processes.slice(0, programs).map(function(p) {
-      return { name: p.count > 1 ? p.name + " ×" + p.count : p.name, text: Stats.formatPercent(p.cpu), fraction: Math.min(1, p.cpu / 100), color: Stats.gradientAt(g.process, Math.min(1, p.cpu / 100)) }
-    }) })
-    if (vram) {
-      var total = state.nvidia && state.nvidia.memTotal
-      v.lists.push({ title: "VRAM", items: state.gpuApps.slice(0, apps).map(function(app) {
-        var share = total ? app.memory / total : null
-        return { name: app.name, text: Stats.formatBytes(app.memory), fraction: share, color: Stats.gradientAt(g.used, share || 0) }
-      }) })
+    var vramTotal = state.nvidia && state.nvidia.memTotal
+    function vram(app) {
+      var share = vramTotal ? app.memory / vramTotal : null
+      return { name: app.name, text: Stats.formatBytes(app.memory), fraction: share, color: Stats.gradientAt(g.used, share || 0) }
     }
-  },
+    function name(p) { return p.count > 1 ? p.name + " ×" + p.count : p.name }
+    var lists = [
+      { title: "CPU", items: state.processes.map(cpu), most: 5 },
+      { title: "Memory", items: (state.memoryProcesses || []).map(memory), most: 3 }
+    ]
+    // Video memory per app comes from nvidia-smi only.
+    if (state.nvidia || state.gpuApps.length) lists.push({ title: "VRAM", items: state.gpuApps.map(vram), most: 3 })
 
+    // Each list takes its title and at least one line (an empty one says
+    // "Nothing busy"); what room is over goes to the lists in order.
+    if (room !== undefined && room < lists.length * 2) {
+      // One line per resource: its top program, named for what it uses.
+      v.lists.push({ title: "", items: lists.map(function(list) {
+        var top = list.items[0]
+        return top ? Object.assign({}, top, { name: list.title + " · " + top.name }) : { name: list.title + " · nothing busy", text: "", fraction: null, color: "" }
+      }) })
+      return
+    }
+    // Spare lines go round the lists one at a time, so a short card ranks
+    // a few of each rather than many programs and nothing else.
+    var spare = room === undefined ? Infinity : room - lists.length * 2
+    var counts = lists.map(function() { return 1 })
+    for (var grew = true; grew && spare > 0;) {
+      grew = false
+      lists.forEach(function(list, i) {
+        if (spare > 0 && counts[i] < list.most && counts[i] < list.items.length) { counts[i]++; spare--; grew = true }
+      })
+    }
+    // Room the others leave goes to more busy programs.
+    if (room !== undefined) counts[0] += Math.max(0, Math.min(spare, lists[0].items.length - counts[0]))
+    lists.forEach(function(list, i) { v.lists.push({ title: list.title, items: list.items.slice(0, counts[i]) }) })
+  },
 
   // Every sensor the other panels on the dashboard do not show: the CPU's
   // and its dies', the GPUs', NVMe drives' and memory modules'
@@ -460,37 +489,52 @@ var VIEWS = {
     if (!lead && !v.rows.length) v.empty = shown.length ? "Every sensor is on its own panel" : "No sensors"
   },
 
+  // Every battery: the laptop's, or else the emptiest peripheral's, leads
+  // with a bar of its level and whether it charges; the rest are rows,
+  // each with its meter. A laptop adds its draw, energy, health and cycles.
   battery: function(v, state, palette, g) {
     var laptop = state.power.filter(function(b) { return !b.device })[0]
     var devices = state.power.filter(function(b) { return b.device })
+    if (!laptop && !devices.length) { v.empty = "No batteries"; return }
     // A peripheral may report only a level; it reads as about this full.
-    var LEVELS = { Critical: 0.05, Low: 0.2, Normal: 0.6, High: 0.85, Full: 1 }
+    var LEVELS = { Critical: 5, Low: 20, Normal: 60, High: 85, Full: 100 }
+    function percent(b) { return b.capacity !== null ? b.capacity : LEVELS[b.level] !== undefined ? LEVELS[b.level] : null }
+    function charging(b) { return b.status === "Charging" }
+    // A peripheral often reports no state at all (UPower's Unknown); only
+    // one charging or full is known not to drain.
+    function draining(b) { return b.status === "Discharging" || (b.device && !charging(b) && !/^Full/.test(b.status)) }
+    function color(p) { return Stats.gradientAt(g.level, 1 - (p || 0) / 100) }
     function hours(h) { return Math.floor(h) + "h " + Math.floor(h * 60) % 60 + "m" }
-    var lead = Stats.leadBattery(state.power)
-    if (lead && !laptop) {
-      v.value = Stats.formatPercent(lead.capacity)
-      v.valueColor = Stats.gradientAt(g.level, 1 - lead.capacity / 100)
-      v.caption = lead.name
-    }
+    // Low and not on a charger: the card asks for attention.
+    state.power.forEach(function(b) { var p = percent(b); if (p !== null && p <= ALERT_BATTERY && draining(b)) v.alert = true })
+
+    var known = devices.filter(function(b) { return percent(b) !== null })
+    var lead = laptop || known.slice().sort(function(a, b) { return percent(a) - percent(b) })[0] || devices[0]
+    var level = percent(lead)
+    v.value = Stats.formatPercent(level)
+    v.valueColor = color(level)
+    if (level !== null) v.stack = [{ fraction: level / 100, color: color(level) }]
     if (laptop) {
-      var cap = laptop.capacity
-      v.value = Stats.formatPercent(cap)
-      v.valueColor = Stats.gradientAt(g.level, 1 - (cap || 0) / 100)
-      if (laptop.status === "Discharging" && cap !== null && cap <= ALERT_BATTERY) v.alert = true
       if (laptop.status === "Discharging" && laptop.power > 0 && laptop.energy !== null) v.caption = hours(laptop.energy / laptop.power) + " left"
-      else if (laptop.status === "Charging" && laptop.power > 0 && laptop.full !== null) v.caption = hours((laptop.full - laptop.energy) / laptop.power) + " to full"
+      else if (charging(laptop) && laptop.power > 0 && laptop.full !== null) v.caption = hours((laptop.full - laptop.energy) / laptop.power) + " to full"
       else v.caption = String(laptop.status || "").toLowerCase()
+      v.info = charging(laptop) ? "charging" : laptop.status === "Discharging" ? "on battery" : ""
       if (laptop.power !== null) v.rows.push(row("Power", laptop.power.toFixed(1) + " W", null))
       if (laptop.energy !== null && laptop.full) v.rows.push(row("Energy", laptop.energy.toFixed(1) + " / " + laptop.full.toFixed(1) + " Wh", null))
+      // Health against what it held new: low health is what wears out.
+      if (laptop.health > 0) v.rows.push(row("Health", Stats.formatPercent(laptop.health), laptop.health / 100, color(laptop.health)))
+      if (laptop.cycles > 0) v.rows.push(row("Cycles", String(laptop.cycles), null))
+    } else {
+      v.caption = lead.name + (charging(lead) ? "  ·  charging" : "")
+      v.info = devices.length > 1 ? devices.length + " devices" : ""
     }
     devices.forEach(function(d) {
       // The peripheral leading the panel is not listed again.
-      if (d === lead && !laptop) return
-      var fraction = d.capacity !== null ? d.capacity / 100 : LEVELS[d.level]
-      v.rows.push(row(d.name, d.capacity !== null ? Stats.formatPercent(d.capacity) : d.level || "—",
-        fraction === undefined ? null : fraction, Stats.gradientAt(g.level, 1 - (fraction || 0))))
+      if (d === lead) return
+      var p = percent(d)
+      v.rows.push(row(d.name, (p !== null ? Stats.formatPercent(p) : d.level || "—") + (charging(d) ? " " + CHARGING : ""),
+        p === null ? null : p / 100, color(p)))
     })
-    if (!laptop && !devices.length) v.empty = "No batteries"
   },
 
   media: function(v, state, palette, g) {
