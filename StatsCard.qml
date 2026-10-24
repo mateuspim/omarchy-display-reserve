@@ -3,10 +3,11 @@ import QtQuick.Layouts
 import qs.Commons
 import "." as Reserve
 import "Stats.js" as Stats
+import "StatsViews.js" as Views
 
 // One panel of the stats dashboard, drawn the way btop draws its boxes: a
 // thin rounded outline in the panel's color with the title cut into its
-// top edge, over black. `view` is Stats.view's description of the panel.
+// top edge, over black. `view` is Views.view's description of the panel.
 // A wide card puts its value and graphs on the left and its rows on the
 // right; a narrow one stacks them.
 // Text stays plain: MPRIS metadata and device/process names can be supplied
@@ -16,31 +17,63 @@ Item {
   // Blank until set: a delegate's own bindings can run before these are
   // given, and would read undefined.
   property var view: blank
-  readonly property var blank: Stats.view("", Stats.empty(), Stats.palette({}, {}))
+  readonly property var blank: Views.view("", Stats.empty(), Stats.palette({}, {}))
   // What the card draws: `view`, or blank while a binding gives none.
   readonly property var shown: view || blank
   // Not `palette`: that would hide Item.palette.
   property var theme: Stats.palette({}, {})
   required property int unit
   property string fontFamily: Style.font.family
-  readonly property bool wide: width > height * Stats.WIDE_CARD
+  readonly property bool wide: width > height * Views.WIDE_CARD
   // Omarchy's icon beside a view that asks for it (System), as fastfetch
   // shows the distro's: as tall as the body, when that leaves the rows
-  // room enough.
+  // room enough (a label and a short value, about 13 units).
   readonly property real bodyHeight: height - Math.round(unit * 1.6) - unit
   readonly property real logoSize: Math.min(bodyHeight, width * 0.3)
   readonly property bool showsLogo: shown.logo === true && Reserve.ReserveState.iconArt !== null
-    && logoSize >= unit * 4 && width - 3 * unit - logoSize >= unit * 20
+    && logoSize >= unit * 4 && width - 3 * unit - logoSize >= unit * 13
   readonly property int line: Math.max(1, Math.round(unit / 12))
+  // A view that asks for attention trades its hue for the caution or
+  // alarm color, in a thicker, solid outline, with a warning mark for its
+  // icon; at CRITICAL the title is filled in as well.
+  readonly property int alert: shown.alert || 0
+  readonly property color outline: alert >= Views.ALERT ? theme.alert : alert === Views.CAUTION ? theme.caution : shown.color
+  readonly property bool critical: alert >= Views.CRITICAL
+
+  // The rows with meters share a label column and a value column, so
+  // their meters start and end together. The value column is as wide as
+  // the longest value that still leaves a meter room (two units): a
+  // longer value ("6.2 / 16.0 GiB" in a narrow card) keeps its text whole
+  // and goes without a meter, rather than squeezing every other meter out.
+  readonly property var meterRows: shown.rows.filter(function(r) { return r.fraction !== null && r.fraction !== undefined })
+  readonly property real labelColumn: Math.min(Math.max(unit * 4, longest(meterRows, "label") * labelGlyph.advanceWidth + unit * 0.6), rowsColumn.width * 0.45)
+  readonly property real valueColumn: {
+    var room = rowsColumn.width - labelColumn - unit * 0.6 * 2 - unit * 2
+    var widest = 0
+    for (var i = 0; i < meterRows.length; i++) {
+      var width = valueWidth(meterRows[i].text)
+      if (width <= room && width > widest) widest = width
+    }
+    return widest
+  }
+  function valueWidth(text) { return String(text || "").length * valueGlyph.advanceWidth }
+  function longest(rows, key) {
+    var most = 0
+    for (var i = 0; i < rows.length; i++) most = Math.max(most, String(rows[i][key] || "").length)
+    return most
+  }
+  // The font is monospaced, so one glyph's advance measures any text.
+  TextMetrics { id: labelGlyph; text: "0"; font.family: card.fontFamily; font.pixelSize: Math.round(card.unit * 0.9) }
+  TextMetrics { id: valueGlyph; text: "0"; font.family: card.fontFamily; font.pixelSize: Math.round(card.unit * 0.9); font.bold: true }
 
   Rectangle {
     anchors.fill: parent
     anchors.topMargin: Math.round(card.unit / 2)
     color: "transparent"
     radius: Math.round(card.unit * 0.55)
-    border.color: card.shown.color
-    border.width: card.line
-    opacity: 0.75
+    border.color: card.outline
+    border.width: card.alert ? card.line * 2 : card.line
+    opacity: card.alert ? 1 : 0.75
   }
 
   // The title, and on the right the panel's detail (a GPU's name, the
@@ -49,22 +82,24 @@ Item {
     x: card.unit
     height: card.unit
     width: titleRow.implicitWidth + card.unit * 0.7
-    color: "black"
+    radius: card.critical ? Math.round(card.unit * 0.3) : 0
+    color: card.critical ? card.outline : "black"
     Row {
       id: titleRow
       anchors.centerIn: parent
       spacing: Math.round(card.unit * 0.4)
       Text {
         textFormat: Text.PlainText
-        text: card.shown.icon
-        color: card.shown.color
+        // A warning mark for the panel's icon while it asks for attention.
+        text: card.alert ? "\u{f0026}" : card.shown.icon
+        color: card.critical ? "black" : card.outline
         font.family: card.fontFamily
         font.pixelSize: card.unit
       }
       Text {
         textFormat: Text.PlainText
         text: card.shown.title
-        color: card.theme.foreground
+        color: card.critical ? "black" : card.alert ? card.outline : card.theme.foreground
         font.family: card.fontFamily
         font.pixelSize: Math.round(card.unit * 0.9)
         font.bold: true
@@ -129,14 +164,17 @@ Item {
     visible: card.shown.empty === ""
     clip: true
 
-    // The headline: the big value, its graphs and the per-core bars.
+    // The headline: the big value, its graphs and the per-core bars. Only
+    // its graphs take the free height in a stacked card; without one, the
+    // rows follow right under the value.
     ColumnLayout {
       Layout.fillWidth: true
-      Layout.fillHeight: true
+      Layout.fillHeight: card.wide || card.shown.graphs.length > 0
+      Layout.alignment: Qt.AlignTop
       // Side by side the rows' text needs more of the width than the graph.
       Layout.preferredWidth: 2
       spacing: Math.round(card.unit * 0.4)
-      visible: card.shown.value !== "" || card.shown.graphs.length > 0 || card.shown.bars.length > 0
+      visible: card.shown.value !== "" || card.shown.graphs.length > 0 || card.shown.bars.length > 0 || card.shown.stack.length > 0
 
       RowLayout {
         visible: card.shown.value !== ""
@@ -169,6 +207,19 @@ Item {
           font.family: card.fontFamily
           font.pixelSize: Math.round(card.unit * 0.8)
         }
+      }
+      // What the caption had no room for (a wide card's sensor name), or
+      // how low a battery is, in the warning's color.
+      Text {
+        textFormat: Text.PlainText
+        visible: card.shown.note !== ""
+        Layout.fillWidth: true
+        elide: Text.ElideRight
+        text: card.shown.note
+        color: card.alert ? card.outline : card.theme.subtle
+        font.family: card.fontFamily
+        font.pixelSize: Math.round(card.unit * 0.8)
+        font.bold: card.alert > 0
       }
 
       // Each repeater counts the view's items rather than taking its
@@ -207,6 +258,33 @@ Item {
         }
       }
 
+      // Parts of a whole in one bar (memory: used, then cached), keyed by
+      // the rows' swatches.
+      Rectangle {
+        id: stack
+        visible: card.shown.stack.length > 0
+        Layout.fillWidth: true
+        Layout.preferredHeight: Math.max(4, Math.round(card.unit * 0.7))
+        radius: height / 2
+        color: card.theme.meter
+        clip: true
+        Row {
+          anchors.fill: parent
+          Repeater {
+            model: card.shown.stack.length
+            Rectangle {
+              id: part
+              required property int index
+              readonly property var modelData: card.shown.stack[index] || ({ fraction: 0, color: card.theme.meter })
+              Reserve.StatsEase { id: partShown; target: part.modelData.fraction }
+              width: Math.round(stack.width * partShown.value)
+              height: stack.height
+              color: modelData.color
+            }
+          }
+        }
+      }
+
       // One bar per core, filled from the bottom.
       Row {
         id: cores
@@ -219,10 +297,12 @@ Item {
           Rectangle {
             id: coreBar
             required property int index
-            readonly property var modelData: card.shown.bars[index] || ({ fraction: 0, color: card.theme.meter })
+            readonly property var modelData: card.shown.bars[index] || ({ fraction: 0, color: card.theme.meter, gap: false })
             width: Math.max(1, (cores.width - cores.spacing * (card.shown.bars.length - 1)) / card.shown.bars.length)
             height: cores.height
             radius: Math.min(width / 2, card.unit / 6)
+            // A gap between a hybrid CPU's kinds of core draws nothing.
+            opacity: modelData.gap ? 0 : 1
             color: card.theme.meter
             // The fraction eases, not the size: an eased size would keep
             // a stale track size when the card is laid out again.
@@ -239,13 +319,20 @@ Item {
           }
         }
       }
+      // Beside the rows of a wide card, a headline without a graph keeps to
+      // the top like every other card's, rather than floating in the middle.
+      Item { Layout.fillHeight: true; visible: card.wide && card.shown.graphs.length === 0 }
     }
 
-    // The details: label, meter and value rows, then ranked lists.
+    // The details: label, meter and value rows, then ranked lists. No
+    // wider than this: across a very wide card a label and its value
+    // drift too far apart to read as one.
     ColumnLayout {
+      id: rowsColumn
       Layout.fillWidth: true
       Layout.fillHeight: card.wide
       Layout.preferredWidth: 3
+      Layout.maximumWidth: card.unit * 40
       Layout.alignment: Qt.AlignTop
       spacing: Math.round(card.unit * 0.35)
       visible: card.shown.rows.length > 0 || card.shown.lists.length > 0
@@ -254,12 +341,13 @@ Item {
         model: card.shown.rows.length
         StatRow {
           required property int index
-          readonly property var modelData: card.shown.rows[index] || ({ label: "", text: "", fraction: null, color: "" })
+          readonly property var modelData: card.shown.rows[index] || ({ label: "", text: "", fraction: null, color: "", swatch: false })
           Layout.fillWidth: true
           label: modelData.label
           text: modelData.text
           fraction: modelData.fraction
           barColor: modelData.color || card.shown.color
+          swatch: modelData.swatch === true
           labelWidth: card.unit * 5.5
         }
       }
@@ -272,8 +360,10 @@ Item {
           readonly property var modelData: card.shown.lists[index] || ({ title: "", items: [] })
           Layout.fillWidth: true
           spacing: Math.round(card.unit * 0.3)
+          // A list of one line per resource has no title.
           Text {
             textFormat: Text.PlainText
+            visible: text !== ""
             text: list.modelData.title
             color: card.shown.color
             font.family: card.fontFamily
@@ -420,19 +510,36 @@ Item {
     property real labelWidth: 0
     property bool labelFills: false
     property real meterWidth: 0
+    // A square of barColor before the label: the key to a stacked bar.
+    property bool swatch: false
     readonly property bool hasMeter: fraction !== null && fraction !== undefined
+    // A meter row of the card's rows that lines up with the others; one
+    // whose value is too long for the card's value column has no meter.
+    readonly property bool columns: hasMeter && !labelFills && card.valueWidth(text) <= card.valueColumn && card.valueColumn > 0
+    readonly property bool meterless: hasMeter && !labelFills && !columns
     implicitHeight: Math.round(card.unit * 1.25)
 
+    Rectangle {
+      id: swatchBox
+      visible: statRow.swatch
+      anchors.verticalCenter: parent.verticalCenter
+      width: visible ? Math.round(card.unit * 0.6) : 0
+      height: width
+      radius: Math.max(1, Math.round(card.unit / 8))
+      color: statRow.barColor
+    }
     Text {
       id: rowLabel
       textFormat: Text.PlainText
-      anchors.left: parent.left
+      anchors.left: swatchBox.visible ? swatchBox.right : parent.left
+      anchors.leftMargin: swatchBox.visible ? Math.round(card.unit * 0.4) : 0
       anchors.verticalCenter: parent.verticalCenter
       // Never into the value: a long value takes the room of the meter,
       // then of the label, which elides.
       // A long label ("G502 X LIGHTSPEED") takes up to half the row from
-      // the meter.
+      // the meter. A row with a meter uses the card's label column.
       width: statRow.labelFills ? parent.width - value.width - meter.width - card.unit * 1.2
+        : statRow.columns ? card.labelColumn
         : Math.max(0, Math.min(Math.max(statRow.labelWidth, Math.min(implicitWidth + card.unit * 0.6, parent.width * 0.5)),
             parent.width - value.width - card.unit * 0.6))
       text: statRow.label
@@ -444,7 +551,7 @@ Item {
     Rectangle {
       id: meter
       // A meter squeezed to a dot says nothing.
-      visible: statRow.hasMeter && width >= card.unit * 2
+      visible: statRow.hasMeter && !statRow.meterless && width >= card.unit * 2
       anchors.verticalCenter: parent.verticalCenter
       x: statRow.labelFills ? rowLabel.width + card.unit * 0.6 : rowLabel.width
       width: !statRow.hasMeter ? 0 : statRow.labelFills ? statRow.meterWidth : Math.max(0, value.x - x - card.unit * 0.6)
@@ -465,8 +572,11 @@ Item {
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       // Never over the label: it takes the room the label can spare (all
-      // but a short label's own width), and past that it elides.
-      width: Math.min(implicitWidth, parent.width - Math.min(rowLabel.implicitWidth, card.unit * 3) - card.unit * 0.6)
+      // but a short label's own width), and past that it elides. A row
+      // with a meter takes the card's value column, right-aligned in it.
+      width: statRow.columns ? card.valueColumn
+        : Math.min(implicitWidth, parent.width - Math.min(rowLabel.implicitWidth, card.unit * 3) - card.unit * 0.6)
+      horizontalAlignment: Text.AlignRight
       elide: Text.ElideRight
       text: statRow.text
       color: card.theme.foreground

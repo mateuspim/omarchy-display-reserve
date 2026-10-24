@@ -36,11 +36,13 @@ nvidia=$(type -P nvidia-smi)
 # after five it is read only every tenth frame, so it can go to sleep.
 declare -A rest
 
-# A hwmon chip's lines (chip, sensor, label, value): its fans, and its
-# temperatures when it is the CPU's or memory's. A device asleep is left
+# A hwmon chip's lines (chip, sensor, label, value, critical): its fans,
+# and its temperatures when it is the CPU's or memory's, with the
+# temperature the chip calls critical when it gives one (Intel's TjMax, a
+# DIMM's limit), so a meter can fill towards it. A device asleep is left
 # alone: reading its sensors would wake it.
 sensors() {
-  local dir=$1 chip=$2 status="" input sensor label value
+  local dir=$1 chip=$2 status="" input sensor label value crit
   { read -r status < "$dir/device/power/runtime_status"; } 2>/dev/null
   [[ $status == suspended ]] && return
   local inputs=("$dir"/fan*_input)
@@ -49,12 +51,52 @@ sensors() {
     [[ -e $input ]] || continue
     sensor=${input##*/}
     sensor=${sensor%_input}
-    label="" value=""
+    label="" value="" crit=""
     [[ -r $dir/${sensor}_label ]] && read -r label < "$dir/${sensor}_label"
+    [[ -r $dir/${sensor}_crit ]] && { read -r crit < "$dir/${sensor}_crit"; } 2>/dev/null
     { read -r value < "$input"; } 2>/dev/null
-    printf '%s\t%s\t%s\t%s\n' "$chip" "$sensor" "$label" "$value"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$chip" "$sensor" "$label" "$value" "$crit"
   done
 }
+
+# Each AMD and Intel card's marketing name, looked up once: sysfs gives
+# only PCI ids. libdrm's amdgpu.ids has AMD's names by device and revision
+# (as btop and nvtop use it); hwdata's pci.ids names the rest, with the
+# product in brackets ("Granite Ridge [Radeon 610M]"). Both are optional.
+declare -A gpu_names
+amdgpu_ids=${STATS_AMDGPU_IDS:-/usr/share/libdrm/amdgpu.ids}
+pci_ids=${STATS_PCI_IDS:-/usr/share/hwdata/pci.ids}
+for card in /sys/class/drm/card*; do
+  id=${card##*/}
+  [[ $id == *-* ]] && continue
+  vendor="" device="" revision=""
+  { read -r vendor < "$card/device/vendor"; read -r device < "$card/device/device"; read -r revision < "$card/device/revision"; } 2>/dev/null
+  vendor=${vendor#0x} device=${device#0x} revision=${revision#0x}
+  [[ $vendor == 1002 || $vendor == 8086 ]] || continue
+  name=""
+  if [[ $vendor == 1002 && -r $amdgpu_ids ]]; then
+    want="${device^^},"$'\t'"${revision^^},"$'\t'
+    while IFS= read -r line; do
+      [[ $line == "$want"* ]] && { name=${line#"$want"}; break; }
+    done < "$amdgpu_ids"
+  fi
+  if [[ -z $name && -r $pci_ids ]]; then
+    in_vendor=0
+    while IFS= read -r line; do
+      if [[ $line == "$vendor  "* ]]; then in_vendor=1; continue; fi
+      (( in_vendor )) || continue
+      [[ $line == $'\t'* ]] || break
+      [[ $line == $'\t'"$device  "* ]] && { name=${line#$'\t'"$device  "}; break; }
+    done < "$pci_ids"
+    [[ $name == *"["*"]"* ]] && { name=${name##*\[}; name=${name%%]*}; }
+  fi
+  [[ -n $name ]] && gpu_names[$id]=$name
+done
+
+# The page size, for the processes' resident memory, which /proc/<pid>/stat
+# gives in pages: 4 KiB on x86, but 16 or 64 KiB on some ARM kernels.
+# Asked once, so no frame starts a process for it.
+page_size=$(getconf PAGESIZE 2>/dev/null)
 
 # A pipe nobody writes to, for sleeping with read -t instead of forking
 # sleep on every frame.
@@ -111,9 +153,10 @@ while :; do
     for input in /sys/class/nvme/nvme*/hwmon*/temp1_input; do
       [[ -e $input ]] || continue
       controller=${input#/sys/class/nvme/}
-      value=""
+      value="" crit=""
       { read -r value < "$input"; } 2>/dev/null
-      printf '%s\t%s\n' "${controller%%/*}" "$value"
+      { read -r crit < "${input%_input}_crit"; } 2>/dev/null
+      printf '%s\t%s\t%s\n' "${controller%%/*}" "$value" "$crit"
     done
   fi
 
@@ -189,6 +232,14 @@ while :; do
     { while IFS=: read -r key value; do
         [[ $key == "model name"* ]] && { printf 'cpu\t%s\n' "${value# }"; break; }
       done < /proc/cpuinfo; } 2>/dev/null
+    for id in "${!gpu_names[@]}"; do printf 'gpu_name_%s\t%s\n' "$id" "${gpu_names[$id]}"; done
+    [[ -n $page_size ]] && printf 'page_size\t%s\n' "$page_size"
+    # Intel's hybrid CPUs list their performance and efficient cores apart
+    # (cpu_core, cpu_atom), as CPU ranges like 0-15.
+    for kind in cpu_core cpu_atom; do
+      value=""; { read -r value < "/sys/devices/$kind/cpus"; } 2>/dev/null
+      [[ -n $value ]] && printf '%s\t%s\n' "$kind" "$value"
+    done
     # Installed packages: a directory each in pacman's database.
     packages=(/var/lib/pacman/local/*/)
     [[ -d ${packages[0]} ]] && printf 'packages\t%s\n' "${#packages[@]}"
@@ -200,7 +251,7 @@ while :; do
   printf '@power\n'
   for supply in /sys/class/power_supply/*; do
     [[ -d $supply ]] || continue
-    for key in type scope status capacity capacity_level model_name power_now current_now voltage_now energy_now energy_full charge_now charge_full; do
+    for key in type scope status capacity capacity_level model_name power_now current_now voltage_now energy_now energy_full energy_full_design charge_now charge_full charge_full_design cycle_count; do
       [[ -r $supply/$key ]] || continue
       value=""
       { read -r value < "$supply/$key"; } 2>/dev/null && printf '%s\t%s\t%s\n' "${supply##*/}" "$key" "$value"
@@ -245,6 +296,7 @@ while :; do
       if [[ $control == auto && $busy == 0 ]]; then rest[$id]=$(( ${rest[$id]:-0} + 1 )); else rest[$id]=0; fi
       for hwmon in "$dev"/hwmon/hwmon*; do
         gpu temp "$hwmon/temp1_input"
+        gpu temp_crit "$hwmon/temp1_crit"
         if [[ -r $hwmon/power1_average ]]; then gpu power "$hwmon/power1_average"; else gpu power "$hwmon/power1_input"; fi
         gpu power_cap "$hwmon/power1_cap"
         gpu freq "$hwmon/freq1_input"

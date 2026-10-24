@@ -9,14 +9,20 @@ var FILL_NAMES = { black: "Black", theme: "Theme", wallpaper: "Wallpaper", dim: 
 // Fills drawn once per monitor, on the edge clockEdge picks; the other
 // edges stay black.
 var SINGLE_FILLS = ["clock", "stats"]
-// The stats fill's panels, in the order the dashboard lays them out and
-// drops them when the strip runs out of room.
-var STATS_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "pressure", "fans", "battery", "media", "system"]
+// The stats fill's panels, in the order the panel lists them. A monitor
+// shows its own choice of them in its own order, and the dashboard drops
+// them from the end of that order when the strip runs out of room.
+// `temps` is the Sensors panel: its key predates the fans joining it.
+var STATS_PANELS = ["gpu", "igpu", "cpu", "memory", "network", "disks", "processes", "temps", "battery", "media", "system"]
 var STATS_DEFAULT = ["gpu", "cpu", "memory", "network"]
-var PANEL_NAMES = { gpu: "GPU", igpu: "iGPU", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", temps: "Temps", pressure: "Pressure", fans: "Fans", battery: "Battery", media: "Now playing", system: "System" }
+var PANEL_NAMES = { gpu: "GPU", igpu: "iGPU", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", temps: "Sensors", battery: "Battery", media: "Now playing", system: "System" }
 // Other names IPC accepts for a panel.
-var PANEL_ALIASES = { mem: "memory", ram: "memory", net: "network", disk: "disks", io: "disks", procs: "processes", "top processes": "processes", psi: "pressure", fan: "fans", integrated: "igpu",
-  temperatures: "temps", temp: "temps", sensors: "temps", bat: "battery", music: "media", mpris: "media", nowplaying: "media", uptime: "system" }
+var PANEL_ALIASES = { mem: "memory", ram: "memory", net: "network", disk: "disks", io: "disks", procs: "processes", "top processes": "processes", fan: "temps", fans: "temps", integrated: "igpu",
+  temperatures: "temps", temp: "temps", temps: "temps", sensors: "temps", bat: "battery", music: "media", mpris: "media", nowplaying: "media", uptime: "system" }
+// Panels of earlier versions, as stored in settings and profiles: the Fans
+// panel became part of Sensors, and the Pressure panel's numbers became
+// rows on the CPU, Memory and Disks panels.
+var RETIRED_PANELS = { fans: "temps", pressure: "" }
 // Where the clock fill goes: the largest reserved edge, or the larger of
 // the top and bottom edges.
 var CLOCK_EDGES = ["largest", "topBottom"]
@@ -67,21 +73,46 @@ function normalize(raw) {
   return result
 }
 
-// The stats panels an entry shows: known names, once each, in
-// STATS_PANELS order. Anything but a list (a missing key) is the default;
-// an empty list is a dashboard with nothing on it.
+// The stats panels an entry shows, in its order: known names, once each,
+// retired ones as the panel that took them over. Anything but a list (a
+// missing key) is the default; an empty list is a dashboard with nothing
+// on it.
 function panelList(raw) {
   if (!Array.isArray(raw)) return STATS_DEFAULT.slice()
-  return STATS_PANELS.filter(function(panel) { return raw.indexOf(panel) !== -1 })
+  var result = []
+  raw.forEach(function(name) {
+    var panel = RETIRED_PANELS.hasOwnProperty(name) ? RETIRED_PANELS[name] : name
+    if (STATS_PANELS.indexOf(panel) !== -1 && result.indexOf(panel) === -1) result.push(panel)
+  })
+  return result
 }
 
 // `list` with `panel` switched on or off: flipped, or set to `on` when it
-// is given.
+// is given. A panel switched on goes last.
 function togglePanel(list, panel, on) {
   if (STATS_PANELS.indexOf(panel) === -1) return panelList(list)
   var has = list.indexOf(panel) !== -1
   if (on === undefined) on = !has
   return panelList(on ? list.concat([panel]) : list.filter(function(name) { return name !== panel }))
+}
+
+// `list` with `panel` moved `delta` places towards the end (negative:
+// towards the start), within the list; unchanged for a panel not in it.
+function movePanel(list, panel, delta) {
+  var result = panelList(list)
+  var from = result.indexOf(panel)
+  if (from === -1) return result
+  var to = clamp(from + delta, 0, result.length - 1)
+  result.splice(from, 1)
+  result.splice(to, 0, panel)
+  return result
+}
+
+// Every panel in the order the panel's list shows them: the ones `list`
+// shows first, in its order, then the rest in STATS_PANELS order.
+function panelOrder(list) {
+  var shown = panelList(list)
+  return shown.concat(STATS_PANELS.filter(function(panel) { return shown.indexOf(panel) === -1 }))
 }
 
 // The panel a name stands for, by key, label or alias in any case; "" for
@@ -103,6 +134,18 @@ function panelsFrom(text) {
   var names = text.split(",").map(panelFrom)
   if (names.indexOf("") !== -1) return null
   return panelList(names)
+}
+
+// The panel's pages, in tab order, and their names.
+var PAGES = ["edges", "fill", "stats", "profiles"]
+var PAGE_NAMES = { edges: "Edges", fill: "Fill", stats: "Stats", profiles: "Profiles" }
+
+// The page `direction` steps from `page` (1 next, -1 previous), wrapping
+// around; the first page for one that is not a page.
+function nextPage(page, direction) {
+  var index = PAGES.indexOf(page)
+  if (index === -1) return PAGES[0]
+  return PAGES[(index + direction + PAGES.length) % PAGES.length]
 }
 
 // How many cells share the row of cell `index` in a grid of `count` cells,
@@ -198,6 +241,16 @@ function clockEdge(entry) {
 // dashboard) per monitor; its other edges stay black.
 function edgeFill(entry, side) {
   return SINGLE_FILLS.indexOf(entry.fill) !== -1 && side !== clockEdge(entry) ? "black" : entry.fill
+}
+
+// The size of the strip the stats fill draws on, for a monitor of
+// `width` by `height` showing `entry` (fitted): the reserved edge it goes
+// on, across the monitor. Null without the stats fill or that edge.
+function statsStrip(entry, width, height) {
+  if (entry.fill !== "stats") return null
+  var side = clockEdge(entry)
+  if (!side || !(entry[side] > 0)) return null
+  return isHorizontal(side) ? { width: width, height: entry[side] } : { width: entry[side], height: height }
 }
 
 // What an edge shows beside a fullscreen window: black, except the stats

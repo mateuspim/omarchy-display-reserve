@@ -1,8 +1,86 @@
 # Changelog
 
-## Unreleased
+## 1.8.0 — 2026-10-24
+
+### Added
+
+- **Panel pages:** the panel keeps its header, monitor buttons and preview
+  on top and shows one page at a time below them: Edges, Fill, Stats and
+  Profiles. Click a tab or press `[` and `]`; the edge keys bring up
+  Edges, and the panel opens where it was left. It scrolls on a screen
+  too short for a page, where the bottom rows used to be cut off.
+- **Panel order:** the Stats page lists a monitor's panels in order, with
+  buttons to move them, and the rest to add. The dashboard lays them out
+  in that order and leaves them off from the end; `panels` over IPC keeps
+  the order given.
+- **Warning color:** a stats card's outline and title turn red, with a
+  warning mark, while one of its sensors is within 5 °C of its limit,
+  memory is 90% used, video memory 95%, or tasks stall 10% of the time.
+  Batteries, a laptop's or a peripheral's, step up from yellow at 15% to
+  red at 10% and a filled title at 5% while not charging. Network and
+  Disks have new hues, since red and yellow now mean a warning.
+- **Hybrid CPUs:** an Intel CPU's performance and efficient threads show
+  as two groups of bars, and the CPU card counts each.
+- **Same on every monitor** on the Fill page, which right-click alone
+  used to do.
+- **The Stats page says what the dashboard draws:** a shown panel that
+  doesn't fit the edge, or has nothing to show on this machine, says so,
+  Add leaves out panels the machine can't show, and every shown panel has
+  a ✕ to hide it.
+- **Processes by memory:** the Processes panel ranks programs by memory
+  as well as CPU and video memory; a small card keeps the top program of
+  each, on a line that names its resource.
+- **Battery panel:** a bar of the leading battery's level, the emptiest
+  peripheral leading without a laptop battery, a meter and a charging
+  mark for each device, a laptop battery's health and cycle count, and
+  the warning color for any battery low and draining.
+- **GPU names:** AMD and Intel GPUs show their model ("Radeon 610M"
+  rather than "Radeon Graphics"), looked up once in libdrm's `amdgpu.ids`
+  and hwdata's `pci.ids`.
 
 ### Changed
+
+- **Temperatures against their limit:** temperature meters fill from
+  30 °C to the sensor's critical temperature (from hwmon, NVMe and amdgpu,
+  read by `stats.sh`), or to where the part throttles, instead of a 0 to
+  100 °C scale.
+- **Memory card:** one bar of used and cached memory keyed by its rows,
+  in place of a flat graph and meters for Used and Available, which said
+  the same thing twice.
+- **Network and Disks graphs** carry no text, which was unreadable over
+  a spiky graph: the rates and the peak each graph's top stands for are
+  rows, and the Disks peak is in its title.
+- **Each reading once:** the Sensors panel leaves out the temperatures
+  of the CPU, GPU and iGPU panels on the same dashboard and leads with
+  the hottest sensor for its limit; the Disks panel leaves NVMe
+  temperatures to Sensors, and System leaves memory and load to their
+  panels. Sensors and Battery drop graphs that were flat lines.
+- **No empty cards:** an iGPU panel without a second GPU and a Battery
+  panel without a battery take no room on the dashboard.
+- **Small cards:** in a narrow or wide card the CPU's clock and the load
+  average's minutes move or shorten instead of being cut off, and a wide
+  System card puts Omarchy's logo beside the facts.
+- **Load average** names its minutes where the card is wide enough, with
+  a meter for the load per thread.
+- **One meter color rule:** every meter that measures closeness to a
+  limit runs green, yellow, red.
+- **Sensors panel:** Temperatures and Fans are one panel. The Pressure
+  panel's numbers are Stalled rows on the CPU, Memory and Disks cards
+  while tasks stall. Saved panel lists, profiles and IPC names (`fans`)
+  carry over.
+- Labels for what was hidden: the pause switch says On or Paused, the
+  Idle button names itself, the stats fill's edge choice says what it
+  places, and the Profiles page says what Auto does.
+- **Aligned cards:** a card's meters start and end together, a value too
+  long for one keeps its text whole, and headlines sit at the top of
+  every card. A wide Sensors card names its leading sensor under the
+  number, and beside the CPU panel a non-CPU sensor leads. Disks with one
+  disk names it and gives Read and Write a row each. Network's two totals
+  share one row, and its keys match its lines.
+- The Profiles field starts with the current profile, so Update and Auto
+  work at once; an automatic profile says "auto" on its button. The
+  aspect position button reads "Area · Bottom".
+- `Stats.js` is split: the layout and the cards live in `StatsViews.js`.
 
 - The README is a short landing page. The manual moved, word for word, to
   guides in `docs/guide/`: the panel, fills, profiles, the stats fill,

@@ -16,8 +16,8 @@ bash builtins only, so a frame starts no process. One long-running
 `nvidia-smi -lms` covers an NVIDIA GPU. One `StatsSampler` in `ReserveState`
 serves every monitor and preview; it runs only while some monitor shows the
 stats fill or a panel previews it, and stops while the session is idle.
-Parsing, rates and layout live in `Stats.js`, pure JavaScript that Node
-tests without QML.
+Parsing, rates and layout live in `Stats.js` and `StatsViews.js`, pure
+JavaScript that Node tests without QML.
 
 ## Consequences
 

@@ -22,6 +22,7 @@ stats.sh INTERVAL PROCESS_EVERY [FRAMES]
 | --- | --- |
 | `STATS_NVIDIA=0` | Leave `nvidia-smi` out of `@gpuapps`. The shell sets it while the NVIDIA GPU rests or sleeps ([ADR 7](../adr/0007-let-an-idle-dgpu-rest.md)). |
 | `OMARCHY_PATH` | An Omarchy checkout other than `/usr/share/omarchy` makes `@sysinfo` report `omarchy` as `dev`. |
+| `STATS_AMDGPU_IDS`, `STATS_PCI_IDS` | Other paths for libdrm's `amdgpu.ids` and hwdata's `pci.ids`, for the GPU names. Defaults `/usr/share/libdrm/amdgpu.ids`, `/usr/share/hwdata/pci.ids`. |
 
 `LC_ALL=C` is forced. Unreadable files are skipped quietly; the script
 never exits on a missing sensor.
@@ -62,16 +63,16 @@ empty strings.
 | `@disk` | frame | `/proc/diskstats`; whole disks only are used (sd, hd, vd, xvd, nvme namespaces, mmcblk). |
 | `@model` | frame | *tab* `block device`, `model`, for devices that report one. |
 | `@psi` | frame | `<resource> <line>` for `cpu`, `memory`, `io` from `/proc/pressure`. |
-| `@hwmon` | frame | *tab* `chip`, `sensor`, `label`, `value`: every chip's fans, plus temperatures of CPU and memory chips (`k10temp`, `zenpower`, `coretemp`, `k8temp`, `cpu_thermal`, `spd5118`, `jc42`). Chips whose device is runtime-suspended are skipped. |
+| `@hwmon` | frame | *tab* `chip`, `sensor`, `label`, `value`, `critical`: every chip's fans, plus temperatures of CPU and memory chips (`k10temp`, `zenpower`, `coretemp`, `k8temp`, `cpu_thermal`, `spd5118`, `jc42`). `critical` is the sensor's `temp*_crit` in m°C, empty when it has none (always for fans). Chips whose device is runtime-suspended are skipped. |
 | `@slowhwmon` | 5th frame | Same columns, for chips that read through firmware (`dell_smm`). |
-| `@nvme` | 5th frame | *tab* `controller`, `millidegrees` from each NVMe's `temp1_input`. |
+| `@nvme` | 5th frame | *tab* `controller`, `millidegrees` from each NVMe's `temp1_input`, `critical` from its `temp1_crit` (empty without one). |
 | `@rapl` | frame | *tab* `zone`, `energy_uj`, `max_energy_range_uj`, `long-term limit µW` per CPU package (`intel-rapl:N`, also on AMD). `energy_uj` is empty while the counter is root's; the limit is empty without an Intel PL1. |
 | `@freq` | frame | One `scaling_cur_freq` (kHz) per CPU. |
 | `@system` | frame | *tab* `hostname`, `kernel`, `uptime` lines. |
-| `@sysinfo` | 60th frame | *tab* key and value: `user`, `shell`, `desktop`, `os`, `omarchy` (package version or `dev`), `channel` (`stable`, `rc`, `edge`, `unknown`, or `mirror / repo` when they differ), `theme`, `sys_vendor`, `product_name`, `board_vendor`, `board_name`, `cpu`, `packages`, `flatpaks` (the last two only when present). |
-| `@power` | frame | *tab* `supply`, `key`, `value` for `/sys/class/power_supply/*` keys `type`, `scope`, `status`, `capacity`, `capacity_level`, `model_name`, `power_now`, `current_now`, `voltage_now`, `energy_now`, `energy_full`, `charge_now`, `charge_full`. |
+| `@sysinfo` | 60th frame | *tab* key and value: `user`, `shell`, `desktop`, `os`, `omarchy` (package version or `dev`), `channel` (`stable`, `rc`, `edge`, `unknown`, or `mirror / repo` when they differ), `theme`, `sys_vendor`, `product_name`, `board_vendor`, `board_name`, `cpu`, `cpu_core` and `cpu_atom` (a hybrid Intel CPU's performance and efficient CPUs as a sysfs list like `0-15`, only when present), `page_size` (bytes, from `getconf PAGESIZE` once at start, for the processes' resident memory), `gpu_name_<card>` for each AMD and Intel card whose name was found (looked up once at start: libdrm's `amdgpu.ids` by device and revision for AMD, else hwdata's `pci.ids` by device, the bracketed product when there is one), `packages`, `flatpaks` (the last two only when present). |
+| `@power` | frame | *tab* `supply`, `key`, `value` for `/sys/class/power_supply/*` keys `type`, `scope`, `status`, `capacity`, `capacity_level`, `model_name`, `power_now`, `current_now`, `voltage_now`, `energy_now`, `energy_full`, `energy_full_design`, `charge_now`, `charge_full`, `charge_full_design`, `cycle_count`. |
 | `@drm` | frame | *tab* `card`, `driver`, `key`, `value` for `amdgpu`, `i915`, `xe` and `nvidia` cards; see below. |
-| `@procs` | every `PROCESS_EVERY` frames | `/proc/<pid>/stat` lines, as is. |
+| `@procs` | every `PROCESS_EVERY` frames | `/proc/<pid>/stat` lines, as is: CPU ticks (fields 14 and 15) and the resident set in pages (field 24). |
 | `@gpuapps` | with `@procs`, when nvidia-smi is there and allowed | `nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader,nounits`, run with a 2 s timeout. |
 | `@end` | frame | Closes the frame. |
 
@@ -90,7 +91,7 @@ nothing, or its runtime status). Then:
   is resting: it prints `rest 1` and is read only on every 10th frame.
 - `amdgpu`: `vram_used`, `vram_total` (bytes), `dedicated 1` when its
   memory has a vendor (a discrete card), `busy` (percent), and per hwmon
-  `temp` (m°C), `power` (µW, average or input), `power_cap`, `freq` (Hz),
+  `temp` (m°C), `temp_crit` (m°C), `power` (µW, average or input), `power_cap`, `freq` (Hz),
   `pwm` (0 to 255).
 - `i915`: `freq_mhz`, `idle_ms` (RC6 residency).
 - `xe`: `freq_mhz`, `idle_ms` (GT idle residency).

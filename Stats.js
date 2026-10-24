@@ -1,8 +1,8 @@
 .pragma library
 
 // The stats fill's data, without any QML: parsing what stats.sh and
-// nvidia-smi print, turning counters into rates, the theme's palette, how
-// the panels tile a strip and what each panel shows.
+// nvidia-smi print, turning counters into rates, the theme's palette and
+// the text forms of numbers. StatsViews.js draws the panels from it.
 
 // Samples kept for each graph.
 var HISTORY = 60
@@ -159,14 +159,28 @@ function cpuSensorName(label) {
   return /^Core /.test(label) ? null : label
 }
 
-// From stats.sh's hwmon lines (chip, sensor, label, value) and nvme lines
-// (controller, value): the CPU temperature, every fan, the temperature of
-// each NVMe controller, and `temps`, the CPU's and memory modules' sensors
-// by name. Temperatures in °C.
+// The temperature, in °C, a sensor's meter fills towards when the chip
+// gives no critical one: where these parts start to throttle. AMD's
+// k10temp reports no limit, and Zen 2 to Zen 5 desktops throttle at 95;
+// Intel's coretemp gives TjMax as its critical temperature, usually 100.
+var TEMP_LIMITS = { k10temp: 95, zenpower: 95, k8temp: 95, coretemp: 100, cpu_thermal: 85, acpitz: 100, dimm: 85, nvme: 80, nvidia: 90, gpu: 100 }
+
+// A sensor's limit: the critical temperature it reported (millidegrees,
+// as text, "" for none), or the default for `kind`.
+function tempLimit(crit, kind) {
+  var value = Number(crit)
+  return crit !== "" && crit !== undefined && value > 0 ? value / 1000 : TEMP_LIMITS[kind] || 100
+}
+
+// From stats.sh's hwmon lines (chip, sensor, label, value, critical) and
+// nvme lines (controller, value, critical): the CPU temperature and its
+// limit, every fan, the temperature of each NVMe controller with its
+// limit, and `temps`, the CPU's and memory modules' sensors by name, each
+// with its limit. Temperatures in °C.
 function parseSensors(hwmon, nvme) {
-  var result = { cpuTemp: null, fans: [], nvme: {}, temps: [] }
+  var result = { cpuTemp: null, cpuLimit: null, fans: [], nvme: {}, nvmeLimits: {}, temps: [] }
   var dimms = [], named = {}
-  var fallback = null, rank = Infinity
+  var fallback = null, fallbackLimit = null, rank = Infinity
   for (var i = 0; i < hwmon.length; i++) {
     var f = hwmon[i].split("\t")
     if (f.length < 4 || f[3] === "") continue
@@ -174,20 +188,23 @@ function parseSensors(hwmon, nvme) {
     if (/^fan/.test(f[1])) {
       result.fans.push({ name: f[2] || f[0] + " " + f[1], rpm: value })
     } else if (/^temp/.test(f[1]) && MEMORY_CHIPS.indexOf(f[0]) !== -1) {
-      dimms.push({ name: "DIMM " + (dimms.length + 1), temp: value / 1000 })
+      dimms.push({ name: "DIMM " + (dimms.length + 1), temp: value / 1000, limit: tempLimit(f[4], "dimm") })
     } else if (/^temp/.test(f[1]) && CPU_CHIPS.indexOf(f[0]) !== -1) {
+      var limit = tempLimit(f[4], f[0])
       var sensorName = cpuSensorName(f[2])
-      if (sensorName && !named[sensorName]) { named[sensorName] = true; result.temps.push({ name: sensorName, temp: value / 1000 }) }
+      if (sensorName && !named[sensorName]) { named[sensorName] = true; result.temps.push({ name: sensorName, temp: value / 1000, limit: limit }) }
       var labelRank = CPU_LABELS.indexOf(f[2])
-      if (labelRank !== -1 && labelRank < rank) { rank = labelRank; result.cpuTemp = value / 1000 }
-      if (fallback === null) fallback = value / 1000
+      if (labelRank !== -1 && labelRank < rank) { rank = labelRank; result.cpuTemp = value / 1000; result.cpuLimit = limit }
+      if (fallback === null) { fallback = value / 1000; fallbackLimit = limit }
     }
   }
-  if (result.cpuTemp === null) result.cpuTemp = fallback
+  if (result.cpuTemp === null) { result.cpuTemp = fallback; result.cpuLimit = fallbackLimit }
   result.temps = result.temps.concat(dimms)
   for (var j = 0; j < nvme.length; j++) {
     var g = nvme[j].split("\t")
-    if (g.length === 2 && g[1] !== "") result.nvme[g[0]] = Number(g[1]) / 1000
+    if (g.length < 2 || g[1] === "") continue
+    result.nvme[g[0]] = Number(g[1]) / 1000
+    result.nvmeLimits[g[0]] = tempLimit(g[2], "nvme")
   }
   return result
 }
@@ -268,9 +285,18 @@ function parsePower(lines) {
     if (energy === null && volts !== null && s.charge_now !== undefined) energy = Number(s.charge_now) / 1e6 * volts
     var full = number(s.energy_full, 1e6)
     if (full === null && volts !== null && s.charge_full !== undefined) full = Number(s.charge_full) / 1e6 * volts
+    // What the battery held new, against what it holds full now: its
+    // health. Both in energy or both in charge, so the ratio holds.
+    var design = number(s.energy_full_design, 1)
+    var held = number(s.energy_full, 1)
+    if (design === null || held === null) { design = number(s.charge_full_design, 1); held = number(s.charge_full, 1) }
+    var cycles = number(s.cycle_count, 1)
     result.push({
       id: id, name: s.model_name || id, device: s.scope === "Device", status: s.status || "",
-      capacity: number(s.capacity, 1), level: s.capacity_level || "", power: power, energy: energy, full: full
+      capacity: number(s.capacity, 1), level: s.capacity_level || "", power: power, energy: energy, full: full,
+      health: design > 0 && held !== null ? Math.min(100, held / design * 100) : null,
+      // Batteries that do not count their cycles report 0.
+      cycles: cycles > 0 ? cycles : null
     })
   }
   return result
@@ -291,7 +317,8 @@ function upowerBatteries(devices) {
     if (!d || d.powerSupply || !d.nativePath || d.type === "Unknown" || d.type === "LinePower") continue
     result.push({
       id: String(d.nativePath), name: String(d.model || d.type), device: true, status: d.state === "Unknown" ? "" : String(d.state || ""),
-      capacity: Math.round(Number(d.percentage || 0) * 100), level: "", power: null, energy: null, full: null
+      capacity: Math.round(Number(d.percentage || 0) * 100), level: "", power: null, energy: null, full: null,
+      health: null, cycles: null
     })
   }
   return result
@@ -406,6 +433,27 @@ function parseGpu(line) {
   }
 }
 
+// The programs holding the most memory in one process sample, by name as
+// topProcesses adds them up, in bytes: their resident sets of `page`
+// bytes a page (4096 without one). Pages two processes share count for
+// each, as in top's RES.
+function topMemory(procs, page, count) {
+  page = page > 0 ? page : 4096
+  var byName = {}
+  for (var pid in procs) {
+    var p = procs[pid]
+    if (!(p.rss > 0)) continue
+    var entry = byName[p.name] || (byName[p.name] = { pid: Number(pid), name: p.name, memory: 0, count: 0, most: 0 })
+    entry.memory += p.rss * page
+    entry.count++
+    if (p.rss > entry.most) { entry.most = p.rss; entry.pid = Number(pid) }
+  }
+  return Object.keys(byName).map(function(name) {
+    var entry = byName[name]
+    return { pid: entry.pid, name: entry.name, memory: entry.memory, count: entry.count }
+  }).sort(function(a, b) { return b.memory - a.memory }).slice(0, count)
+}
+
 // A process's short name: its file name without a Windows .exe, as Proton
 // games report a full Windows path.
 function shortName(path) {
@@ -437,7 +485,8 @@ function parseProcs(lines) {
     if (open < 0 || close < open) continue
     var f = line.slice(close + 2).split(" ")
     if (f.length < 13) continue
-    result[line.slice(0, open)] = { name: line.slice(open + 2, close), ticks: Number(f[11]) + Number(f[12]) }
+    // Field 24, the resident set in pages, where the line has it.
+    result[line.slice(0, open)] = { name: line.slice(open + 2, close), ticks: Number(f[11]) + Number(f[12]), rss: f.length > 21 ? Number(f[21]) || 0 : 0 }
   }
   return result
 }
@@ -493,13 +542,15 @@ function empty() {
   return {
     time: null,
     counters: null,
-    cpu: { total: null, cores: [], threads: 0, temp: null, frequency: null, power: null, powerLimit: null, loadavg: [] },
+    cpu: { total: null, cores: [], coreIds: [], threads: 0, temp: null, tempLimit: null, frequency: null, power: null, powerLimit: null, loadavg: [] },
     memory: null,
     network: { interface: "", rx: null, tx: null, rxTotal: 0, txTotal: 0 },
     disks: [],
     pressure: null,
     fans: [],
     processes: [],
+    // The programs holding the most memory, from the same samples.
+    memoryProcesses: [],
     processSample: null,
     // The NVIDIA GPU from nvidia-smi, and AMD and Intel GPUs from sysfs
     // (drmGpus); gpuRoles picks which panel shows which. `gpuKey` is the
@@ -523,6 +574,7 @@ function empty() {
     gpuApps: [],
     temps: [],
     nvmeTemps: {},
+    nvmeLimits: {},
     // stats.sh's @slowhwmon lines, which come every few frames only.
     slowHwmon: [],
     system: null,
@@ -532,7 +584,7 @@ function empty() {
     power: [],
     // The track playing, from the shell's MPRIS players; see step.
     media: null,
-    history: { cpu: [], gpu: [], igpu: [], fan: [], memory: [], rx: [], tx: [], disk: [], pressure: [], temp: [], battery: [] }
+    history: { cpu: [], gpu: [], igpu: [], rx: [], tx: [], disk: [] }
   }
 }
 
@@ -587,14 +639,17 @@ function ingest(state, frame) {
   var sensors = parseSensors((frame.hwmon || []).concat(slow), frame.nvme || [])
   // stats.sh reads NVMe temperatures every few frames only; between them
   // the last ones stand.
-  if (!frame.nvme) sensors.nvme = state.nvmeTemps || {}
+  if (!frame.nvme) { sensors.nvme = state.nvmeTemps || {}; sensors.nvmeLimits = state.nvmeLimits || {} }
 
   var load = before ? cpuLoad(before.cpu, counters.cpu) : null
   next.cpu = {
     total: load ? load.total : null,
     cores: load ? load.cores : [],
+    // Each core's CPU number, for coreGroups: cpu7 is 7.
+    coreIds: load ? counters.cpu.cores.map(function(core) { return Number(core.id.slice(3)) }) : [],
     threads: counters.cpu.cores.length,
     temp: sensors.cpuTemp,
+    tempLimit: sensors.cpuLimit,
     frequency: averageFrequency(frame.freq || []),
     power: before ? raplWatts(before.rapl, counters.rapl, seconds) : null,
     powerLimit: counters.rapl ? counters.rapl.limit : null,
@@ -603,7 +658,6 @@ function ingest(state, frame) {
   if (load) history.cpu = pushHistory(history.cpu, load.total)
 
   next.memory = parseMeminfo(frame.meminfo || [])
-  if (next.memory.total > 0) history.memory = pushHistory(history.memory, next.memory.used / next.memory.total * 100)
 
   var name = defaultInterface(frame.route || []) || busiestInterface(counters.net)
   var now = counters.net[name]
@@ -632,7 +686,8 @@ function ingest(state, frame) {
       model: models[disk] || "",
       read: then ? rate(then.read, counters.disk[disk].read, seconds) : null,
       write: then ? rate(then.written, counters.disk[disk].written, seconds) : null,
-      temp: controller && sensors.nvme[controller[1]] !== undefined ? sensors.nvme[controller[1]] : null
+      temp: controller && sensors.nvme[controller[1]] !== undefined ? sensors.nvme[controller[1]] : null,
+      tempLimit: controller && sensors.nvmeLimits[controller[1]] !== undefined ? sensors.nvmeLimits[controller[1]] : null
     }
     if (entry.read !== null || entry.write !== null) total = (total || 0) + (entry.read || 0) + (entry.write || 0)
     return entry
@@ -640,27 +695,25 @@ function ingest(state, frame) {
   if (total !== null) history.disk = pushHistory(history.disk, total)
 
   next.pressure = parsePressure(frame.psi || [])
-  var p = next.pressure
-  if (p.cpu !== null || p.memory !== null || p.io !== null)
-    history.pressure = pushHistory(history.pressure, Math.max(p.cpu || 0, p.memory || 0, p.io || 0))
 
   next.fans = sensors.fans
   next.temps = sensors.temps
   next.nvmeTemps = sensors.nvme
-  if (sensors.cpuTemp !== null) history.temp = pushHistory(history.temp, sensors.cpuTemp)
+  next.nvmeLimits = sensors.nvmeLimits
   next.system = frame.system ? parseSystem(frame.system) : null
   next.sysinfo = frame.sysinfo ? parseSysinfo(frame.sysinfo) : state.sysinfo
   var tasks = next.cpu.loadavg.length && frame.loadavg[0].split(" ")[3]
   next.threads = tasks ? Number(tasks.split("/")[1]) : null
   next.power = parsePower(frame.power || [])
   next.drmKinds = Object.assign({}, state.drmKinds)
-  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds, state.drm)
+  next.drm = drmGpus(cards, before ? before.drmIdle : {}, seconds, next.drmKinds, state.drm, next.sysinfo)
 
   if (frame.procs) {
     var procs = parseProcs(frame.procs)
     var last = state.processSample
     var elapsed = last ? frame.time - last.time : 0
     if (last && elapsed > 0 && elapsed <= PROCESS_GAP) next.processes = topProcesses(last.procs, procs, elapsed, 10)
+    next.memoryProcesses = topMemory(procs, Number((next.sysinfo || {}).page_size), 10)
     next.processSample = { time: frame.time, procs: procs }
   }
   if (frame.gpuapps) next.gpuApps = parseGpuApps(frame.gpuapps)
@@ -705,6 +758,15 @@ function parseDrm(lines) {
   return cards
 }
 
+// A card's name for its panel: the marketing name without the vendor's
+// prefix ("AMD Radeon 780M" reads "Radeon 780M"), or a generic one.
+function drmName(name, amd, discrete) {
+  // "Graphics" goes only after a model: "AMD Radeon Graphics" stays whole.
+  name = String(name || "").replace(/^AMD\s+/, "").replace(/^(Radeon\s+\S.*?)\s+Graphics$/, "$1").trim()
+  if (name) return amd || /^Intel /.test(name) ? name : "Intel " + name
+  return amd ? (discrete ? "Radeon" : "Radeon Graphics") : (discrete ? "Intel Arc" : "Intel Graphics")
+}
+
 // Intel cards with this much VRAM or more are discrete. AMD's tell: a
 // discrete card's memory has a vendor (`dedicated`), while an integrated
 // one's is a share of system memory, however large.
@@ -718,8 +780,10 @@ var DISCRETE_VRAM = 4 * 1073741824
 // `kinds` holds each card's kind as last seen awake, and is kept current:
 // a sleeping card reports no VRAM, and keeps the kind it had.
 // A resting card (stats.sh leaves an idle one alone so it can sleep) keeps
-// its readings from `previous`, the GPUs before.
-function drmGpus(cards, idleBefore, seconds, kinds, previous) {
+// its readings from `previous`, the GPUs before. `sysinfo` carries each
+// card's marketing name as stats.sh looked it up (gpu_name_card2); without
+// one, a card is named by vendor and kind.
+function drmGpus(cards, idleBefore, seconds, kinds, previous, sysinfo) {
   kinds = kinds || {}
   return Object.keys(cards).sort().map(function(id) {
     var c = cards[id]
@@ -735,11 +799,11 @@ function drmGpus(cards, idleBefore, seconds, kinds, previous) {
     var gpu = {
       id: id,
       vendor: amd ? "AMD" : "Intel",
-      name: amd ? (discrete ? "Radeon" : "Radeon Graphics") : (discrete ? "Intel Arc" : "Intel Graphics"),
+      name: drmName((sysinfo || {})["gpu_name_" + id], amd, discrete),
       kind: discrete ? "discrete" : "integrated",
       asleep: c.status === "suspended",
       resting: false,
-      load: null, memUsed: null, memTotal: null, temp: null, power: null, powerLimit: null,
+      load: null, memUsed: null, memTotal: null, temp: null, tempLimit: null, power: null, powerLimit: null,
       clock: null, fan: null, encoder: null, decoder: null
     }
     if (gpu.asleep) return gpu
@@ -748,7 +812,7 @@ function drmGpus(cards, idleBefore, seconds, kinds, previous) {
       gpu.load = Math.max(0, Math.min(100, 100 * (1 - (c.idle_ms - idleBefore[id]) / (seconds * 1000))))
     gpu.memTotal = memTotal
     if (c.vram_used !== undefined) gpu.memUsed = c.vram_used
-    if (c.temp !== undefined) gpu.temp = c.temp / 1000
+    if (c.temp !== undefined) { gpu.temp = c.temp / 1000; gpu.tempLimit = tempLimit(c.temp_crit === undefined ? "" : String(c.temp_crit), "gpu") }
     if (c.power !== undefined) gpu.power = c.power / 1e6
     if (c.power_cap !== undefined) gpu.powerLimit = c.power_cap / 1e6
     if (c.freq !== undefined) gpu.clock = c.freq / 1e6
@@ -764,7 +828,7 @@ function asleepNvidia(state) {
   return {
     id: "nvidia" + (state.nvidia ? state.nvidia.index : 0), vendor: "NVIDIA", kind: "discrete", asleep: true, resting: false,
     name: state.nvidiaName || "NVIDIA GPU",
-    load: null, memUsed: null, memTotal: null, temp: null, power: null, powerLimit: null,
+    load: null, memUsed: null, memTotal: null, temp: null, tempLimit: null, power: null, powerLimit: null,
     clock: null, fan: null, encoder: null, decoder: null
   }
 }
@@ -791,7 +855,9 @@ function gpuRoles(state) {
   var all = []
   var power = state.nvidiaPower || {}
   if (power.asleep) all.push(asleepNvidia(state))
-  else if (state.nvidia) all.push(Object.assign({ id: "nvidia" + state.nvidia.index, vendor: "NVIDIA", kind: "discrete", asleep: false }, state.nvidia))
+  // nvidia-smi's slowdown temperature is not a field every driver's
+  // --query-gpu takes, and an unknown field fails the whole query.
+  else if (state.nvidia) all.push(Object.assign({ id: "nvidia" + state.nvidia.index, vendor: "NVIDIA", kind: "discrete", asleep: false, tempLimit: TEMP_LIMITS.nvidia }, state.nvidia))
   all = all.concat(state.drm || [])
   var main = null, integrated = null
   for (var i = 0; i < all.length; i++) if (all[i].kind === "discrete") { main = all[i]; break }
@@ -818,9 +884,6 @@ function step(state, text, gpuLine, media, batteries) {
     for (var b = 0; b < batteries.length; b++) if (known.indexOf(batteries[b].id) === -1) power.push(batteries[b])
     next.power = power
   }
-  // The battery panel's headline: the laptop's, or else a peripheral's.
-  var lead = leadBattery(next.power)
-  if (lead && lead.capacity !== null) next.history.battery = pushHistory(next.history.battery, lead.capacity)
   var updated = ingestGpu(next, gpuLine)
   if (updated !== next) {
     next = updated
@@ -840,9 +903,8 @@ function step(state, text, gpuLine, media, batteries) {
   var history = next.history
   var key = roles.main ? roles.main.id : ""
   // Another GPU taking over the panel starts its own history.
-  if (key !== next.gpuKey) { history.gpu = []; history.fan = []; next.gpuKey = key }
+  if (key !== next.gpuKey) { history.gpu = []; next.gpuKey = key }
   if (roles.main && roles.main.load !== null) history.gpu = pushHistory(history.gpu, roles.main.load)
-  if (roles.main && roles.main.fan !== null) history.fan = pushHistory(history.fan, roles.main.fan)
   var igpuKey = roles.integrated ? roles.integrated.id : ""
   if (igpuKey !== next.igpuKey) { history.igpu = []; next.igpuKey = igpuKey }
   if (roles.integrated && roles.integrated.load !== null) history.igpu = pushHistory(history.igpu, roles.integrated.load)
@@ -890,15 +952,24 @@ function palette(colors, fallback) {
     subtle: mix(foreground, background, 0.35),
     // The dashboard sits on black, so its tracks are mixed from black too.
     meter: mix("#000000", foreground, 0.13),
-    boxes: { gpu: cyan, igpu: mix(cyan, green, 0.5), temps: mix(yellow, red, 0.5), battery: green, media: mix(magenta, blue, 0.5), system: accent, cpu: magenta, memory: green, network: red, disks: yellow, processes: blue, pressure: orange, fans: accent },
+    // A card's border and title when something on it needs attention: a
+    // caution first, then the alarm. No box uses either as its own hue,
+    // so a warning never looks like a card's normal color.
+    caution: yellow,
+    alert: red,
+    boxes: { gpu: cyan, igpu: mix(cyan, green, 0.5), temps: mix(yellow, red, 0.5), battery: green, media: mix(magenta, blue, 0.5), system: accent, cpu: magenta, memory: green, network: mix(cyan, blue, 0.5), disks: mix(yellow, green, 0.35), processes: blue },
+    // Headlines and graphs run through their box's hues, cool to hot, as
+    // in btop. Every meter that measures how close something is to its
+    // limit (heat, power, VRAM, swap, load, stalls, fans, battery) uses
+    // `level`, so the same color means the same thing on every card.
     gradients: {
       cpu: [cyan, blue, magenta],
-      temp: [green, yellow, red],
+      // Green through the first half: yellow and red mean close.
+      level: [green, green, yellow, red],
       used: [green, cyan, blue],
       download: [yellow, orange, red],
       upload: [green, cyan, blue],
-      process: [cyan, blue, magenta],
-      power: [blue, green, yellow, red]
+      process: [cyan, blue, magenta]
     }
   }
 }
@@ -921,6 +992,41 @@ function gradientAt(stops, fraction) {
   var t = Math.max(0, Math.min(1, Number(fraction) || 0)) * (stops.length - 1)
   var i = Math.min(Math.floor(t), stops.length - 2)
   return mix(stops[i], stops[i + 1], t - i)
+}
+
+// --- levels ------------------------------------------------------------------
+
+// The temperature a heat meter starts from: a part at room temperature
+// shows an empty meter.
+var HEAT_FLOOR = 30
+
+// How close `temp` is to `limit`, 0 to 1, from HEAT_FLOOR up: a CPU at
+// 69 °C of 95 is most of the way to throttling, which a 0 to 100 °C scale
+// would show as barely past half.
+function heat(temp, limit) {
+  if (temp === null || temp === undefined) return 0
+  limit = limit > HEAT_FLOOR ? limit : 100
+  return Math.max(0, Math.min(1, (temp - HEAT_FLOOR) / (limit - HEAT_FLOOR)))
+}
+
+// CPU numbers from a sysfs list like "0-15,20": [0, 1, ..., 15, 20].
+function cpuList(text) {
+  var result = []
+  String(text || "").split(",").forEach(function(part) {
+    var range = /^\s*(\d+)(?:-(\d+))?\s*$/.exec(part)
+    if (!range) return
+    for (var n = Number(range[1]); n <= Number(range[2] || range[1]); n++) result.push(n)
+  })
+  return result
+}
+
+// A hybrid CPU's threads by kind, from @sysinfo's cpu_core and cpu_atom
+// (Intel's performance and efficient cores): { performance: [cpu numbers],
+// efficient: [...] }, or null for a CPU with one kind of core.
+function coreGroups(sysinfo) {
+  var info = sysinfo || {}
+  var performance = cpuList(info.cpu_core), efficient = cpuList(info.cpu_atom)
+  return performance.length && efficient.length ? { performance: performance, efficient: efficient } : null
 }
 
 // --- text --------------------------------------------------------------------
@@ -988,399 +1094,4 @@ function formatTemp(value) {
 function formatFrequency(mhz) {
   if (mhz === null || mhz === undefined) return "—"
   return mhz >= 1000 ? (mhz / 1000).toFixed(2) + " GHz" : Math.round(mhz) + " MHz"
-}
-
-// --- layout ------------------------------------------------------------------
-
-// The dashboard's base size, its text height in pixels, for a strip of
-// `width` by `height`: an eighth of the short side, within readable bounds.
-function unitFor(width, height) {
-  return Math.max(9, Math.min(18, Math.floor(Math.min(width, height) / 8)))
-}
-
-// Cards are about this wide for their height, and never smaller than this
-// many units.
-var CARD_ASPECT = 1.8
-var CARD_MIN_WIDTH = 14
-var CARD_MIN_HEIGHT = 6
-
-// Units of height a card needs for its content: stacked, and wide with
-// its rows beside the graphs. A card is wide past this width for its
-// height.
-var CARD_ROOM = 14
-var WIDE_ROOM = 10
-var WIDE_CARD = 2
-
-function roomy(card, unit) {
-  return card.height >= (card.width > card.height * WIDE_CARD ? WIDE_ROOM : CARD_ROOM) * unit
-}
-
-// The layout with the largest text that keeps every panel and gives each
-// card room for its content: unitFor's size for a few panels, smaller for
-// a crowded grid. When nothing makes room, the smallest text shows what
-// fits. Returns layout's result with its `unit`.
-function fit(panels, width, height) {
-  // Not laid out yet: nothing to draw.
-  if (!(width > 0 && height > 0)) return { unit: 9, cards: [], dropped: panels.slice() }
-  for (var unit = unitFor(width, height); unit >= 9; unit--) {
-    var grid = layout(panels, width, height, unit)
-    if (grid.dropped.length) continue
-    if (grid.cards.every(function(card) { return roomy(card, unit) })) return { unit: unit, cards: grid.cards, dropped: grid.dropped }
-  }
-  var fallback = layout(panels, width, height, 9)
-  return { unit: 9, cards: fallback.cards, dropped: fallback.dropped }
-}
-
-// Where each of `panels` goes on a `width` by `height` strip with text
-// `unit` pixels high: a grid with a unit of margin and gap, the columns and
-// rows picked for the largest cards near CARD_ASPECT, a short last row
-// stretched across. Panels that do not fit even one to a card are dropped
-// from the end. Returns { cards: [{ panel, x, y, width, height }], dropped }.
-function layout(panels, width, height, unit) {
-  var gap = unit
-  var innerWidth = width - 2 * unit, innerHeight = height - 2 * unit
-  for (var count = panels.length; count > 0; count--) {
-    var best = null
-    for (var columns = 1; columns <= count; columns++) {
-      var rows = Math.ceil(count / columns)
-      var cardWidth = (innerWidth - gap * (columns - 1)) / columns
-      var cardHeight = (innerHeight - gap * (rows - 1)) / rows
-      if (cardWidth < CARD_MIN_WIDTH * unit || cardHeight < CARD_MIN_HEIGHT * unit) continue
-      var score = Math.min(cardWidth, cardHeight * CARD_ASPECT)
-      if (!best || score > best.score) best = { score: score, columns: columns, rows: rows, height: cardHeight }
-    }
-    if (!best) continue
-    var cards = []
-    for (var i = 0; i < count; i++) {
-      var row = Math.floor(i / best.columns)
-      var inRow = row === best.rows - 1 ? count - row * best.columns : best.columns
-      var w = (innerWidth - gap * (inRow - 1)) / inRow
-      cards.push({
-        panel: panels[i],
-        x: unit + (i % best.columns) * (w + gap),
-        y: unit + row * (best.height + gap),
-        width: w,
-        height: best.height
-      })
-    }
-    return { cards: cards, dropped: panels.slice(count) }
-  }
-  return { cards: [], dropped: panels.slice() }
-}
-
-// --- views -------------------------------------------------------------------
-
-var ICONS = {
-  gpu: "\u{f08ae}", igpu: "\u{f08ae}", temps: "\u{f050f}", battery: "\u{f0079}", media: "\u{f075a}", system: "\u{f02fd}", cpu: "\u{f061a}", memory: "\u{f035b}", network: "\u{f0200}",
-  disks: "\u{f02ca}", processes: "\u{f0279}", pressure: "\u{f029a}", fans: "\u{f0210}"
-}
-var TITLES = { gpu: "GPU", igpu: "iGPU", temps: "Temperatures", battery: "Battery", media: "Now playing", system: "System", cpu: "CPU", memory: "Memory", network: "Network", disks: "Disks", processes: "Processes", pressure: "Pressure", fans: "Fans" }
-
-function row(label, text, fraction, color) {
-  return { label: label, text: text, fraction: fraction === null || fraction === undefined ? null : Math.max(0, Math.min(1, fraction)), color: color || "" }
-}
-
-// MPRIS art URLs come from players (and, for browser players, pages). Qt's
-// Image accepts network URLs, so only local artwork belongs in this panel.
-function localArtwork(url) {
-  var value = String(url || "")
-  return value.length <= 4096 && /^file:\/\/\/[^/\\\x00-\x1f]/.test(value) && !/[\\\x00-\x1f]/.test(value) ? value : ""
-}
-
-// A graph's top: its largest value, at least `floor`.
-function graphMax(values, floor) {
-  return Math.max.apply(null, [floor].concat(values))
-}
-
-// What one panel shows, ready to draw: a title with an icon and the box's
-// color, an optional big value with a caption, graphs, per-core bars,
-// label/value rows with meters and ranked lists. `empty` replaces the
-// content with a message. `room` is how many rows the card has space for,
-// for panels whose lists can grow to fill it, and `wide` whether its rows
-// sit beside the headline rather than under it.
-function view(panel, state, palette, room, wide, span) {
-  var g = palette.gradients
-  var result = {
-    title: TITLES[panel] || panel, icon: ICONS[panel] || "", color: palette.boxes[panel] || palette.accent,
-    info: "", value: "", valueColor: palette.foreground, caption: "",
-    graphs: [], bars: [], rows: [], lists: [], empty: "", logo: false
-  }
-  var build = VIEWS[panel]
-  if (build) build(result, state, palette, g, room, wide, span)
-  if (room !== undefined) result.rows = result.rows.slice(0, rowsThatFit(result, room, wide))
-  return result
-}
-
-// Rows' room each part of a stacked card's headline takes: the big value,
-// a graph at its smallest, the per-core bars, and the gap below them. A
-// row is a line of text and its spacing.
-var VALUE_ROWS = 1.8
-var GRAPH_ROWS = 1
-var BARS_ROWS = 1.4
-var GAP_ROWS = 0.3
-
-// How many of a view's rows fit `room` rows: all of it beside the headline
-// in a wide card, what the headline leaves in a stacked one. Rows that would be cut in half are left
-// out, and whatever room is over goes to the graphs.
-function rowsThatFit(v, room, wide) {
-  if (wide) return Math.max(0, room)
-  var headline = (v.value ? VALUE_ROWS : 0) + v.graphs.length * GRAPH_ROWS + (v.bars.length ? BARS_ROWS : 0)
-  if (headline > 0) headline += GAP_ROWS
-  return Math.max(0, Math.floor(room - headline + 1e-9))
-}
-
-// The rows of a GPU panel for one GPU, whichever its vendor: load with
-// its `history`, then every reading it has.
-function gpuView(v, gpu, history, g, room, wide) {
-  v.info = gpu.name
-  if (gpu.asleep) { v.empty = "Asleep"; return }
-  v.value = formatPercent(gpu.load)
-  v.valueColor = gradientAt(g.cpu, (gpu.load || 0) / 100)
-  v.caption = gpu.resting ? "idle" : "load"
-  v.graphs.push({ values: history, max: 100, stops: g.cpu, label: "" })
-    if (gpu.memUsed !== null && gpu.memTotal) v.rows.push(row("VRAM", formatPair(gpu.memUsed, gpu.memTotal), gpu.memUsed / gpu.memTotal, gradientAt(g.used, gpu.memUsed / gpu.memTotal)))
-  if (gpu.temp !== null) v.rows.push(row("Temp", formatTemp(gpu.temp), gpu.temp / 100, gradientAt(g.temp, gpu.temp / 100)))
-  if (gpu.power !== null) {
-    var limit = gpu.powerLimit
-    v.rows.push(row("Power", limit ? watts(gpu.power) + " / " + watts(limit) + " W" : watts(gpu.power) + " W",
-      limit ? gpu.power / limit : null, limit ? gradientAt(g.temp, gpu.power / limit) : ""))
-  }
-  if (gpu.clock !== null) v.rows.push(row("Clock", formatFrequency(gpu.clock), null))
-  if (gpu.fan !== null) v.rows.push(row("Fan", formatPercent(gpu.fan), gpu.fan / 100, gradientAt(g.cpu, gpu.fan / 100)))
-  if (gpu.encoder) v.rows.push(row("Encode", formatPercent(gpu.encoder), gpu.encoder / 100, gradientAt(g.cpu, gpu.encoder / 100)))
-  if (gpu.decoder) v.rows.push(row("Decode", formatPercent(gpu.decoder), gpu.decoder / 100, gradientAt(g.cpu, gpu.decoder / 100)))
-}
-
-// Units of width under which a disk's row leaves out its temperature.
-var DISK_TEMP_SPAN = 26
-
-// Watts, with a decimal below 10: an iGPU draws fractions of one.
-function watts(value) {
-  return value < 10 ? value.toFixed(1) : String(Math.round(value))
-}
-
-var VIEWS = {
-  gpu: function(v, state, palette, g, room, wide) {
-    var gpu = gpuRoles(state).main
-    if (!gpu) { v.empty = state.time !== null && state.nvidiaMissing ? "No GPU found" : "Waiting for data"; return }
-    gpuView(v, gpu, state.history.gpu, g, room, wide)
-  },
-
-  igpu: function(v, state, palette, g, room, wide) {
-    var roles = gpuRoles(state)
-    if (roles.integrated) gpuView(v, roles.integrated, state.history.igpu, g, room, wide)
-    else v.empty = roles.main && roles.main.kind === "integrated" ? "Shown as GPU" : "No integrated GPU"
-  },
-  cpu: function(v, state, palette, g) {
-    var cpu = state.cpu
-    v.info = cpu.threads ? cpu.threads + " threads" : ""
-    v.value = formatPercent(cpu.total)
-    v.valueColor = gradientAt(g.cpu, (cpu.total || 0) / 100)
-    // The clock rides beside the load, so the power draw can have its row.
-    v.caption = cpu.frequency !== null ? "load · " + formatFrequency(cpu.frequency) : "load"
-    v.graphs.push({ values: state.history.cpu, max: 100, stops: g.cpu, label: "" })
-    v.bars = cpu.cores.map(function(load) { return { fraction: load / 100, color: gradientAt(g.cpu, load / 100) } })
-    // The power first: the Temperatures panel has the temperature too.
-    if (cpu.power !== null) {
-      // Against the CPU's limit, blue to red, when it is known.
-      var limit = cpuPowerLimit((state.sysinfo || {}).cpu, cpu.powerLimit)
-      var used = limit ? Math.min(1, cpu.power / limit) : null
-      v.rows.push(row("Power", limit ? watts(cpu.power) + " / " + watts(limit) + " W" : watts(cpu.power) + " W",
-        used, limit ? gradientAt(g.power, used) : ""))
-    }
-    if (cpu.temp !== null) v.rows.push(row("Temp", formatTemp(cpu.temp), cpu.temp / 100, gradientAt(g.temp, cpu.temp / 100)))
-    if (cpu.loadavg.length) v.rows.push(row("Load", cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
-  },
-
-  memory: function(v, state, palette, g) {
-    var m = state.memory
-    if (!m || !m.total) { v.empty = "Waiting for data"; return }
-    var used = m.used / m.total
-    v.info = formatBytes(m.total)
-    v.value = formatPercent(used * 100)
-    v.valueColor = gradientAt(g.used, used)
-    v.caption = "used"
-    v.graphs.push({ values: state.history.memory, max: 100, stops: g.used, label: "" })
-    v.rows.push(row("Used", formatBytes(m.used), used, gradientAt(g.used, used)))
-    v.rows.push(row("Available", formatBytes(m.available), m.available / m.total, gradientAt(g.upload, m.available / m.total)))
-    v.rows.push(row("Cached", formatBytes(m.cached), m.cached / m.total, gradientAt(g.process, m.cached / m.total)))
-    if (m.swapTotal) v.rows.push(row("Swap", formatPair(m.swapUsed, m.swapTotal), m.swapUsed / m.swapTotal, gradientAt(g.temp, m.swapUsed / m.swapTotal)))
-  },
-
-  network: function(v, state, palette, g) {
-    var n = state.network
-    if (!n.interface) { v.empty = "No network"; return }
-    v.info = n.interface
-    v.graphs.push({ values: state.history.rx, max: graphMax(state.history.rx, 10240), stops: g.download, label: "↓ " + formatRate(n.rx) })
-    v.graphs.push({ values: state.history.tx, max: graphMax(state.history.tx, 10240), stops: g.upload, label: "↑ " + formatRate(n.tx) })
-    v.rows.push(row("Received", formatBytes(n.rxTotal), null))
-    v.rows.push(row("Sent", formatBytes(n.txTotal), null))
-  },
-
-  disks: function(v, state, palette, g, room, wide, span) {
-    if (!state.disks.length) { v.empty = "No disks"; return }
-    v.info = state.disks.length === 1 ? "1 disk" : state.disks.length + " disks"
-    v.graphs.push({ values: state.history.disk, max: graphMax(state.history.disk, 1048576), stops: g.process, label: "I/O" })
-    v.rows = state.disks.map(function(disk) {
-      var text = "R " + formatShort(disk.read) + "  W " + formatShort(disk.write)
-      // A narrow card has no room for it; the Temperatures panel has it.
-      if (disk.temp !== null && !(span < DISK_TEMP_SPAN)) text += "  " + formatTemp(disk.temp)
-      return row(disk.name, text, null, disk.temp !== null ? gradientAt(g.temp, disk.temp / 100) : "")
-    })
-  },
-
-  processes: function(v, state, palette, g, room) {
-    // The busiest five programs and three GPU apps, or as many as fill
-    // `room`, which also holds a title per list; always one of each.
-    var vram = state.nvidia || state.gpuApps.length
-    var apps = Math.min(state.gpuApps.length, 3)
-    var programs = 5
-    if (room !== undefined) {
-      // An empty list still takes a line, for "Nothing busy".
-      if (vram) apps = Math.min(apps, Math.max(1, room - 3))
-      programs = Math.max(1, room - (vram ? 2 + Math.max(1, apps) : 1))
-    }
-    v.lists.push({ title: "CPU", items: state.processes.slice(0, programs).map(function(p) {
-      return { name: p.count > 1 ? p.name + " ×" + p.count : p.name, text: formatPercent(p.cpu), fraction: Math.min(1, p.cpu / 100), color: gradientAt(g.process, Math.min(1, p.cpu / 100)) }
-    }) })
-    if (vram) {
-      var total = state.nvidia && state.nvidia.memTotal
-      v.lists.push({ title: "VRAM", items: state.gpuApps.slice(0, apps).map(function(app) {
-        var share = total ? app.memory / total : null
-        return { name: app.name, text: formatBytes(app.memory), fraction: share, color: gradientAt(g.used, share || 0) }
-      }) })
-    }
-  },
-
-  pressure: function(v, state, palette, g) {
-    var p = state.pressure
-    if (!p) { v.empty = "Waiting for data"; return }
-    if (p.cpu === null && p.memory === null && p.io === null) { v.empty = "Not available on this kernel"; return }
-    v.info = "stalled, 10 s"
-    v.graphs.push({ values: state.history.pressure, max: graphMax(state.history.pressure, 5), stops: g.temp, label: "" })
-    ;[["CPU", p.cpu], ["Memory", p.memory], ["I/O", p.io]].forEach(function(pair) {
-      if (pair[1] === null) return
-      // Stalls of a few percent already matter; the square root shows them.
-      var fraction = Math.sqrt(pair[1] / 100)
-      v.rows.push(row(pair[0], pair[1].toFixed(1) + "%", fraction, gradientAt(g.temp, fraction)))
-    })
-  },
-
-  temps: function(v, state, palette, g, room, wide) {
-    function temp(name, value) { return row(name, formatTemp(value), value / 100, gradientAt(g.temp, value / 100)) }
-    var roles = gpuRoles(state)
-    var cpu = state.temps.filter(function(t) { return !/^DIMM /.test(t.name) })
-    var dimms = state.temps.filter(function(t) { return /^DIMM /.test(t.name) })
-    v.rows = cpu.map(function(t) { return temp(t.name, t.temp) })
-    if (roles.main && roles.main.temp !== null) v.rows.push(temp("GPU", roles.main.temp))
-    if (roles.integrated && roles.integrated.temp !== null) v.rows.push(temp("iGPU", roles.integrated.temp))
-    Object.keys(state.nvmeTemps).sort().forEach(function(controller) {
-      var disk = state.disks.filter(function(d) { return d.name.indexOf(controller + "n") === 0 })[0]
-      v.rows.push(temp(disk ? disk.name : controller, state.nvmeTemps[controller]))
-    })
-    dimms.forEach(function(t) { v.rows.push(temp(t.name, t.temp)) })
-    if (state.cpu.temp !== null) {
-      v.value = formatTemp(state.cpu.temp)
-      v.valueColor = gradientAt(g.temp, state.cpu.temp / 100)
-      v.caption = "CPU"
-      v.graphs.push({ values: state.history.temp, max: 100, stops: g.temp, label: "" })
-    }
-    if (!v.rows.length) v.empty = "No temperature sensors"
-  },
-
-  battery: function(v, state, palette, g) {
-    var laptop = state.power.filter(function(b) { return !b.device })[0]
-    var devices = state.power.filter(function(b) { return b.device })
-    // A peripheral may report only a level; it reads as about this full.
-    var LEVELS = { Critical: 0.05, Low: 0.2, Normal: 0.6, High: 0.85, Full: 1 }
-    function hours(h) { return Math.floor(h) + "h " + Math.floor(h * 60) % 60 + "m" }
-    var lead = leadBattery(state.power)
-    if (lead && !laptop) {
-      v.value = formatPercent(lead.capacity)
-      v.valueColor = gradientAt(g.temp, 1 - lead.capacity / 100)
-      v.caption = lead.name
-      v.graphs.push({ values: state.history.battery, max: 100, stops: g.used, label: "" })
-    }
-    if (laptop) {
-      var cap = laptop.capacity
-      v.value = formatPercent(cap)
-      v.valueColor = gradientAt(g.temp, 1 - (cap || 0) / 100)
-      if (laptop.status === "Discharging" && laptop.power > 0 && laptop.energy !== null) v.caption = hours(laptop.energy / laptop.power) + " left"
-      else if (laptop.status === "Charging" && laptop.power > 0 && laptop.full !== null) v.caption = hours((laptop.full - laptop.energy) / laptop.power) + " to full"
-      else v.caption = String(laptop.status || "").toLowerCase()
-      v.graphs.push({ values: state.history.battery, max: 100, stops: g.used, label: "" })
-      if (laptop.power !== null) v.rows.push(row("Power", laptop.power.toFixed(1) + " W", null))
-      if (laptop.energy !== null && laptop.full) v.rows.push(row("Energy", laptop.energy.toFixed(1) + " / " + laptop.full.toFixed(1) + " Wh", null))
-    }
-    devices.forEach(function(d) {
-      // The peripheral leading the panel is not listed again.
-      if (d === lead && !laptop) return
-      var fraction = d.capacity !== null ? d.capacity / 100 : LEVELS[d.level]
-      v.rows.push(row(d.name, d.capacity !== null ? formatPercent(d.capacity) : d.level || "—",
-        fraction === undefined ? null : fraction, gradientAt(g.temp, 1 - (fraction || 0))))
-    })
-    if (!laptop && !devices.length) v.empty = "No batteries"
-  },
-
-  media: function(v, state, palette, g) {
-    var m = state.media
-    if (!m || !m.title && !m.playing) { v.empty = "Nothing playing"; return }
-    // A player that names no track (a browser tab, say) is named instead.
-    v.info = m.title ? m.identity || "" : ""
-    v.media = {
-      title: m.title || m.identity || "Unknown player",
-      artist: m.artist || "",
-      album: m.album || "",
-      art: localArtwork(m.art),
-      playing: !!m.playing,
-      progress: m.length > 0 ? Math.max(0, Math.min(1, m.position / m.length)) : null,
-      // Without a length, a position (a browser's 0:00) tells nothing.
-      time: m.length > 0 ? formatDuration(m.position) + " / " + formatDuration(m.length) : ""
-    }
-  },
-
-  system: function(v, state, palette, g) {
-    var system = state.system
-    if (!system) { v.empty = "Waiting for data"; return }
-    var info = state.sysinfo || {}
-    v.info = info.user ? info.user + "@" + system.hostname : system.hostname
-    v.logo = true
-    if (system.uptime !== null) { v.value = formatUptime(system.uptime); v.caption = "up" }
-    v.valueColor = palette.accent
-    // In fastfetch's order, the most telling first: a small card keeps those.
-    function add(label, text) { if (text) v.rows.push(row(label, text, null)) }
-    add("OS", [info.os, info.omarchy].filter(Boolean).join(" "))
-    add("Channel", info.channel && info.channel !== "unknown" ? info.channel : "")
-    add("Host", hostName(info))
-    add("Kernel", system.kernel)
-    add("CPU", shortCpu(info.cpu))
-    var roles = gpuRoles(state)
-    if (roles.main) add("GPU", roles.main.name)
-    if (roles.integrated) add("iGPU", roles.integrated.name)
-    if (state.memory && state.memory.total) add("Memory", formatPair(state.memory.used, state.memory.total))
-    var packages = []
-    if (Number(info.packages) > 0) packages.push(info.packages + " pacman")
-    if (Number(info.flatpaks) > 0) packages.push(info.flatpaks + " flatpak")
-    add("Packages", packages.join(", "))
-    add("Shell", info.shell)
-    add("Desktop", info.desktop)
-    add("Theme", themeName(info.theme))
-    if (state.cpu.loadavg.length) v.rows.push(row("Load", state.cpu.loadavg.map(function(n) { return n.toFixed(2) }).join("  "), null))
-    if (state.threads !== null) v.rows.push(row("Threads", String(state.threads), null))
-  },
-
-  fans: function(v, state, palette, g) {
-    var gpu = gpuRoles(state).main
-    if (gpu && gpu.fan !== null) {
-      v.value = formatPercent(gpu.fan)
-      v.valueColor = gradientAt(g.cpu, gpu.fan / 100)
-      v.caption = "GPU fan"
-      v.graphs.push({ values: state.history.fan || [], max: 100, stops: g.cpu, label: "" })
-    }
-    v.rows = state.fans.map(function(fan) {
-      return row(fan.name, fan.rpm + " RPM", fan.rpm / 3000, gradientAt(g.cpu, fan.rpm / 3000))
-    })
-    if (gpu && gpu.fan !== null) v.rows.push(row("GPU", formatPercent(gpu.fan), gpu.fan / 100, gradientAt(g.cpu, gpu.fan / 100)))
-    if (!v.rows.length) v.empty = "No fan sensors"
-  }
 }

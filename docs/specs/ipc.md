@@ -36,8 +36,8 @@ user-facing summary; this page is the exact behaviour.
 | `fill` | monitor, fill | Fill by key or label, ignoring case: `black`, `theme`, `logo`, `wallpaper`, `dim` (or `dimmed`), `clock`, `stats`. Unknown: `Unknown fill <x>; one of black, theme, logo, wallpaper, dim, clock, stats`. Without reserved edges it still sets the fill and answers `<Fill>  ·  no reserved edges to show it`. |
 | `nextFill` | monitor | The next fill in the order above, wrapping. |
 | `dim` | monitor, percent | Dimmed fill's darkness, clamped to 10 to 90. Answers `Dim <n>%`. |
-| `panels` | monitor, list | Stats panels as a comma list, `all`, or `none` (or `""`). Names are keys, labels or aliases (below). Unknown: `Unknown panel in <list>; one of …`. Answers `Stats: <names>`, plus `  ·  shown with the stats fill` when the monitor's fill is not `stats`. |
-| `panel` | monitor, panel, state | One panel `on`, `off`, or `""` to flip it. Other states: `Say on or off`. Answers as `panels`. |
+| `panels` | monitor, list | Stats panels as a comma list, in the order the dashboard shows them, `all`, or `none` (or `""`). Names are keys, labels or aliases (below). Unknown: `Unknown panel in <list>; one of …`. Answers `Stats: <names>`, plus `  ·  shown with the stats fill` when the monitor's fill is not `stats`. |
+| `panel` | monitor, panel, state | One panel `on` (it goes last), `off`, or `""` to flip it. Other states: `Say on or off`. Answers as `panels`. |
 | `edge` | monitor, side, pixels | `top`, `bottom`, `left` or `right`, clamped to 0 and the side's budget (90% of the axis, less the opposite edge). Unknown side: `Unknown edge <x>; one of top, bottom, left, right`. |
 | `aspect` | monitor, ratio, place | Reserve the pair of edges that leaves a reachable area of `ratio` (`16:9`, `16/9`, `16x9` or `1.78`). Place: `top`/`left`/`start`, `center`/`middle`, `bottom`/`right`/`end`, or `""` to keep the place read off the current edges. Errors: `Unknown aspect <x>; for example 16:9`, `Unknown alignment <x>; top, left, center, bottom or right`. Re-enables a paused monitor. |
 | `ruler` | monitor | Show or hide the ruler; it shows on one monitor at a time. Answers `Ruler on <connector>` or `Ruler off`; `all` with more than one monitor connected answers `The ruler shows on one monitor at a time`. |
@@ -52,8 +52,8 @@ user-facing summary; this page is the exact behaviour.
 
 Panel aliases (`Model.PANEL_ALIASES`): `mem`, `ram` → memory; `net` →
 network; `disk`, `io` → disks; `procs`, `top processes` → processes;
-`psi` → pressure; `fan` → fans; `integrated` → igpu; `temperatures`,
-`temp`, `sensors` → temps; `bat` → battery; `music`, `mpris`,
+`integrated` → igpu; `temperatures`, `temp`, `sensors`, `fan`, `fans` →
+temps (the Sensors panel); `bat` → battery; `music`, `mpris`,
 `nowplaying` → media; `uptime` → system. Labels such as `Now playing`
 work too.
 

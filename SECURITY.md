@@ -22,12 +22,13 @@ This is what it does with that access:
   2 s while a wallpaper fill shows; `bash cpu-power.sh status` to see
   whether the CPU's power draw can be read; and, only while the stats fill
   shows (or the panel previews it), `stats.sh` (bash builtins reading
-  `/proc` and `/sys`) and `nvidia-smi` where it is installed. CPU power
+  `/proc` and `/sys`, and `getconf PAGESIZE` once at start) and `nvidia-smi` where it is installed. CPU power
   opens `omarchy-launch-floating-terminal-with-presentation` (below). The commands
   and their arguments are fixed; none is built from settings or IPC input.
 - **Reads:** `/proc` and `/sys` counters for the stats fill (sensors of a
   device the kernel put to sleep are skipped, since reading wakes it),
-  pacman's database and `/etc/os-release` for the System panel, the
+  pacman's database and `/etc/os-release` for the System panel, libdrm's
+  `amdgpu.ids` and hwdata's `pci.ids` for GPU names, the
   wallpaper through `~/.local/state/omarchy/current/background`, the
   theme's `colors.toml`, Omarchy's `logo.svg` and `icon.txt`, and the
   shell's MPRIS players and UPower devices. The Now playing panel shows

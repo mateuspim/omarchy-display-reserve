@@ -1,6 +1,6 @@
 # <img src="icon.svg" alt="" width="32" height="32" align="top"> OmaReach
 
-![OmaReach: the wordmark, the tagline "Use only the screen you can reach.", feature chips and the install command, beside a portrait monitor whose top edge shows a btop-style dashboard (GPU, CPU, memory and network) above a terminal running omarchy-shell pym.omareach commands, and the plugin's panel for DP-4 with the Stats fill and its thirteen panels](preview.png)
+![OmaReach: the wordmark, the tagline "Use only the screen you can reach.", feature chips and the install command, beside a portrait monitor whose top edge shows a btop-style dashboard (GPU, CPU, memory and network) above a terminal running omarchy-shell pym.omareach commands, and the plugin's panel for DP-4 on its Stats page, with GPU, CPU, Memory and Network shown in order and the other panels to add](preview.png)
 
 **Use only the screen you can reach.** OmaReach blacks out monitor edges you
 can't reach (the top of a tall rotated monitor, a strip behind a bezel or a
@@ -27,8 +27,10 @@ logo, a clock or a live btop-style system dashboard.
   [The panel](docs/guide/panel.md)
 - **Fills:** black (safe on OLED), the theme color, the wallpaper slice
   (plain or dimmed), the Omarchy logo, a big blocky clock, or a live
-  **stats dashboard** with 13 panels: GPU, CPU, memory, network, disks,
-  temperatures, battery, now playing and more.
+  **stats dashboard** with 11 panels in the order you choose: GPU, CPU,
+  memory, network, disks, sensors, battery, now playing and more, with
+  meters against each part's own limit and a warning color you can see
+  from across the room.
   [Fills](docs/guide/fills.md) · [The stats fill](docs/guide/stats-fill.md)
 - **Profiles:** save every monitor under a name, apply it with `1` to `9`,
   or let it apply by itself when that set of monitors connects.

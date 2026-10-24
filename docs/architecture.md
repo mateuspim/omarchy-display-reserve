@@ -44,9 +44,15 @@ omareach.json ⇄ ReserveState (singleton) ──► Service ──► spacer + 
   windows to the reachable area
   ([ADR 5](adr/0005-fit-fullscreen-to-the-reachable-area.md)), turns every
   edge black while idle, and answers `omarchy-shell pym.omareach …`.
-- **`Panel.qml`** is the bar widget: a to-scale preview, fills, stats
-  panels, edge sliders and fields, aspect presets, profiles, idle, ruler and
-  undo, with keyboard shortcuts. Edits go to `ReserveState`.
+- **`Panel.qml`** is the bar widget: the bar button and its card, with
+  the header, monitor buttons, preview, page tabs, idle, ruler and undo,
+  the edit functions the pages call and the keyboard shortcuts. Edits go
+  to `ReserveState`. **`PanelPreview.qml`** is the to-scale preview with
+  its draggable edges, and the pages are **`PanelEdgesPage.qml`** (edge
+  sliders and fields, aspect presets), **`PanelFillPage.qml`** (fills, dim,
+  the clock's edge), **`PanelStatsPage.qml`** (the dashboard's panels and
+  their order, animation, CPU power) and **`PanelProfilesPage.qml`**. Each
+  takes the Panel as `panel`.
 - **`ReserveFill.qml`** draws one edge's fill (black, theme, wallpaper,
   dimmed, logo, clock or stats) for both the caps and the panel's preview.
   The logo recolors the SVG's text, and the clock is blocks from
@@ -67,9 +73,11 @@ omareach.json ⇄ ReserveState (singleton) ──► Service ──► spacer + 
   previews it, pauses while idle, lets an idle dGPU rest
   ([ADR 7](adr/0007-let-an-idle-dgpu-rest.md)), and adds the shell's MPRIS
   players and UPower devices. Its clock ticks at the animation pace.
-- **`Stats.js`** is the pure side: parsing frames, counters into rates,
-  history, the theme's palette from `colors.toml`, how panels tile a strip
-  (`Stats.fit`) and the rows each panel shows at a given size.
+- **`Stats.js`** is the pure data side: parsing frames, counters into
+  rates, history, the theme's palette from `colors.toml` and the text form
+  of numbers. **`StatsViews.js`**, which imports it, is the pure drawing
+  side: how panels tile a strip (`Views.fit`) and the rows each panel shows
+  at a given size.
 - **`StatsFill.qml`** lays out the grid; **`StatsCard.qml`** draws one
   panel; **`StatsGraph.qml`** the scrolling history graphs;
   **`StatsEase.qml`** eases meters between samples.
@@ -92,7 +100,7 @@ theme's `colors.toml`.
 ## Tests
 
 `npm test` runs the Node tests in `tests/`: `model.test.js` (Model.js),
-`stats.test.js` and `sampler.test.js` (Stats.js and stats.sh frames) and
+`stats.test.js` and `sampler.test.js` (Stats.js, StatsViews.js and stats.sh frames) and
 `cpupower.test.js` (cpu-power.sh against a fake sysfs). GitHub Actions runs
 the same on every push. UI is checked in an offscreen harness, never on the
 live screens ([ADR 4](adr/0004-offscreen-render-harness.md)).

@@ -150,6 +150,8 @@ QtObject {
   function setPanels(output, panels) { update(output, { panels: Model.panelList(panels) }) }
   // Switches one stats panel on `output` on or off; without `on`, flips it.
   function togglePanel(output, panel, on) { setPanels(output, Model.togglePanel(edges(output).panels, panel, on)) }
+  // Moves one of `output`'s panels `delta` places along its order.
+  function movePanel(output, panel, delta) { setPanels(output, Model.movePanel(edges(output).panels, panel, delta)) }
 
   function setClockEdge(output, clockEdge) {
     if (Model.CLOCK_EDGES.indexOf(clockEdge) === -1) return
@@ -378,7 +380,7 @@ QtObject {
   property Reserve.StatsSampler stats: Reserve.StatsSampler {
     running: root.statsPanels.length > 0 && !root.idle
     processes: root.statsPanels.indexOf("processes") !== -1
-    gpu: ["gpu", "igpu", "processes", "fans", "temps"].some(function(panel) { return root.statsPanels.indexOf(panel) !== -1 })
+    gpu: ["gpu", "igpu", "processes", "temps"].some(function(panel) { return root.statsPanels.indexOf(panel) !== -1 })
     media: root.statsPanels.indexOf("media") !== -1
     batteries: root.statsPanels.indexOf("battery") !== -1
     pace: root.statsPace
